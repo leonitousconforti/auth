@@ -9,6 +9,8 @@ import { rotr32H, rotr32L, rotrBH, rotrBL, rotrSH, rotrSL } from "./word64";
 
 const ARGON2_SYNC_POINTS = 4;
 
+export const BLOCKS_PER_BATCH = 256;
+
 // Unsigned `u32 * u32 = { h, l }`, returned as split 64-bit halves.
 function mul(a: number, b: number) {
   // Split into 16-bit limbs so each partial product stays exact under `Math.imul`.
@@ -414,7 +416,7 @@ export const initialize = (state: State, input: Argon2Parameters): void => {
   }
 };
 
-/** Yield block boundaries to the Effect driver; all scratch belongs to this derivation. */
+/** Yield bounded block batches to the Effect driver; scratch belongs to this derivation. */
 export function* fill(
   state: State,
   input: Argon2Parameters,
@@ -422,6 +424,7 @@ export function* fill(
 ): Generator<void, void> {
   const { memory: B, scratch, address, laneLength: laneLen, segmentLength: segmentLen } = state;
   const p = input.parallelism;
+  let processed = 0;
 
   address[256 + 6] = state.blocks;
   address[256 + 8] = input.passes;
@@ -476,7 +479,10 @@ export function* fill(
             offset * 256,
             needXor,
           );
-          yield;
+          if (++processed === BLOCKS_PER_BATCH) {
+            processed = 0;
+            yield;
+          }
         }
       }
     }

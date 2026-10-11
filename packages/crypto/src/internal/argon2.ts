@@ -1,6 +1,14 @@
 import { Clock, Effect } from "effect";
 
-import { allocate, destroy, fill, initialize, output, type State } from "./argon2-core";
+import {
+  allocate,
+  BLOCKS_PER_BATCH,
+  destroy,
+  fill,
+  initialize,
+  output,
+  type State,
+} from "./argon2-core";
 import type { Argon2, Argon2Parameters } from "./kdf";
 
 export const derive = Effect.fnUntraced(function* (
@@ -18,10 +26,8 @@ export const derive = Effect.fnUntraced(function* (
 
     // Workers freeze clocks during CPU work. Cap each slice as well so
     // interruption and other fibers still get a turn on those runtimes.
-    for (let processed = 0; processed < 2048; processed += 256) {
-      for (let batch = 0; batch < 256; batch++) {
-        if (blocks.next().done) return output(state, input);
-      }
+    for (let processed = 0; processed < 2048; processed += BLOCKS_PER_BATCH) {
+      if (blocks.next().done) return output(state, input);
       if (clock.monotonicTimeNanosUnsafe() - started >= 8_000_000n) break;
     }
     yield* Effect.yieldNow;
