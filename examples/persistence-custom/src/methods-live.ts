@@ -54,9 +54,9 @@ export const AccountMethodsLive = Layer.effect(
         );
 
         const flowId = Sessions.AuthenticationFlowId.make(
-          yield* crypto.randomUUIDv4.pipe(
-            Effect.mapError(() => Password.PasswordUnavailable.make({})),
-          ),
+          yield* crypto
+            .randomUUIDv4()
+            .pipe(Effect.mapError(() => Password.PasswordUnavailable.make({}))),
         );
 
         const admission = yield* Effect.gen(function* () {

@@ -934,9 +934,9 @@ export const makeOAuthMethod = <
 
     const crypto = yield* Crypto.Crypto;
 
-    const flowId = yield* crypto.randomUUIDv4.pipe(
-      Effect.mapError(() => OAuthUnavailable.make({})),
-    );
+    const flowId = yield* crypto
+      .randomUUIDv4()
+      .pipe(Effect.mapError(() => OAuthUnavailable.make({})));
 
     return yield* Begin.invoke(invocation, { ...input, flowId });
   });

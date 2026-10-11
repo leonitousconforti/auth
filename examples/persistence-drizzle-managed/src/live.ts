@@ -26,8 +26,8 @@ const ProvisioningLive = Layer.effect(
       password: {
         values: Effect.fn("Customers.values")(
           function* ({ registration }) {
-            const id = yield* crypto.randomUUIDv4;
-            const revision = yield* crypto.randomUUIDv4;
+            const id = yield* crypto.randomUUIDv4();
+            const revision = yield* crypto.randomUUIDv4();
 
             return {
               id,

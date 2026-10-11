@@ -45,7 +45,7 @@
   "peerDependencies": {
     "@simplewebauthn/browser": ">=14.0.0 <15",
     "@simplewebauthn/server": ">=14.0.1 <15",
-    "effect": "^4.0.0"
+    "effect": "^4.0.3"
   },
   "peerDependenciesMeta": {
     "@simplewebauthn/browser": {

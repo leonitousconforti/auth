@@ -26,8 +26,8 @@ const ProvisioningLive = Layer.effect(
     return {
       password: Effect.fn("Customers.create")(
         function* ({ registration }) {
-          const id = yield* crypto.randomUUIDv4;
-          const revision = yield* crypto.randomUUIDv4;
+          const id = yield* crypto.randomUUIDv4();
+          const revision = yield* crypto.randomUUIDv4();
 
           // The same SqlClient joins AuthPersistence's registration transaction.
           yield* sql`insert into customers (customer_key, enabled, auth_revision, display_name)

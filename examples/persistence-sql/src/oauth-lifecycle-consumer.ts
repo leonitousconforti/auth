@@ -57,7 +57,7 @@ export const exercise = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const actions = yield* DemoActionCodes;
   const delivery = privateDelivery();
-  const runId = yield* crypto.randomUUIDv4;
+  const runId = yield* crypto.randomUUIDv4();
 
   const start = yield* delivery.call(
     auth.signIn({ provider: profile.provider, callbackId, returnTarget: "/account" }),

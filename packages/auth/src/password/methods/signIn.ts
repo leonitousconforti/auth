@@ -130,9 +130,9 @@ export const makePasswordSignIn = <
           invocation: AuthInvocation,
           request: Omit<typeof Input.Encoded, "flowId">,
         ) {
-          const flowId = yield* (yield* Crypto.Crypto).randomUUIDv4.pipe(
-            Effect.mapError(() => PasswordUnavailable.make({})),
-          );
+          const flowId = yield* (yield* Crypto.Crypto)
+            .randomUUIDv4()
+            .pipe(Effect.mapError(() => PasswordUnavailable.make({})));
 
           return yield* SignIn.invoke(invocation, { ...request, flowId });
         }),

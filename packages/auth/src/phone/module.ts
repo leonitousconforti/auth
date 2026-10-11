@@ -299,8 +299,8 @@ export const makePhoneOtp = <
           input: { readonly phoneNumber: string; readonly locale?: string },
         ) {
           const crypto = yield* Crypto.Crypto;
-          const flowId = yield* crypto.randomUUIDv4.pipe(Effect.mapError(phoneFailure));
-          const requestId = yield* crypto.randomUUIDv4.pipe(Effect.mapError(phoneFailure));
+          const flowId = yield* crypto.randomUUIDv4().pipe(Effect.mapError(phoneFailure));
+          const requestId = yield* crypto.randomUUIDv4().pipe(Effect.mapError(phoneFailure));
 
           return yield* SignIn.invoke(invocation, {
             ...input,

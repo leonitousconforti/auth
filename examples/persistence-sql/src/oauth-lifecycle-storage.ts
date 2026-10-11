@@ -84,9 +84,13 @@ export const mutableAuthority = {
 export const makeAccountsMapping = Effect.fnUntraced(function* () {
   const crypto = yield* Crypto.Crypto;
 
-  const uuid = crypto.randomUUIDv4.pipe(
-    Effect.mapError((cause) => PersistenceMappingError.make({ operation: "demo.allocate", cause })),
-  );
+  const uuid = crypto
+    .randomUUIDv4()
+    .pipe(
+      Effect.mapError((cause) =>
+        PersistenceMappingError.make({ operation: "demo.allocate", cause }),
+      ),
+    );
 
   return {
     subject: {
@@ -143,9 +147,13 @@ export const makeLifecycleStorage = Effect.gen(function* () {
   const client = yield* SqlClient.SqlClient;
   const crypto = yield* Crypto.Crypto;
 
-  const uuid = crypto.randomUUIDv4.pipe(
-    Effect.mapError((cause) => PersistenceMappingError.make({ operation: "demo.allocate", cause })),
-  );
+  const uuid = crypto
+    .randomUUIDv4()
+    .pipe(
+      Effect.mapError((cause) =>
+        PersistenceMappingError.make({ operation: "demo.allocate", cause }),
+      ),
+    );
 
   const dialect = client.onDialectOrElse({
     pg: () => "pg" as const,

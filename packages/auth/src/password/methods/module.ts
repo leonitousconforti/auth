@@ -845,9 +845,9 @@ const makePasswordWithManagement = <
         ) {
           const crypto = yield* Crypto.Crypto;
 
-          const flowId = yield* crypto.randomUUIDv4.pipe(
-            Effect.mapError(() => PasswordUnavailable.make({})),
-          );
+          const flowId = yield* crypto
+            .randomUUIDv4()
+            .pipe(Effect.mapError(() => PasswordUnavailable.make({})));
 
           return yield* SignIn.invoke(invocation, { ...request, flowId });
         }),

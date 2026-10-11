@@ -26,8 +26,8 @@ const ProvisioningLive = Layer.effect(
     return {
       password: Effect.fn("Customers.create")(
         function* ({ registration }) {
-          const id = yield* crypto.randomUUIDv4;
-          const revision = yield* crypto.randomUUIDv4;
+          const id = yield* crypto.randomUUIDv4();
+          const revision = yield* crypto.randomUUIDv4();
 
           // Drizzle joins the Effect SQL transaction owned by AuthPersistence.
           yield* database.insert(customers).values({
