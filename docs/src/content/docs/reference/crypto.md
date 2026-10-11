@@ -93,6 +93,27 @@ export const CryptoLive = Layer.merge(
 );
 ```
 
+For Cloudflare Workers, use this composition instead. It selects Wasm Argon2id
+without changing password parameters or stored hashes:
+
+```ts title="apps/server/crypto-live.ts"
+import { KdfAdmission } from "@yielded/crypto";
+import * as WorkerdCrypto from "@yielded/crypto/platform-workerd";
+import * as WebCrypto from "@yielded/crypto/WebCrypto";
+import { Layer } from "effect";
+
+const Admission = KdfAdmission.layer();
+export const CryptoLive = Layer.merge(
+  WebCrypto.layerCryptoWeb,
+  WorkerdCrypto.layer(globalThis.crypto.subtle).pipe(Layer.provideMerge(Admission)),
+);
+```
+
+Enable `"compatibility_flags": ["nodejs_compat"]` in your Wrangler configuration.
+Wrangler bundles the Wasm module; do not import this backend into a Bun, Node,
+or browser entrypoint. The [Workers composition example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/crypto-workerd.ts)
+can be imported by your Worker's application Layer.
+
 Provide `CryptoLive` to your Auth Layer and to `Password.PasswordHashing.layer()`,
 `Totp.TotpCryptography.layer`, and the `OAuth` protector Layers. TOTP also requires
 `TotpSecretKeys`; OAuth protectors take their application keyring as an argument.
