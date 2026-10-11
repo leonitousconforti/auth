@@ -407,18 +407,23 @@ expired-row cleanup and ingress limits.
 | Integration       | Configure                                                              |
 | ----------------- | ---------------------------------------------------------------------- |
 | Atlassian         | [`Atlassian.provider`](../guide/atlassian)                             |
+| Auth0             | [`Auth0.provider`](../guide/enterprise-oidc)                           |
+| Cognito           | [`Cognito.provider`](../guide/enterprise-oidc)                         |
 | Figma             | [`Figma.provider`](../guide/figma)                                     |
 | GitHub            | [`GitHub.provider`](../guide/github)                                   |
 | GitLab            | [`GitLab.provider`](../guide/gitlab), with optional self-hosted issuer |
 | Google            | [`Google.provider`](../guide/google)                                   |
 | Hugging Face      | [`HuggingFace.provider`](../guide/huggingface)                         |
+| Keycloak          | [`Keycloak.provider`](../guide/enterprise-oidc)                        |
 | Kick              | [`Kick.provider`](../guide/kick)                                       |
 | LINE              | [`Line.provider`](../guide/line)                                       |
+| Okta              | [`Okta.provider`](../guide/enterprise-oidc)                            |
 | Railway           | [`Railway.provider`](../guide/railway)                                 |
 | Roblox            | [`Roblox.provider`](../guide/roblox)                                   |
 | Slack             | [`Slack.provider`](../guide/slack)                                     |
 | Vercel            | [`Vercel.provider`](../guide/vercel)                                   |
 | X                 | [`X.provider`](../guide/x)                                             |
+| Zitadel           | [`Zitadel.provider`](../guide/enterprise-oidc)                         |
 | Zoom              | [`Zoom.provider`](../guide/zoom)                                       |
 | GitHub API access | `GitHub.accessProfile` plus provider `access`                          |
 | Strava            | `Strava.provider`, with optional access profile                        |

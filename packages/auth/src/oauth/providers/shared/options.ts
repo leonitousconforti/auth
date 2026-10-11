@@ -11,6 +11,7 @@ import {
   type OpenIdConnectAuthentication,
   type OidcProfileSchema,
   type OidcUserInfoMode,
+  type ResponseIssuerMode,
 } from "./models";
 import { OidcUserProfile } from "./profile";
 
@@ -130,8 +131,8 @@ export type ProviderOptions<P> = P extends { readonly protocol: "oauth" | "oidc"
       AuthenticationOptions & {
         readonly provider: string;
         readonly issuer: string;
-        /** Defaults to required. Explicitly opt out only when the host does not support RFC 9207. */
-        readonly responseIssuerMode?: "required" | "unsupported";
+        /** Defaults to required. Use discovered to follow authorization_response_iss_parameter_supported. */
+        readonly responseIssuerMode?: ResponseIssuerMode;
         /** Defaults to true. Set false only for issuers that cannot complete
          * authorization-code + S256 PKCE. */
         readonly pkceS256?: boolean;
@@ -182,7 +183,7 @@ export const resolveProvider = Effect.fnUntraced(function* <
   P extends {
     readonly provider: string;
     readonly issuer: string;
-    readonly responseIssuerMode?: "required" | "unsupported";
+    readonly responseIssuerMode?: ResponseIssuerMode;
   } & RegistrationOptions &
     AuthenticationOptions,
 >(input: P) {

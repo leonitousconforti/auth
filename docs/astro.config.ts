@@ -48,6 +48,7 @@ export default defineConfig({
           label: "OAuth providers",
           items: [
             { label: "OAuth setup", slug: "guide/oauth" },
+            { label: "Enterprise OpenID", slug: "guide/enterprise-oidc" },
             { label: "Atlassian", slug: "guide/atlassian" },
             { label: "Figma", slug: "guide/figma" },
             { label: "GitHub", slug: "guide/github" },

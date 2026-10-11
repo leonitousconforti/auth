@@ -25,7 +25,7 @@ import {
 import { snapshotOAuth } from "../../signInSnapshot";
 import { tokenCompatibility } from "./compatibility";
 import type { InstalledConfiguration } from "./configuration";
-import type { OpenIdConnectConfigurationError } from "./models";
+import { persistedResponseIssuerMode, type OpenIdConnectConfigurationError } from "./models";
 import { decodeOidcProfile } from "./profile";
 import { tokens } from "./receipt";
 
@@ -167,13 +167,18 @@ export const makeOpenIdConnectOAuthProtocol = Effect.fn("makeOpenIdConnectOAuthP
         })
         .pipe(Effect.mapError(unavailable));
 
+      const responseIssuerMode = persistedResponseIssuerMode(
+        provider.responseIssuerMode,
+        entry.metadata.authorization_response_iss_parameter_supported,
+      );
+
       const result = {
         configuration: {
           provider: provider.provider,
           protocol: provider.protocol,
           configurationGeneration: provider.configurationGeneration,
           issuer: provider.issuer,
-          responseIssuerMode: provider.responseIssuerMode,
+          responseIssuerMode,
           callbackId: callback.callbackId,
           redirectUri: callback.redirectUri,
         },
@@ -207,10 +212,15 @@ export const makeOpenIdConnectOAuthProtocol = Effect.fn("makeOpenIdConnectOAuthP
           (candidate) => candidate.callbackId === saved.callbackId,
         );
 
+        const responseIssuerMode = persistedResponseIssuerMode(
+          provider.responseIssuerMode,
+          entry.metadata.authorization_response_iss_parameter_supported,
+        );
+
         if (
           provider.protocol !== saved.protocol ||
           provider.issuer !== saved.issuer ||
-          provider.responseIssuerMode !== saved.responseIssuerMode ||
+          responseIssuerMode !== saved.responseIssuerMode ||
           callback?.redirectUri !== saved.redirectUri
         )
           return yield* unavailable();
@@ -218,7 +228,7 @@ export const makeOpenIdConnectOAuthProtocol = Effect.fn("makeOpenIdConnectOAuthP
           (provider.protocol === "oidc") !== (request.secrets.oidcNonce !== undefined) ||
           provider.pkceS256 !== (request.secrets.pkceVerifier !== undefined) ||
           Redacted.value(request.response.state) !== Redacted.value(request.secrets.state) ||
-          (provider.responseIssuerMode === "required"
+          (responseIssuerMode === "required"
             ? request.response.issuer !== provider.issuer
             : request.response.issuer !== undefined)
         )

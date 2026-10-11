@@ -25,7 +25,7 @@ import {
 } from "../../../signInModels";
 import { snapshotOAuth } from "../../../signInSnapshot";
 import { type ConnectedCompatibility } from "../compatibility";
-import type { OpenIdConnectConfigurationError } from "../models";
+import { persistedResponseIssuerMode, type OpenIdConnectConfigurationError } from "../models";
 import { decodeOidcProfile } from "../profile";
 import { ProviderRevocation } from "../ProviderRevocation";
 import { tokens } from "../receipt";
@@ -192,7 +192,10 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
       !provider ||
       provider.protocol !== saved.protocol ||
       provider.issuer !== saved.issuer ||
-      provider.responseIssuerMode !== saved.responseIssuerMode ||
+      persistedResponseIssuerMode(
+        provider.responseIssuerMode,
+        entry.metadata.authorization_response_iss_parameter_supported,
+      ) !== saved.responseIssuerMode ||
       provider.clientRegistrationId !== saved.profile.clientRegistrationId ||
       !provider.profiles.some((profile) => sameConnectedProfile(profile, saved.profile)) ||
       provider.callbacks.find((callback) => callback.callbackId === saved.callbackId)
@@ -415,13 +418,18 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
       })
       .pipe(Effect.mapError(unavailable));
 
+    const responseIssuerMode = persistedResponseIssuerMode(
+      entry.provider.responseIssuerMode,
+      entry.metadata.authorization_response_iss_parameter_supported,
+    );
+
     const result = {
       configuration: {
         provider: entry.provider.provider,
         protocol: entry.provider.protocol,
         configurationGeneration: entry.provider.configurationGeneration,
         issuer: entry.provider.issuer,
-        responseIssuerMode: entry.provider.responseIssuerMode,
+        responseIssuerMode,
         callbackId: callback.callbackId,
         redirectUri: callback.redirectUri,
         profile: request.profile,
@@ -447,11 +455,16 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
     const entry = yield* retained(saved),
       provider = entry.provider;
 
+    const responseIssuerMode = persistedResponseIssuerMode(
+      provider.responseIssuerMode,
+      entry.metadata.authorization_response_iss_parameter_supported,
+    );
+
     if (
       (provider.protocol === "oidc") !== (request.secrets.oidcNonce !== undefined) ||
       provider.pkceS256 !== (request.secrets.pkceVerifier !== undefined) ||
       Redacted.value(request.response.state) !== Redacted.value(request.secrets.state) ||
-      (provider.responseIssuerMode === "required"
+      (responseIssuerMode === "required"
         ? request.response.issuer !== provider.issuer
         : request.response.issuer !== undefined)
     )

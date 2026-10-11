@@ -50,7 +50,7 @@ const common = {
   configurationGeneration: OAuthGeneration,
   issuance: Schema.Literals(["active", "retired"]),
   issuer: OAuthIssuer,
-  responseIssuerMode: Schema.Literals(["required", "unsupported"]),
+  responseIssuerMode: Schema.Literals(["required", "unsupported", "discovered"]),
   clientId: text(1024),
   authentication,
   callbacks: Schema.Array(
@@ -447,8 +447,9 @@ export const installConnectedProvider = Effect.fn("OpenIdConnect.installConnecte
 
     if (metadata.issuer !== provider.issuer) return yield* configurationError("issuer");
     if (
+      provider.responseIssuerMode !== "discovered" &&
       (metadata.authorization_response_iss_parameter_supported === true) !==
-      (provider.responseIssuerMode === "required")
+        (provider.responseIssuerMode === "required")
     )
       return yield* configurationError("metadata");
     const authorization = yield* endpoint(metadata.authorization_endpoint);

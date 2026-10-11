@@ -5,7 +5,7 @@ import { OpenIdConnectConfigurationError } from "./models";
 
 /** Private, first-party discovery supplements; generic OIDC remains strict. */
 export const discoveryProfile = Symbol("effect-auth/OpenIdConnect/discoveryProfile");
-export const DiscoveryProfile = Schema.Literals(["slack", "roblox", "line", "railway"]);
+export const DiscoveryProfile = Schema.Literals(["slack", "roblox", "line", "railway", "cognito"]);
 
 const pinned = {
   slack: {
@@ -34,6 +34,9 @@ const pinned = {
   },
 } as const;
 
+const cognitoIssuer =
+  /^https:\/\/cognito-idp\.[a-z]{2}(?:-[a-z0-9]+)+\.amazonaws\.com\/[a-z]{2}(?:-[a-z0-9]+)+_[A-Za-z0-9]+$/;
+
 export const discoveryMetadataUrl = (
   profile: typeof DiscoveryProfile.Type | undefined,
 ): string | undefined =>
@@ -46,22 +49,32 @@ export const supplementDiscovery = Effect.fnUntraced(function* (
   profile: typeof DiscoveryProfile.Type | undefined,
 ) {
   if (profile === undefined) return metadata;
-  const expected = pinned[profile];
+  if (profile === "cognito") {
+    if (
+      !cognitoIssuer.test(metadata.issuer) ||
+      metadata.jwks_uri !== `${metadata.issuer}/.well-known/jwks.json`
+    )
+      return yield* OpenIdConnectConfigurationError.make({ reason: "metadata" });
+  } else {
+    const expected = pinned[profile];
 
-  if (
-    metadata.issuer !== expected.issuer ||
-    metadata.authorization_endpoint !== expected.authorization_endpoint ||
-    metadata.token_endpoint !== expected.token_endpoint ||
-    metadata.jwks_uri !== expected.jwks_uri
-  )
-    return yield* OpenIdConnectConfigurationError.make({ reason: "metadata" });
+    if (
+      metadata.issuer !== expected.issuer ||
+      metadata.authorization_endpoint !== expected.authorization_endpoint ||
+      metadata.token_endpoint !== expected.token_endpoint ||
+      metadata.jwks_uri !== expected.jwks_uri
+    )
+      return yield* OpenIdConnectConfigurationError.make({ reason: "metadata" });
+  }
 
   // Slack documents code_verifier at docs.slack.dev/reference/methods/openid.connect.token/
   // but omits PKCE from discovery. Roblox documents S256 at
   // create.roblox.com/docs/cloud/auth/oauth2-develop and also omits it.
   // LINE documents HS256 for web login at developers.line.biz/en/docs/line-login/verify-id-token/
-  // and omits it from discovery. Supply only the missing advertisement; an
-  // explicit incompatible capability still fails the shared validation.
+  // and omits it from discovery. Cognito documents PKCE at
+  // docs.aws.amazon.com/cognito/latest/developerguide/using-pkce-in-authorization-code.html
+  // and also omits it. Supply only the missing advertisement; an explicit
+  // incompatible capability still fails the shared validation.
   const algorithms = metadata.id_token_signing_alg_values_supported ?? [];
 
   return {

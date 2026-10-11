@@ -79,13 +79,26 @@ export interface PlainOAuthIdentity {
   readonly profile?: NonNullable<OAuthVerifiedExternalIdentity["profile"]>;
 }
 
+/** `discovered` stores the mode implied by authorization_response_iss_parameter_supported. */
+export type ResponseIssuerMode = "required" | "unsupported" | "discovered";
+
+export const persistedResponseIssuerMode = (
+  mode: ResponseIssuerMode,
+  authorizationResponseIssParameterSupported: boolean | undefined,
+): OAuthProtocolConfiguration["responseIssuerMode"] =>
+  mode === "discovered"
+    ? authorizationResponseIssParameterSupported === true
+      ? "required"
+      : "unsupported"
+    : mode;
+
 interface ProviderGeneration {
   readonly provider: OAuthProtocolConfiguration["provider"];
   readonly configurationGeneration: OAuthProtocolConfiguration["configurationGeneration"];
   readonly issuance: "active" | "retired";
   /** Preserve this exact issuer identifier, including an optional trailing slash. */
   readonly issuer: OAuthProtocolConfiguration["issuer"];
-  readonly responseIssuerMode: OAuthProtocolConfiguration["responseIssuerMode"];
+  readonly responseIssuerMode: ResponseIssuerMode;
   readonly clientId: string;
   readonly authentication: OpenIdConnectAuthentication;
   readonly callbacks: ReadonlyArray<{
