@@ -17,7 +17,11 @@ export {
   type OpenIdConnectOAuthProtocolOptions,
   type OpenIdConnectOAuthProvider,
   type OpenIdConnectOidcProvider,
+  type PlainOAuthHttpIdentitySource,
   type PlainOAuthIdentity,
+  type PlainOAuthIdentityDecoder,
+  type PlainOAuthIdentitySource,
+  type PlainOAuthTokenIdentitySource,
 } from "./oauth/providers/shared/models";
 
 export { OidcStandardUserProfile, OidcUserProfile } from "./oauth/providers/shared/profile";

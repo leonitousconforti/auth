@@ -154,7 +154,6 @@ it.effect("distinguishes complete invalid_grant400 from ambiguous or malformed r
       receipt({ error: "invalid_grant", access_token: "private-access" }, 400),
       receipt({ ...tokenBody, expires_in: "60junk" }),
       receipt({ ...tokenBody, expires_in: -1 }),
-      receipt({ ...tokenBody, refresh_token: null }),
       receipt({ ...tokenBody, token_type: "DPoP" }),
       { ...receipt(tokenBody), contentType: "text/plain" },
     ]) {
@@ -164,6 +163,10 @@ it.effect("distinguishes complete invalid_grant400 from ambiguous or malformed r
       expect(JSON.stringify(failure)).not.toContain("private-");
     }
     expect((yield* OAuth.tokens(receipt({ ...tokenBody, expires_in: 0 }))).expiresIn).toBe(0);
+    const omitted = yield* OAuth.tokens(receipt({ ...tokenBody, refresh_token: null }));
+
+    expect(omitted.refreshToken).toBeUndefined();
+    expect(Redacted.value(omitted.accessToken)).toBe("private-access");
     const extension = receipt({ error: "bad_verification_code" });
 
     expect(Redacted.value(extension.body).error).toBe("bad_verification_code");

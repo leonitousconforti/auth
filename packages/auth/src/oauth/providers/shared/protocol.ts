@@ -325,11 +325,14 @@ export const makeOpenIdConnectOAuthProtocol = Effect.fn("makeOpenIdConnectOAuthP
           });
         }
 
-        const body = yield* entry.client
-          .fetchProfile(grant.accessToken)
-          .pipe(Effect.mapError(unavailable));
-
         if (provider.protocol !== "oauth") return yield* unavailable();
+
+        const body =
+          provider.identitySource.from === "token"
+            ? Redacted.value(receipt.body)
+            : yield* entry.client
+                .fetchProfile(grant.accessToken)
+                .pipe(Effect.mapError(unavailable));
 
         const decoded = yield* Effect.suspend(() =>
           provider.identitySource.decodeIdentity(body),

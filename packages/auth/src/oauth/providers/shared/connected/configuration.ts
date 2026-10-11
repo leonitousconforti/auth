@@ -11,7 +11,14 @@ import {
   type ConnectedOptions,
   type ProviderConnectedOAuth,
 } from "../compatibility";
-import { callbackEndpoint, endpoint } from "../configuration";
+import {
+  callbackEndpoint,
+  copyIdentitySource,
+  endpoint,
+  identitySourceSchema,
+  nativeOAuthClientOptions,
+  validateIdentitySource,
+} from "../configuration";
 import {
   advertisedIdTokenAlgorithms,
   IdTokenSignedResponseAlg,
@@ -125,18 +132,9 @@ const optionsSchema = <R>(providerCohort: boolean) =>
             authorizationEndpoint: text(2048),
             tokenEndpoint: text(2048),
             pkceS256: Schema.Boolean,
-            identitySource: Schema.Struct({
-              url: text(2048),
-              headers: Schema.optionalKey(fields),
-              decodeIdentity: Schema.declare<
-                OpenIdConnectConnectedOAuthProvider<R>["identitySource"]["decodeIdentity"]
-              >(
-                (
-                  value,
-                ): value is OpenIdConnectConnectedOAuthProvider<R>["identitySource"]["decodeIdentity"] =>
-                  Predicate.isFunction(value),
-              ),
-            }),
+            tokenBodyFormat: Schema.optionalKey(Schema.Literals(["form", "json"])),
+            scopeSeparator: Schema.optionalKey(Schema.Literals([" ", ","])),
+            identitySource: identitySourceSchema<R>(),
           }),
         ]),
       ).check(Schema.isMinLength(1), Schema.isMaxLength(64)),
@@ -306,12 +304,7 @@ export const prepareConnectedConfigurations = Effect.fn(
               ...provider,
               ...detached,
               revocation: copyRevocation(provider.revocation),
-              identitySource: {
-                ...provider.identitySource,
-                ...(provider.identitySource.headers
-                  ? { headers: { ...provider.identitySource.headers } }
-                  : {}),
-              },
+              identitySource: copyIdentitySource(provider.identitySource),
             };
       }),
     ),
@@ -424,15 +417,17 @@ export const prepareConnectedConfigurations = Effect.fn(
     if (provider.protocol === "oauth") {
       yield* endpoint(provider.authorizationEndpoint, "provider");
       yield* endpoint(provider.tokenEndpoint, "provider");
-      yield* endpoint(provider.identitySource.url, "provider");
-      const headers = new Set<string>();
+      yield* validateIdentitySource(provider.identitySource);
+      if (provider.identitySource.from !== "token") {
+        const headers = new Set<string>();
 
-      for (const [name, value] of Object.entries(provider.identitySource.headers ?? {})) {
-        const lower = name.toLowerCase();
+        for (const [name, value] of Object.entries(provider.identitySource.headers ?? {})) {
+          const lower = name.toLowerCase();
 
-        if (forbiddenHeaders.has(lower) || headers.has(lower) || /[\r\n]/u.test(value))
-          return yield* configurationError("identity-source");
-        headers.add(lower);
+          if (forbiddenHeaders.has(lower) || headers.has(lower) || /[\r\n]/u.test(value))
+            return yield* configurationError("identity-source");
+          headers.add(lower);
+        }
       }
     }
     if (provider.revocation.mode === "rfc7009") {
@@ -500,7 +495,8 @@ export const installConnectedProvider = Effect.fn("OpenIdConnect.installConnecte
         return yield* configurationError("metadata");
       if (metadata.jwks_uri !== undefined) yield* endpoint(metadata.jwks_uri);
       if (metadata.userinfo_endpoint !== undefined) yield* endpoint(metadata.userinfo_endpoint);
-    } else yield* endpoint(provider.identitySource.url);
+    } else if (provider.identitySource.from !== "token")
+      yield* endpoint(provider.identitySource.url);
     if (provider.revocation.mode === "rfc7009") {
       if (
         !metadata.revocation_endpoint ||
@@ -528,7 +524,7 @@ export const installConnectedProvider = Effect.fn("OpenIdConnect.installConnecte
         authentication: provider.authentication,
         timeoutMs: timeoutSeconds * 1000,
         ...(provider.protocol === "oauth"
-          ? { profile: provider.identitySource }
+          ? nativeOAuthClientOptions(provider)
           : provider.userInfo === "merge" && metadata.userinfo_endpoint !== undefined
             ? { profile: { url: metadata.userinfo_endpoint } }
             : {}),

@@ -81,7 +81,17 @@ export interface ClientOptions extends RequestOptions {
   readonly metadata: Metadata;
   readonly clientId: string;
   readonly authentication: Authentication;
-  readonly profile?: { readonly url: string; readonly headers?: Readonly<Record<string, string>> };
+  readonly profile?: {
+    readonly url: string;
+    readonly method?: "GET" | "POST";
+    readonly headers?: Readonly<Record<string, string>>;
+    readonly body?: string;
+  };
+  /** Defaults to form. Notion's token endpoint requires JSON. Repeated names,
+   * including more than one `resource`, fail before the request. */
+  readonly tokenBodyFormat?: "form" | "json";
+  /** Defaults to a space. Linear's authorize URL requires commas. */
+  readonly scopeSeparator?: " " | ",";
   readonly revocationAuthentication?: Authentication;
 }
 
@@ -142,8 +152,15 @@ const ClientOptionsSchema = Schema.Struct({
   authentication: Authentication,
   ...V.RequestOptions.fields,
   profile: Schema.optionalKey(
-    Schema.Struct({ url: V.Endpoint, headers: Schema.optionalKey(V.Headers) }),
+    Schema.Struct({
+      url: V.Endpoint,
+      method: Schema.optionalKey(Schema.Literals(["GET", "POST"])),
+      headers: Schema.optionalKey(V.Headers),
+      body: Schema.optionalKey(V.text(4096)),
+    }),
   ),
+  tokenBodyFormat: Schema.optionalKey(Schema.Literals(["form", "json"])),
+  scopeSeparator: Schema.optionalKey(Schema.Literals([" ", ","])),
   revocationAuthentication: Schema.optionalKey(Authentication),
 });
 
@@ -192,10 +209,15 @@ const ExpiresIn = Schema.Union([
 const RawToken = Schema.Struct({
   access_token: V.text(16384),
   token_type: Schema.String.check(Schema.isPattern(/^[Bb][Ee][Aa][Rr][Ee][Rr]$/)),
-  refresh_token: Schema.optionalKey(V.text(16384)),
+  refresh_token: Schema.optionalKey(Schema.NullOr(V.text(16384))),
   id_token: Schema.optionalKey(V.text(65536)),
   expires_in: Schema.optionalKey(ExpiresIn),
-  scope: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(16447))),
+  scope: Schema.optionalKey(
+    Schema.Union([
+      Schema.String.check(Schema.isMaxLength(16447)),
+      Schema.Array(Schema.String.check(Schema.isMaxLength(1024))).check(Schema.isMaxLength(128)),
+    ]),
+  ),
 });
 
 const Terminal = Schema.Struct({
@@ -218,7 +240,8 @@ const successFields = [
 /** Parse once provider-specific receipt checks have succeeded. expires_in accepts
  * finite nonnegative numbers and whole decimal strings (for example "60.5").
  * Whitespace, exponent/prefix syntax and nonfinite values are rejected. Raw
- * receipt extensions/scopes are untouched; no request, retry or claim verification. */
+ * receipt extensions stay untouched. A null refresh token is omitted, and an
+ * array scope is joined with spaces. No request, retry or claim verification. */
 export const tokens = Effect.fnUntraced(function* (
   input: TokenReceipt,
 ): Effect.fn.Return<TokenSet, Rejected | Unavailable> {
@@ -244,15 +267,24 @@ export const tokens = Effect.fnUntraced(function* (
     return yield* Unavailable.make({});
   const value = yield* V.decode(RawToken, raw);
 
+  const scope: string | undefined =
+    typeof value.scope === "string"
+      ? value.scope
+      : value.scope === undefined
+        ? undefined
+        : value.scope.join(" ");
+
+  if (scope !== undefined && scope.length > 16447) return yield* Unavailable.make({});
+
   return {
     tokenType: "bearer",
     accessToken: Redacted.make(value.access_token),
-    ...(value.refresh_token === undefined
+    ...(value.refresh_token === undefined || value.refresh_token === null
       ? {}
       : { refreshToken: Redacted.make(value.refresh_token) }),
     ...(value.id_token === undefined ? {} : { idToken: Redacted.make(value.id_token) }),
     ...(value.expires_in === undefined ? {} : { expiresIn: value.expires_in }),
-    ...(value.scope === undefined ? {} : { scope: value.scope }),
+    ...(scope === undefined ? {} : { scope }),
   };
 });
 
@@ -277,6 +309,7 @@ const authenticated = Effect.fnUntraced(function* (
   clientId: string,
   authentication: Authentication,
   body: URLSearchParams,
+  format: "form" | "json" = "form",
 ) {
   let request = HttpClientRequest.post(url).pipe(HttpClientRequest.acceptJson);
 
@@ -294,7 +327,18 @@ const authenticated = Effect.fnUntraced(function* (
     if (authentication.method === "client_secret_post")
       body.set("client_secret", yield* V.reveal(authentication.secret));
   }
-  const encoded = body.toString();
+
+  if (format === "json") {
+    const seen = new Set<string>();
+
+    for (const key of body.keys()) {
+      if (seen.has(key)) return yield* ConfigurationError.make({ reason: "parameters" });
+      seen.add(key);
+    }
+  }
+
+  const encoded =
+    format === "json" ? JSON.stringify(Object.fromEntries(body.entries())) : body.toString();
 
   if (new TextEncoder().encode(encoded).length > 131072)
     return yield* ConfigurationError.make({ reason: "parameters" });
@@ -302,7 +346,7 @@ const authenticated = Effect.fnUntraced(function* (
   return HttpClientRequest.bodyText(
     request,
     encoded,
-    "application/x-www-form-urlencoded;charset=UTF-8",
+    format === "json" ? "application/json" : "application/x-www-form-urlencoded;charset=UTF-8",
   );
 });
 
@@ -345,6 +389,18 @@ export const make = Effect.fnUntraced(function* (
   const http = yield* Transport.capture;
   const profile = options.profile === undefined ? undefined : V.freeze(options.profile);
 
+  const tokenBodyFormat =
+    options.tokenBodyFormat === "json" ? ("json" as const) : ("form" as const);
+
+  const scopeSeparator = options.scopeSeparator === "," ? "," : " ";
+
+  if (
+    profile !== undefined &&
+    (profile.method === undefined || profile.method === "GET") &&
+    profile.body !== undefined
+  )
+    return yield* ConfigurationError.make({ reason: "metadata" });
+
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => {
       if (authentication.method !== "none") Redacted.wipeUnsafe(authentication.secret);
@@ -361,6 +417,7 @@ export const make = Effect.fnUntraced(function* (
       options.clientId,
       authentication,
       body,
+      tokenBodyFormat,
     );
 
     return yield* Transport.json(yield* Transport.request(http, request, options));
@@ -376,7 +433,7 @@ export const make = Effect.fnUntraced(function* (
     body.set("redirect_uri", value.redirectUri);
     body.set("response_type", "code");
     body.set("response_mode", "query");
-    body.set("scope", value.scopes.join(" "));
+    if (value.scopes.length > 0) body.set("scope", value.scopes.join(scopeSeparator));
     body.set("state", yield* V.reveal(value.state));
     if (value.codeChallenge !== undefined) {
       body.set("code_challenge", value.codeChallenge);
@@ -413,7 +470,8 @@ export const make = Effect.fnUntraced(function* (
 
     body.set("grant_type", "refresh_token");
     body.set("refresh_token", yield* V.reveal(value.refreshToken));
-    if (value.scopes !== undefined) body.set("scope", value.scopes.join(" "));
+    if (value.scopes !== undefined && value.scopes.length > 0)
+      body.set("scope", value.scopes.join(scopeSeparator));
 
     return yield* send(body);
   }, use);
@@ -422,12 +480,18 @@ export const make = Effect.fnUntraced(function* (
     yield* available;
     if (profile === undefined) return yield* ConfigurationError.make({ reason: "endpoint" });
     const token = yield* V.reveal(yield* V.decode(Bearer, input));
+    const url = new URL(profile.url).href;
 
-    const request = HttpClientRequest.get(new URL(profile.url).href).pipe(
+    let request = (
+      profile.method === "POST" ? HttpClientRequest.post(url) : HttpClientRequest.get(url)
+    ).pipe(
       HttpClientRequest.acceptJson,
       HttpClientRequest.setHeaders(profile.headers ?? {}),
       HttpClientRequest.setHeader("authorization", `Bearer ${token}`),
     );
+
+    if (profile.method === "POST" && profile.body !== undefined)
+      request = HttpClientRequest.bodyText(request, profile.body, "application/json");
 
     const response = yield* Transport.request(http, request, options);
 

@@ -72,6 +72,21 @@ export default defineConfig({
         cache: false,
         dependsOn: ["build"],
       },
+      "example:linear": {
+        command: "bun src/linear-app.ts",
+        cache: false,
+        dependsOn: ["build"],
+      },
+      "example:dropbox": {
+        command: "bun src/dropbox-app.ts",
+        cache: false,
+        dependsOn: ["build"],
+      },
+      "example:notion": {
+        command: "bun src/notion-app.ts",
+        cache: false,
+        dependsOn: ["build"],
+      },
       "example:microsoft": {
         command: "bun src/microsoft-app.ts",
         cache: false,

@@ -57,6 +57,10 @@ instance. Follow each provider guide for setup.
 shape. LINE verifies web-login HS256 ID tokens. Railway merges UserInfo. Roblox
 keeps the trailing-slash issuer and does not receive email.
 
+`example:linear`, `example:dropbox`, and `example:notion` are the same sign-in
+shape. Linear reads the GraphQL viewer. Dropbox reads the current account.
+Notion reads `owner.user` from the token response.
+
 `example:microsoft` is the same shape for Entra ID. The common authority stores
 `tid:oid:tid`. See the [Microsoft Entra ID guide](../../docs/src/content/docs/guide/microsoft.md).
 

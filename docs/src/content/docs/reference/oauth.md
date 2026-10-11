@@ -409,6 +409,7 @@ expired-row cleanup and ingress limits.
 | Atlassian          | [`Atlassian.provider`](../guide/atlassian)                             |
 | Auth0              | [`Auth0.provider`](../guide/enterprise-oidc)                           |
 | Cognito            | [`Cognito.provider`](../guide/enterprise-oidc)                         |
+| Dropbox            | [`Dropbox.provider`](../guide/dropbox)                                 |
 | Figma              | [`Figma.provider`](../guide/figma)                                     |
 | GitHub             | [`GitHub.provider`](../guide/github)                                   |
 | GitLab             | [`GitLab.provider`](../guide/gitlab), with optional self-hosted issuer |
@@ -417,7 +418,9 @@ expired-row cleanup and ingress limits.
 | Keycloak           | [`Keycloak.provider`](../guide/enterprise-oidc)                        |
 | Kick               | [`Kick.provider`](../guide/kick)                                       |
 | LINE               | [`Line.provider`](../guide/line)                                       |
+| Linear             | [`Linear.provider`](../guide/linear)                                   |
 | Microsoft Entra ID | [`Microsoft.provider`](../guide/microsoft)                             |
+| Notion             | [`Notion.provider`](../guide/notion)                                   |
 | Okta               | [`Okta.provider`](../guide/enterprise-oidc)                            |
 | Railway            | [`Railway.provider`](../guide/railway)                                 |
 | Roblox             | [`Roblox.provider`](../guide/roblox)                                   |

@@ -565,10 +565,12 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
             claims,
           );
         })
-      : entry.client.fetchProfile(grant.accessToken).pipe(
-          Effect.mapError(unavailable),
-          Effect.flatMap((body) => decodeIdentity(entry, body, grant.accessToken)),
-        );
+      : provider.identitySource.from === "token"
+        ? decodeIdentity(entry, Redacted.value(receipt.body), grant.accessToken)
+        : entry.client.fetchProfile(grant.accessToken).pipe(
+            Effect.mapError(unavailable),
+            Effect.flatMap((body) => decodeIdentity(entry, body, grant.accessToken)),
+          );
 
     const refreshToken =
       saved.profile.retention === "access-and-refresh" ? grant.refreshToken : undefined;
@@ -674,6 +676,15 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
           continuation: previous,
         });
       }
+    } else if (provider.identitySource.from === "token") {
+      const identity = yield* decodeIdentity(
+        entry,
+        Redacted.value(receipt.body),
+        grant.accessToken,
+      );
+
+      if (identity.identity.subject !== request.context.identity.subject)
+        return yield* unavailable();
     } else {
       const body = yield* entry.client
         .fetchProfile(grant.accessToken)

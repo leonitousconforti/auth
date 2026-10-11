@@ -26,6 +26,8 @@ import {
   type OpenIdConnectOAuthProvider,
   type OpenIdConnectOAuthProtocolOptions,
   type OpenIdConnectOidcProvider,
+  type PlainOAuthIdentityDecoder,
+  type PlainOAuthIdentitySource,
 } from "./models";
 import { install, type NativeProvider } from "./native";
 
@@ -38,6 +40,26 @@ const fields = Schema.Record(
 ).check(Schema.makeFilter((record) => Object.keys(record).length <= 16));
 
 const secret = Schema.RedactedFromValue(boundedString(4096));
+
+const identityDecoder = <R>() =>
+  Schema.declare<PlainOAuthIdentityDecoder<R>>((input): input is PlainOAuthIdentityDecoder<R> =>
+    Predicate.isFunction(input),
+  );
+
+export const identitySourceSchema = <R>() =>
+  Schema.Union([
+    Schema.Struct({
+      url: boundedString(2048),
+      method: Schema.optionalKey(Schema.Literals(["GET", "POST"])),
+      headers: Schema.optionalKey(fields),
+      body: Schema.optionalKey(boundedString(4096)),
+      decodeIdentity: identityDecoder<R>(),
+    }),
+    Schema.Struct({
+      from: Schema.Literal("token"),
+      decodeIdentity: identityDecoder<R>(),
+    }),
+  ]);
 
 export const authentication = Schema.Union([
   Schema.Struct({ method: Schema.Literal("client_secret_basic"), secret }),
@@ -98,19 +120,9 @@ const optionsSchema = <R>() =>
             authorizationEndpoint: boundedString(2048),
             tokenEndpoint: boundedString(2048),
             pkceS256: Schema.Boolean,
-            identitySource: Schema.Struct({
-              url: boundedString(2048),
-              headers: Schema.optionalKey(fields),
-              // A configured function is trusted application code; its result has a separate schema boundary.
-              decodeIdentity: Schema.declare<
-                OpenIdConnectOAuthProvider<R>["identitySource"]["decodeIdentity"]
-              >(
-                (
-                  input,
-                ): input is OpenIdConnectOAuthProvider<R>["identitySource"]["decodeIdentity"] =>
-                  Predicate.isFunction(input),
-              ),
-            }),
+            tokenBodyFormat: Schema.optionalKey(Schema.Literals(["form", "json"])),
+            scopeSeparator: Schema.optionalKey(Schema.Literals([" ", ","])),
+            identitySource: identitySourceSchema<R>(),
           }),
         ]),
       ).check(Schema.isMinLength(1), Schema.isMaxLength(64)),
@@ -206,6 +218,73 @@ export const callbackEndpoint = (
   malformedReason: OpenIdConnectConfigurationError["reason"] = "metadata",
 ) => protocolUrl(value, true, malformedReason);
 
+export const copyIdentitySource = <R>(
+  source: PlainOAuthIdentitySource<R>,
+): PlainOAuthIdentitySource<R> =>
+  source.from === "token"
+    ? { ...source }
+    : {
+        ...source,
+        ...(source.headers === undefined ? {} : { headers: { ...source.headers } }),
+      };
+
+export const validateIdentitySource = Effect.fnUntraced(function* <R>(
+  source: PlainOAuthIdentitySource<R>,
+) {
+  if (source.from === "token") return;
+  yield* endpoint(source.url, "provider");
+  if ((source.method === undefined || source.method === "GET") && source.body !== undefined)
+    return yield* configError("identity-source");
+  const body = source.body;
+
+  if (body !== undefined)
+    yield* Effect.try({
+      try: () => {
+        const parsed: unknown = JSON.parse(body);
+
+        if (parsed === null || typeof parsed !== "object") throw new Error();
+      },
+      catch: () => configError("identity-source"),
+    });
+  for (const key of Object.keys(source.headers ?? {})) {
+    if (forbiddenHeaders.has(key.toLowerCase())) return yield* configError("identity-source");
+  }
+  yield* Effect.try({
+    try: () => new Headers(source.headers),
+    catch: () => configError("provider"),
+  });
+});
+
+export const nativeOAuthClientOptions = <R>(provider: {
+  readonly identitySource: PlainOAuthIdentitySource<R>;
+  readonly tokenBodyFormat?: "form" | "json";
+  readonly scopeSeparator?: " " | ",";
+}): Pick<OAuth.ClientOptions, "profile" | "tokenBodyFormat" | "scopeSeparator"> => {
+  const profile =
+    provider.identitySource.from === "token"
+      ? undefined
+      : {
+          url: provider.identitySource.url,
+          ...(provider.identitySource.method === undefined
+            ? {}
+            : { method: provider.identitySource.method }),
+          ...(provider.identitySource.headers === undefined
+            ? {}
+            : { headers: provider.identitySource.headers }),
+          ...(provider.identitySource.body === undefined
+            ? {}
+            : { body: provider.identitySource.body }),
+        };
+
+  return {
+    ...(profile === undefined ? {} : { profile }),
+    ...(provider.tokenBodyFormat === undefined
+      ? {}
+      : { tokenBodyFormat: provider.tokenBodyFormat }),
+    ...(provider.scopeSeparator === undefined ? {} : { scopeSeparator: provider.scopeSeparator }),
+  };
+};
+
 const checkParameters = Effect.fnUntraced(function* (
   parameters: Readonly<Record<string, string>> | undefined,
 ) {
@@ -272,12 +351,7 @@ export const prepareConfigurations = Effect.fn("OpenIdConnect.prepareConfigurati
       : {
           ...provider,
           ...detached,
-          identitySource: {
-            ...provider.identitySource,
-            ...(provider.identitySource.headers === undefined
-              ? {}
-              : { headers: { ...provider.identitySource.headers } }),
-          },
+          identitySource: copyIdentitySource(provider.identitySource),
         };
   });
 
@@ -330,16 +404,7 @@ export const prepareConfigurations = Effect.fn("OpenIdConnect.prepareConfigurati
           return yield* configError("callback");
       }
     }
-    if (provider.protocol === "oauth") {
-      yield* endpoint(provider.identitySource.url, "provider");
-      for (const key of Object.keys(provider.identitySource.headers ?? {})) {
-        if (forbiddenHeaders.has(key.toLowerCase())) return yield* configError("identity-source");
-      }
-      yield* Effect.try({
-        try: () => new Headers(provider.identitySource.headers),
-        catch: () => configError("provider"),
-      });
-    }
+    if (provider.protocol === "oauth") yield* validateIdentitySource(provider.identitySource);
     freezeOAuth(provider);
   }
   if (active.size !== names.size) return yield* configError("generation");
@@ -404,7 +469,7 @@ export const installProvider = Effect.fn("OpenIdConnect.installProvider")(functi
       return yield* configError("metadata");
     if (metadata.jwks_uri !== undefined) yield* endpoint(metadata.jwks_uri);
     if (metadata.userinfo_endpoint !== undefined) yield* endpoint(metadata.userinfo_endpoint);
-  } else {
+  } else if (provider.identitySource.from !== "token") {
     yield* endpoint(provider.identitySource.url);
   }
   freezeOAuth(metadata);
@@ -416,7 +481,7 @@ export const installProvider = Effect.fn("OpenIdConnect.installProvider")(functi
       authentication: provider.authentication,
       timeoutMs: timeoutSeconds * 1000,
       ...(provider.protocol === "oauth"
-        ? { profile: provider.identitySource }
+        ? nativeOAuthClientOptions(provider)
         : provider.userInfo === "merge" && metadata.userinfo_endpoint !== undefined
           ? { profile: { url: metadata.userinfo_endpoint } }
           : {}),

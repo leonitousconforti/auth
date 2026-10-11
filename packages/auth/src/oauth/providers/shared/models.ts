@@ -126,6 +126,32 @@ export interface OpenIdConnectOidcProvider extends ProviderGeneration {
   readonly maxAgeSeconds?: number;
 }
 
+export type PlainOAuthIdentityDecoder<R = never> = (
+  body: unknown,
+) => Effect.Effect<PlainOAuthIdentity, OAuthProtocolRejected, R>;
+
+export interface PlainOAuthHttpIdentitySource<R = never> {
+  readonly from?: undefined;
+  readonly url: string;
+  /** Defaults to GET. Linear and Dropbox use POST. */
+  readonly method?: "GET" | "POST";
+  readonly headers?: Readonly<Record<string, string>>;
+  /** JSON object string for POST identity calls that send a body. */
+  readonly body?: string;
+  /** Receives the identity HTTP body. Never put access tokens in the result. */
+  readonly decodeIdentity: PlainOAuthIdentityDecoder<R>;
+}
+
+export interface PlainOAuthTokenIdentitySource<R = never> {
+  readonly from: "token";
+  /** Receives the token receipt JSON. Never put access or refresh tokens in the result. */
+  readonly decodeIdentity: PlainOAuthIdentityDecoder<R>;
+}
+
+export type PlainOAuthIdentitySource<R = never> =
+  | PlainOAuthHttpIdentitySource<R>
+  | PlainOAuthTokenIdentitySource<R>;
+
 export interface OpenIdConnectOAuthProvider<R = never> extends ProviderGeneration {
   /** @internal First-party provider behavior, retained by the configuration codec. */
   readonly [tokenCompatibility]?: TokenCompatibility;
@@ -135,14 +161,11 @@ export interface OpenIdConnectOAuthProvider<R = never> extends ProviderGeneratio
   readonly authorizationEndpoint: string;
   readonly tokenEndpoint: string;
   readonly pkceS256: boolean;
-  readonly identitySource: {
-    readonly url: string;
-    readonly headers?: Readonly<Record<string, string>>;
-    /** Receives only the freshly fetched authenticated identity body, never a grant. */
-    readonly decodeIdentity: (
-      body: unknown,
-    ) => Effect.Effect<PlainOAuthIdentity, OAuthProtocolRejected, R>;
-  };
+  /** Defaults to form. Notion's token endpoint requires JSON. */
+  readonly tokenBodyFormat?: "form" | "json";
+  /** Defaults to a space. Linear's authorize URL requires commas. */
+  readonly scopeSeparator?: " " | ",";
+  readonly identitySource: PlainOAuthIdentitySource<R>;
 }
 
 export interface OpenIdConnectOAuthProtocolOptions<R = never> {
