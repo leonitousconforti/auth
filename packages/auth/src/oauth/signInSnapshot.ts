@@ -11,18 +11,49 @@ export const freezeOAuth = (value: unknown): void => {
   Object.freeze(value);
 };
 
+/** Compile once for a stable schema; each call still validates, detaches through
+ * JSON and recursively freezes its own result. Retains no snapshot values. */
+export const makeOAuthSnapshot = <S extends Schema.Codec<unknown, unknown, never, never>>(
+  schema: S,
+) => {
+  let detach: ((value: S["Type"]) => S["Type"]) | undefined;
+
+  const sync = (value: S["Type"]): S["Type"] => {
+    try {
+      if (detach === undefined) {
+        const codec = Schema.fromJsonString(Schema.toCodecJson(Schema.toType(schema)));
+        const encode = Schema.encodeSync(codec);
+        const decode = Schema.decodeSync(codec);
+
+        detach = (input) => decode(encode(input));
+      }
+      // JSON fields can otherwise retain nested input references through validation.
+      const result = detach(value);
+
+      freezeOAuth(result);
+
+      return result;
+    } catch {
+      throw OAuthUnavailable.make({});
+    }
+  };
+
+  return {
+    sync,
+    effect: (value: S["Type"]) =>
+      Effect.try({
+        try: () => sync(value),
+        catch: () => OAuthUnavailable.make({}),
+      }),
+  };
+};
+
 export const snapshotOAuthSync = <S extends Schema.Codec<unknown, unknown, never, never>>(
   schema: S,
   value: S["Type"],
 ): S["Type"] => {
   try {
-    // JSON fields can otherwise retain nested input references through validation.
-    const codec = Schema.fromJsonString(Schema.toCodecJson(Schema.toType(schema)));
-    const result = Schema.decodeSync(codec)(Schema.encodeSync(codec)(value));
-
-    freezeOAuth(result);
-
-    return result;
+    return makeOAuthSnapshot(schema).sync(value);
   } catch {
     throw OAuthUnavailable.make({});
   }

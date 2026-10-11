@@ -23,7 +23,7 @@ import {
   OAuthProtocolPreparation,
   OAuthTransactionSecrets,
 } from "../../../signInModels";
-import { snapshotOAuth } from "../../../signInSnapshot";
+import { makeOAuthSnapshot } from "../../../signInSnapshot";
 import { type ConnectedCompatibility } from "../compatibility";
 import {
   persistedResponseIssuerMode,
@@ -398,7 +398,7 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
   const prepareAuthorization: OAuthConnectedProtocol["Service"]["prepareAuthorization"] = Effect.fn(
     "OpenIdConnectConnected.prepareAuthorization",
   )(function* (input) {
-    const request = yield* snapshotOAuth(prepareInput, input);
+    const request = yield* snapshotPrepareInput.effect(input);
 
     const entry = installed.find(
       ({ provider }) =>
@@ -490,13 +490,13 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
         : { responseMode: entry.provider.responseMode }),
     };
 
-    return yield* snapshotOAuth(prepareOutput, result);
+    return yield* snapshotPrepareOutput.effect(result);
   });
 
   const exchangeGrant: OAuthConnectedProtocol["Service"]["exchangeGrant"] = Effect.fn(
     "OpenIdConnectConnected.exchangeGrant",
   )(function* (input) {
-    const request = yield* snapshotOAuth(exchangeInput, input),
+    const request = yield* snapshotExchangeInput.effect(input),
       saved = request.configuration;
 
     const entry = yield* retained(saved),
@@ -607,7 +607,7 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
       refreshToken !== undefined,
     );
 
-    return yield* snapshotOAuth(M.OAuthConnectedGrantResponse, {
+    return yield* snapshotOAuthConnectedGrantResponse.effect({
       ...identity,
       ...metadata,
       material: {
@@ -622,7 +622,7 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
   const refreshGrant: OAuthConnectedProtocol["Service"]["refreshGrant"] = Effect.fn(
     "OpenIdConnectConnected.refreshGrant",
   )(function* (input) {
-    const request = yield* snapshotOAuth(refreshInput, input),
+    const request = yield* snapshotRefreshInput.effect(input),
       saved = request.context.configuration;
 
     const entry = yield* retained(saved),
@@ -741,7 +741,7 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
     )
       return yield* unavailable();
 
-    return yield* snapshotOAuth(M.OAuthConnectedGrantResponse, {
+    return yield* snapshotOAuthConnectedGrantResponse.effect({
       identity: request.context.identity,
       ...metadata,
       material: {
@@ -756,7 +756,7 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
   const revokeGrant: OAuthConnectedProtocol["Service"]["revokeGrant"] = Effect.fn(
     "OpenIdConnectConnected.revokeGrant",
   )(function* (input) {
-    const request = yield* snapshotOAuth(revokeInput, input),
+    const request = yield* snapshotRevokeInput.effect(input),
       saved = request.context.configuration;
 
     const entry = yield* retained(saved),
@@ -880,3 +880,10 @@ export const makeOpenIdConnectConnectedProtocol = <R, Setup>(
   makeConnectedProtocolWithCompatibility(installation).pipe(
     Effect.provide(ProviderRevocation.layerUnsupported),
   );
+
+const snapshotPrepareInput = makeOAuthSnapshot(prepareInput);
+const snapshotPrepareOutput = makeOAuthSnapshot(prepareOutput);
+const snapshotExchangeInput = makeOAuthSnapshot(exchangeInput);
+const snapshotOAuthConnectedGrantResponse = makeOAuthSnapshot(M.OAuthConnectedGrantResponse);
+const snapshotRefreshInput = makeOAuthSnapshot(refreshInput);
+const snapshotRevokeInput = makeOAuthSnapshot(revokeInput);

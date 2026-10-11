@@ -85,7 +85,7 @@ import {
   OAuthTransactionSecrets,
   OAuthVerifiedExternalIdentity,
 } from "./signInModels";
-import { freezeOAuth, snapshotOAuth, snapshotOAuthSync } from "./signInSnapshot";
+import { freezeOAuth, makeOAuthSnapshot } from "./signInSnapshot";
 
 const Failure = Schema.Union([OAuthRejected, OAuthUnavailable, OAuthMethodUnsupported, HookDenied]);
 
@@ -172,7 +172,7 @@ export const makeOAuthMethod = <
     resolved: OAuthCredentialSnapshot,
     identity: OAuthVerifiedExternalIdentity,
   ) {
-    const credential = yield* snapshotOAuth(OAuthCredentialSnapshot, resolved);
+    const credential = yield* snapshotOAuthCredentialSnapshot.effect(resolved);
     const expectedModule: string = moduleId;
 
     if (
@@ -224,14 +224,14 @@ export const makeOAuthMethod = <
       // Validate the selected projection even for replacement protocol services.
       const claimsIdentity = yield* Schema.decodeEffect(ClaimsIdentity)({
         provider: identity.identity.provider,
-        identity: snapshotOAuthSync(OAuthVerifiedExternalIdentity, identity),
+        identity: snapshotOAuthVerifiedExternalIdentity.sync(identity),
       }).pipe(Effect.mapError(() => OAuthUnavailable.make({})));
 
       freezeOAuth(claimsIdentity);
 
       const claims = yield* resolveClaims({
         subjectId: credential.revision.subjectId,
-        credential: snapshotOAuthSync(OAuthCredentialSnapshot, credential),
+        credential: snapshotOAuthCredentialSnapshot.sync(credential),
         ...claimsIdentity,
       });
 
@@ -282,13 +282,13 @@ export const makeOAuthMethod = <
   const completeRegistration = Effect.fn("OAuthRegistration.authenticate")(function* (
     raw: OAuthRegistrationAuthentication,
   ) {
-    const authentication = yield* snapshotOAuth(OAuthRegistrationAuthentication, raw);
+    const authentication = yield* snapshotOAuthRegistrationAuthentication.effect(raw);
     const { intent, revision } = authentication;
     const now = DateTime.toEpochMillis(yield* DateTime.now);
 
     if (now >= intent.expiresAtMillis) return yield* OAuthRejected.make({});
 
-    const identity = snapshotOAuthSync(OAuthVerifiedExternalIdentity, {
+    const identity = snapshotOAuthVerifiedExternalIdentity.sync({
       identity: intent.identity,
       ...(intent.profile === undefined ? {} : { profile: intent.profile }),
       ...(intent.upstreamAuthenticatedAt === undefined
@@ -327,7 +327,7 @@ export const makeOAuthMethod = <
     return yield* authenticate({
       context: intent.context,
       identity,
-      credential: snapshotOAuthSync(OAuthCredentialSnapshot, { ...current, revision }),
+      credential: snapshotOAuthCredentialSnapshot.sync({ ...current, revision }),
       verifiedAtMillis: intent.verifiedAtMillis,
       completionExpiresAtMillis: intent.expiresAtMillis,
     });
@@ -364,7 +364,7 @@ export const makeOAuthMethod = <
     let captured: OAuthSignInPolicy | undefined;
 
     try {
-      captured = snapshotOAuthSync(OAuthSignInPolicy, configuration);
+      captured = snapshotOAuthSignInPolicy.sync(configuration);
     } catch {
       /* Layer reports configuration failure */
     }
@@ -436,7 +436,7 @@ export const makeOAuthMethod = <
         const begin = Effect.fn("OAuth.SignIn.begin")(
           function* (raw: typeof OAuthSignInBegin.Type) {
             yield* noAmbient();
-            const request = yield* snapshotOAuth(OAuthSignInBegin, raw);
+            const request = yield* snapshotOAuthSignInBegin.effect(raw);
             const target = yield* returnTarget(request.returnTarget);
 
             const canonicalTarget = yield* Schema.decodeEffect(OAuthReturnTarget)(target).pipe(
@@ -483,7 +483,7 @@ export const makeOAuthMethod = <
                 ...(request.prompt === undefined ? {} : { prompt: request.prompt }),
                 ...(request.loginHint === undefined ? {} : { loginHint: request.loginHint }),
               }),
-            ).pipe(Effect.flatMap((value) => snapshotOAuth(OAuthProtocolPreparation, value)));
+            ).pipe(Effect.flatMap((value) => snapshotOAuthProtocolPreparation.effect(value)));
 
             if (
               prepared.configuration.provider !== request.provider ||
@@ -498,7 +498,7 @@ export const makeOAuthMethod = <
 
             if (expiresAtMillis <= now) return yield* OAuthRejected.make({});
 
-            const context = yield* snapshotOAuth(OAuthSignInTransactionContext, {
+            const context = yield* snapshotOAuthSignInTransactionContext.effect({
               namespace: "effect-auth/oauth-sign-in-context/v1",
               moduleId: id,
               generation: policy.generation,
@@ -519,11 +519,11 @@ export const makeOAuthMethod = <
             });
 
             const sealed = yield* seal({
-              context: snapshotOAuthSync(OAuthSignInTransactionContext, context),
-              secrets: snapshotOAuthSync(OAuthTransactionSecrets, prepared.secrets),
-            }).pipe(Effect.flatMap((value) => snapshotOAuth(OAuthSealedTransaction, value)));
+              context: snapshotOAuthSignInTransactionContext.sync(context),
+              secrets: snapshotOAuthTransactionSecrets.sync(prepared.secrets),
+            }).pipe(Effect.flatMap((value) => snapshotOAuthSealedTransaction.effect(value)));
 
-            const flow = snapshotOAuthSync(OAuthSignInFlow, {
+            const flow = snapshotOAuthSignInFlow.sync({
               context,
               sealed,
             });
@@ -538,9 +538,9 @@ export const makeOAuthMethod = <
                 };
 
             const receipt = yield* issue<Issuance>(
-              snapshotOAuthSync(OAuthSignInFlow, flow),
+              snapshotOAuthSignInFlow.sync(flow),
               (decision, journal) => {
-                const checked = snapshotOAuthSync(OAuthIssueDecision, decision);
+                const checked = snapshotOAuthIssueDecision.sync(decision);
 
                 if (checked._tag === "Rejected")
                   return journal.prepare({ _tag: "Rejected" as const });
@@ -586,7 +586,7 @@ export const makeOAuthMethod = <
               }),
             );
             yield* noAmbient();
-            const request = yield* snapshotOAuth(OAuthSignInComplete, raw);
+            const request = yield* snapshotOAuthSignInComplete.effect(raw);
             const response = request.response;
 
             const serialized = yield* Schema.encodeEffect(responseJson)(response).pipe(
@@ -615,11 +615,11 @@ export const makeOAuthMethod = <
                 requestBindingExpiresAtMillis: binder.expiresAtMillis,
                 ...(response.issuer === undefined ? {} : { responseIssuer: response.issuer }),
               },
-              (value, journal) => journal.prepare(snapshotOAuthSync(OAuthConsumeDecision, value)),
+              (value, journal) => journal.prepare(snapshotOAuthConsumeDecision.sync(value)),
             ).pipe(Effect.flatMap(read));
 
             if (decision._tag !== "Consumed") return yield* OAuthRejected.make({});
-            const flow = snapshotOAuthSync(OAuthSignInFlow, decision.flow);
+            const flow = snapshotOAuthSignInFlow.sync(decision.flow);
             const context = flow.context;
 
             if (
@@ -650,7 +650,7 @@ export const makeOAuthMethod = <
             const identity = yield* bounded(
               Effect.gen(function* () {
                 const secrets = yield* open({ context, sealed: flow.sealed }).pipe(
-                  Effect.flatMap((value) => snapshotOAuth(OAuthTransactionSecrets, value)),
+                  Effect.flatMap((value) => snapshotOAuthTransactionSecrets.effect(value)),
                 );
 
                 if (
@@ -662,7 +662,7 @@ export const makeOAuthMethod = <
                   return yield* OAuthUnavailable.make({});
 
                 const exchangeInput = {
-                  configuration: snapshotOAuthSync(OAuthProtocolConfiguration, context),
+                  configuration: snapshotOAuthProtocolConfiguration.sync(context),
                   response,
                   secrets,
                   verificationStartedAt: start,
@@ -672,7 +672,7 @@ export const makeOAuthMethod = <
                   if (context.access !== undefined) return yield* OAuthRejected.make({});
 
                   return yield* exchangeVerifiedIdentity(exchangeInput).pipe(
-                    Effect.flatMap((value) => snapshotOAuth(OAuthVerifiedExternalIdentity, value)),
+                    Effect.flatMap((value) => snapshotOAuthVerifiedExternalIdentity.effect(value)),
                   );
                 }
                 grantStartedAt = DateTime.toEpochMillis(start);
@@ -727,7 +727,7 @@ export const makeOAuthMethod = <
 
               const issued = yield* registration
                 .issue({ intent: prepared.intent }, (value, journal) => {
-                  const checked = snapshotOAuthSync(OAuthRegistrationIssueDecision, value);
+                  const checked = snapshotOAuthRegistrationIssueDecision.sync(value);
 
                   if (
                     checked._tag === "RegistrationIssued" &&
@@ -870,7 +870,7 @@ export const makeOAuthMethod = <
       let captured: OAuthRegistrationPolicy | undefined;
 
       try {
-        captured = snapshotOAuthSync(OAuthRegistrationPolicy, registrationConfiguration);
+        captured = snapshotOAuthRegistrationPolicy.sync(registrationConfiguration);
       } catch {
         /* Layer reports invalid policy. */
       }
@@ -1019,3 +1019,20 @@ export const makeOAuthMethod = <
     group: operationGroup(Begin, Complete),
   });
 };
+
+const snapshotOAuthCredentialSnapshot = makeOAuthSnapshot(OAuthCredentialSnapshot);
+const snapshotOAuthVerifiedExternalIdentity = makeOAuthSnapshot(OAuthVerifiedExternalIdentity);
+const snapshotOAuthRegistrationAuthentication = makeOAuthSnapshot(OAuthRegistrationAuthentication);
+const snapshotOAuthSignInPolicy = makeOAuthSnapshot(OAuthSignInPolicy);
+const snapshotOAuthSignInBegin = makeOAuthSnapshot(OAuthSignInBegin);
+const snapshotOAuthProtocolPreparation = makeOAuthSnapshot(OAuthProtocolPreparation);
+const snapshotOAuthSignInTransactionContext = makeOAuthSnapshot(OAuthSignInTransactionContext);
+const snapshotOAuthTransactionSecrets = makeOAuthSnapshot(OAuthTransactionSecrets);
+const snapshotOAuthSealedTransaction = makeOAuthSnapshot(OAuthSealedTransaction);
+const snapshotOAuthSignInFlow = makeOAuthSnapshot(OAuthSignInFlow);
+const snapshotOAuthIssueDecision = makeOAuthSnapshot(OAuthIssueDecision);
+const snapshotOAuthSignInComplete = makeOAuthSnapshot(OAuthSignInComplete);
+const snapshotOAuthConsumeDecision = makeOAuthSnapshot(OAuthConsumeDecision);
+const snapshotOAuthProtocolConfiguration = makeOAuthSnapshot(OAuthProtocolConfiguration);
+const snapshotOAuthRegistrationIssueDecision = makeOAuthSnapshot(OAuthRegistrationIssueDecision);
+const snapshotOAuthRegistrationPolicy = makeOAuthSnapshot(OAuthRegistrationPolicy);

@@ -9,7 +9,7 @@ import {
 } from "./registrationModels";
 import { OAuthRejected, OAuthUnavailable } from "./signInErrors";
 import type { OAuthSignInFlow, OAuthVerifiedExternalIdentity } from "./signInModels";
-import { snapshotOAuthSync } from "./signInSnapshot";
+import { makeOAuthSnapshot } from "./signInSnapshot";
 
 const tuple = Schema.fromJsonString(
   Schema.Tuple([
@@ -94,7 +94,7 @@ export const prepare = Effect.fn("OAuthRegistration.prepareIntent")(function* (
 
   credentialBytes.fill(0);
 
-  const intent = snapshotOAuthSync(OAuthRegistrationIntent, {
+  const intent = snapshotOAuthRegistrationIntent.sync({
     namespace: "effect-auth/oauth-registration-intent/v1",
     reference,
     context: flow.context,
@@ -125,3 +125,5 @@ export const prepare = Effect.fn("OAuthRegistration.prepareIntent")(function* (
     }),
   };
 });
+
+const snapshotOAuthRegistrationIntent = makeOAuthSnapshot(OAuthRegistrationIntent);

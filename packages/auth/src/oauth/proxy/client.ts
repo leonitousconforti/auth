@@ -6,7 +6,7 @@ import { OAuthProtocol } from "../OAuthProtocol";
 import type { ProviderDefinition } from "../providerDefinition";
 import { OAuthProtocolRejected, OAuthRejected, OAuthUnavailable } from "../signInErrors";
 import { OAuthVerifiedExternalIdentity } from "../signInModels";
-import { snapshotOAuthSync } from "../signInSnapshot";
+import { makeOAuthSnapshot } from "../signInSnapshot";
 import {
   Begin,
   CompletionUrl,
@@ -38,7 +38,7 @@ export const provider = (
   options: Options,
 ): ProviderDefinition<ConfigurationError, Crypto.Crypto | HttpClient.HttpClient | Scope.Scope> => {
   const saved = Result.try({
-    try: () => snapshotOAuthSync(Options, options),
+    try: () => snapshotOptions.sync(options),
     catch: () => ConfigurationError.make({}),
   });
 
@@ -214,3 +214,5 @@ export const provider = (
     }),
   };
 };
+
+const snapshotOptions = makeOAuthSnapshot(Options);

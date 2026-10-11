@@ -33,7 +33,7 @@ import { credentialDigest } from "./registrationSecrets";
 import { OAuthMethodUnsupported, OAuthRejected, OAuthUnavailable } from "./signInErrors";
 import type { OAuthCommandId } from "./signInModels";
 import { OAuthCleanupInput, OAuthModuleId } from "./signInModels";
-import { freezeOAuth, snapshotOAuthSync } from "./signInSnapshot";
+import { freezeOAuth, makeOAuthSnapshot } from "./signInSnapshot";
 
 const Failure = Schema.Union([
   OAuthRejected,
@@ -214,7 +214,7 @@ export const makeOAuthRegistration = <
             yield* noAmbient();
             if (authenticate && authority.authentication !== "first-confirmed-registration")
               return yield* OAuthMethodUnsupported.make({});
-            const input = snapshotOAuthSync(OAuthRegistrationPrivateInput, raw);
+            const input = snapshotOAuthRegistrationPrivateInput.sync(raw);
             const data = yield* snapshotData(raw.registration);
 
             const verified = yield* verify(input.flowId, input.requestBinding).pipe(
@@ -225,7 +225,7 @@ export const makeOAuthRegistration = <
               ),
             );
 
-            const access = snapshotOAuthSync(OAuthRegistrationAccess, {
+            const access = snapshotOAuthRegistrationAccess.sync({
               moduleId: id,
               reference: input.reference,
               flowId: input.flowId,
@@ -239,10 +239,10 @@ export const makeOAuthRegistration = <
               ),
             });
 
-            const found = yield* read(snapshotOAuthSync(OAuthRegistrationAccess, access));
+            const found = yield* read(snapshotOAuthRegistrationAccess.sync(access));
 
             if (found === undefined) return yield* OAuthRejected.make({});
-            const current = snapshotOAuthSync(OAuthRegistrationInspection, found);
+            const current = snapshotOAuthRegistrationInspection.sync(found);
             const intent = current.intent;
             const context = intent.context;
 
@@ -268,17 +268,11 @@ export const makeOAuthRegistration = <
               return yield* OAuthRejected.make({});
 
             const inspected = yield* inspect({
-              intent: snapshotOAuthSync(OAuthRegistrationIntent, intent),
+              intent: snapshotOAuthRegistrationIntent.sync(intent),
               registration: yield* snapshotData(data),
             });
 
-            const checked = snapshotOAuthSync(
-              Schema.Struct({
-                fingerprint: OAuthRegistrationFingerprint,
-                eligible: Schema.Boolean,
-              }),
-              inspected,
-            );
+            const checked = snapshotEligibility.sync(inspected);
 
             const payload = yield* Schema.encodeEffect(Schema.fromJsonString(RegistrationCodec))(
               data,
@@ -334,7 +328,7 @@ export const makeOAuthRegistration = <
               rawDecision,
               journal,
             ) => {
-              const decision = snapshotOAuthSync(OAuthRegistrationDecision, rawDecision);
+              const decision = snapshotOAuthRegistrationDecision.sync(rawDecision);
 
               const authentication =
                 decision._tag === "Registered" && !decision.replayed && authenticate
@@ -383,8 +377,8 @@ export const makeOAuthRegistration = <
 
               return yield* owner.register(
                 {
-                  access: snapshotOAuthSync(OAuthRegistrationAccess, access),
-                  intent: snapshotOAuthSync(OAuthRegistrationIntent, intent),
+                  access: snapshotOAuthRegistrationAccess.sync(access),
+                  intent: snapshotOAuthRegistrationIntent.sync(intent),
                   commandId: input.commandId,
                   registration: ownerData,
                   payload,
@@ -409,7 +403,7 @@ export const makeOAuthRegistration = <
           }).pipe(Effect.mapError(() => OAuthRejected.make({})));
 
           const receipt = yield* cleanup(input, (value, journal) =>
-            journal.prepare(snapshotOAuthSync(CleanupResult, value)),
+            journal.prepare(snapshotCleanupResult.sync(value)),
           );
 
           return yield* receipt.read.pipe(Effect.mapError(() => OAuthUnavailable.make({})));
@@ -438,3 +432,14 @@ export const makeOAuthRegistration = <
     group: operationGroup(Complete),
   });
 };
+
+const snapshotOAuthRegistrationPrivateInput = makeOAuthSnapshot(OAuthRegistrationPrivateInput);
+const snapshotOAuthRegistrationAccess = makeOAuthSnapshot(OAuthRegistrationAccess);
+const snapshotOAuthRegistrationInspection = makeOAuthSnapshot(OAuthRegistrationInspection);
+const snapshotOAuthRegistrationIntent = makeOAuthSnapshot(OAuthRegistrationIntent);
+const snapshotOAuthRegistrationDecision = makeOAuthSnapshot(OAuthRegistrationDecision);
+const snapshotCleanupResult = makeOAuthSnapshot(CleanupResult);
+
+const snapshotEligibility = makeOAuthSnapshot(
+  Schema.Struct({ fingerprint: OAuthRegistrationFingerprint, eligible: Schema.Boolean }),
+);

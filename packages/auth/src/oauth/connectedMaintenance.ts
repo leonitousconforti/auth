@@ -25,7 +25,7 @@ import {
 import { OAuthConnectedTokenProtector } from "./OAuthConnectedTokenProtector";
 import { OAuthMethodUnsupported, OAuthUnavailable } from "./signInErrors";
 import { OAuthClaimId, OAuthCleanupInput } from "./signInModels";
-import { snapshotOAuth, snapshotOAuthSync } from "./signInSnapshot";
+import { makeOAuthSnapshot } from "./signInSnapshot";
 
 const Failure = Schema.Union([OperationForbidden, OAuthMethodUnsupported, OAuthUnavailable]);
 const RunResult = Schema.Struct({ outcome: Schema.Literals(["Empty", "Confirmed", "Unknown"]) });
@@ -79,13 +79,13 @@ export const makeOAuthConnectedMaintenance = <const Id extends string>(
       ) {
         yield* authorize(invocation);
 
-        const input = yield* snapshotOAuth(OAuthCleanupInput, {
+        const input = yield* snapshotOAuthCleanupInput.effect({
           moduleId: id,
           limit,
         });
 
         const receipt = yield* clean(input, (value, journal) => {
-          const result = snapshotOAuthSync(CleanupResult, value);
+          const result = snapshotCleanupResult.sync(value);
 
           if (result.removed > input.limit) throw OAuthUnavailable.make({});
 
@@ -112,14 +112,14 @@ export const makeOAuthConnectedMaintenance = <const Id extends string>(
               claim(
                 { moduleId: id, claimId, lifetimeMillis: policy.refreshClaimLifetimeMillis },
                 (value, journal) =>
-                  journal.prepare(snapshotOAuthSync(OAuthConnectedRevocationDecision, value)),
+                  journal.prepare(snapshotOAuthConnectedRevocationDecision.sync(value)),
               ),
             );
 
             const decision = yield* connectedRead(receipt);
 
             if (decision._tag === "Empty") return { outcome: "Empty" as const };
-            const owned = snapshotOAuthSync(OAuthConnectedRevocationClaim, decision.claim);
+            const owned = snapshotOAuthConnectedRevocationClaim.sync(decision.claim);
 
             if (
               owned.claimId !== claimId ||
@@ -142,13 +142,11 @@ export const makeOAuthConnectedMaintenance = <const Id extends string>(
               const material = yield* open({
                 context: owned.job.grant.context,
                 sealed: owned.job.grant.sealed,
-              }).pipe(
-                Effect.flatMap((value) => snapshotOAuth(M.OAuthConnectedTokenMaterial, value)),
-              );
+              }).pipe(Effect.flatMap((value) => snapshotOAuthConnectedTokenMaterial.effect(value)));
 
               return yield* revokeGrant({
-                context: snapshotOAuthSync(M.OAuthConnectedTokenContext, context),
-                material: snapshotOAuthSync(M.OAuthConnectedTokenMaterial, material),
+                context: snapshotOAuthConnectedTokenContext.sync(context),
+                material: snapshotOAuthConnectedTokenMaterial.sync(material),
               }).pipe(
                 Effect.flatMap((value) => Schema.decodeEffect(Schema.Literal("Confirmed"))(value)),
                 Effect.ensuring(Effect.sync(() => wipeConnectedMaterial(material))),
@@ -177,9 +175,7 @@ export const makeOAuthConnectedMaintenance = <const Id extends string>(
             // cleanup may take longer; an unknown outcome permits no retry.
             const final = yield* connectedBounded(
               settle({ claim: owned, outcome }, (value, journal) =>
-                journal.prepare(
-                  snapshotOAuthSync(Schema.Struct({ settled: Schema.Boolean }), value),
-                ),
+                journal.prepare(snapshotSettlement.sync(value)),
               ).pipe(Effect.flatMap(connectedRead)),
               5_000,
             ).pipe(Effect.mapError(() => OAuthUnavailable.make({})));
@@ -240,3 +236,16 @@ export const makeOAuthConnectedMaintenance = <const Id extends string>(
     maintenanceGroup: operationGroup(CleanupOperation, RunRevocation),
   };
 };
+
+const snapshotOAuthCleanupInput = makeOAuthSnapshot(OAuthCleanupInput);
+const snapshotCleanupResult = makeOAuthSnapshot(CleanupResult);
+
+const snapshotOAuthConnectedRevocationDecision = makeOAuthSnapshot(
+  OAuthConnectedRevocationDecision,
+);
+
+const snapshotOAuthConnectedRevocationClaim = makeOAuthSnapshot(OAuthConnectedRevocationClaim);
+const snapshotOAuthConnectedTokenMaterial = makeOAuthSnapshot(M.OAuthConnectedTokenMaterial);
+const snapshotOAuthConnectedTokenContext = makeOAuthSnapshot(M.OAuthConnectedTokenContext);
+
+const snapshotSettlement = makeOAuthSnapshot(Schema.Struct({ settled: Schema.Boolean }));

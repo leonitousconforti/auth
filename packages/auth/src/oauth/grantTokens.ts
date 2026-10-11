@@ -6,7 +6,7 @@ import {
   type OAuthConnectedTokenContext,
   OAuthConnectedTokenMaterial,
 } from "./connectedModels";
-import { snapshotOAuth } from "./signInSnapshot";
+import { makeOAuthSnapshot } from "./signInSnapshot";
 
 export interface PreviousGrantTokens {
   readonly material: OAuthConnectedTokenMaterial;
@@ -32,7 +32,7 @@ export const retainGrantTokens = Effect.fn("OAuth.retainGrantTokens")(function* 
       ? (response.material.refreshToken ?? previous?.material.refreshToken)
       : undefined;
 
-  const material = yield* snapshotOAuth(OAuthConnectedTokenMaterial, {
+  const material = yield* snapshotOAuthConnectedTokenMaterial.effect({
     namespace: response.material.namespace,
     accessToken: response.material.accessToken,
     continuation: response.material.continuation,
@@ -57,3 +57,5 @@ export const retainGrantTokens = Effect.fn("OAuth.retainGrantTokens")(function* 
 
   return { material, refreshExpiresAtMillis };
 });
+
+const snapshotOAuthConnectedTokenMaterial = makeOAuthSnapshot(OAuthConnectedTokenMaterial);

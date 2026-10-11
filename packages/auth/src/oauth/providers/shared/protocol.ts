@@ -22,7 +22,7 @@ import {
   OAuthTransactionSecrets,
   OAuthVerifiedExternalIdentity,
 } from "../../signInModels";
-import { snapshotOAuth } from "../../signInSnapshot";
+import { makeOAuthSnapshot } from "../../signInSnapshot";
 import { tokenCompatibility } from "./compatibility";
 import type { InstalledConfiguration } from "./configuration";
 import { discoveryProfile } from "./discovery";
@@ -205,12 +205,12 @@ export const makeOpenIdConnectOAuthProtocol = Effect.fn("makeOpenIdConnectOAuthP
         ...(provider.responseMode === undefined ? {} : { responseMode: provider.responseMode }),
       };
 
-      return yield* snapshotOAuth(OAuthProtocolPreparation, result);
+      return yield* snapshotOAuthProtocolPreparation.effect(result);
     });
 
     const exchangeVerifiedIdentity: OAuthProtocol["Service"]["exchangeVerifiedIdentity"] =
       Effect.fn("OpenIdConnect.exchangeVerifiedIdentity")(function* (input) {
-        const request = yield* snapshotOAuth(exchangeInput, input);
+        const request = yield* snapshotExchangeInput.effect(input);
         const saved = request.configuration;
 
         const entry = installed.find(
@@ -340,7 +340,7 @@ export const makeOpenIdConnectOAuthProtocol = Effect.fn("makeOpenIdConnectOAuthP
             decodedSubject,
           );
 
-          return yield* snapshotOAuth(OAuthVerifiedExternalIdentity, {
+          return yield* snapshotOAuthVerifiedExternalIdentity.effect({
             identity: {
               provider: provider.provider,
               issuer: provider.issuer,
@@ -395,7 +395,7 @@ export const makeOpenIdConnectOAuthProtocol = Effect.fn("makeOpenIdConnectOAuthP
           Effect.mapError(rejected),
         );
 
-        return yield* snapshotOAuth(OAuthVerifiedExternalIdentity, {
+        return yield* snapshotOAuthVerifiedExternalIdentity.effect({
           identity: {
             provider: provider.provider,
             issuer: provider.issuer,
@@ -427,3 +427,7 @@ export const makeOpenIdConnectOAuthProtocol = Effect.fn("makeOpenIdConnectOAuthP
   },
   unavailableOnDefect,
 );
+
+const snapshotOAuthProtocolPreparation = makeOAuthSnapshot(OAuthProtocolPreparation);
+const snapshotExchangeInput = makeOAuthSnapshot(exchangeInput);
+const snapshotOAuthVerifiedExternalIdentity = makeOAuthSnapshot(OAuthVerifiedExternalIdentity);

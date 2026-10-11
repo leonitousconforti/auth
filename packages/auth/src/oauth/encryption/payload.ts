@@ -4,7 +4,7 @@ import { Base64Url } from "effect/encoding";
 
 import { OAuthConfigurationError, OAuthUnavailable } from "../signInErrors";
 import { OAuthEncryptionKeyId } from "../signInModels";
-import { snapshotOAuth, snapshotOAuthSync } from "../signInSnapshot";
+import { makeOAuthSnapshot } from "../signInSnapshot";
 import type { OAuthTransactionKeyring } from "../transactionKeyring";
 
 const keyringSchema = Schema.Struct({
@@ -93,11 +93,14 @@ export const payloadEncryption = <C, P, S extends Envelope>(
   // Preserve the constructor-time detached snapshot, even if the caller changes
   // or wipes its configuration before building the Layer.
   const captured = Result.try({
-    try: () => snapshotOAuthSync(keyringSchema, keyring),
+    try: () => snapshotKeyringSchema.sync(keyring),
     catch: () => OAuthConfigurationError.make({ reason: "keyring" }),
   });
 
   const codec = Schema.fromJsonString(options.plaintext);
+  const snapshotContext = makeOAuthSnapshot(options.context);
+  const snapshotPlaintext = makeOAuthSnapshot(options.plaintext);
+  const snapshotEnvelope = makeOAuthSnapshot(options.envelope);
 
   return Effect.gen(function* () {
     const configuration = yield* Effect.fromResult(captured);
@@ -152,11 +155,11 @@ export const payloadEncryption = <C, P, S extends Envelope>(
       seal: (context: C, value: P) =>
         run(
           Effect.gen(function* () {
-            const detached = yield* snapshotOAuth(options.context, context);
+            const detached = yield* snapshotContext.effect(context);
 
             const plaintext = yield* options.validate(
               detached,
-              yield* snapshotOAuth(options.plaintext, value),
+              yield* snapshotPlaintext.effect(value),
             );
 
             const json = yield* Schema.encodeEffect(codec)(plaintext).pipe(Effect.mapError(fail));
@@ -185,14 +188,14 @@ export const payloadEncryption = <C, P, S extends Envelope>(
               ciphertext: Redacted.make(Base64Url.encode(ciphertext)),
             }).pipe(Effect.mapError(fail));
 
-            return yield* snapshotOAuth(options.envelope, sealed);
+            return yield* snapshotEnvelope.effect(sealed);
           }),
         ),
       open: (context: C, envelope: S) =>
         run(
           Effect.gen(function* () {
-            const detached = yield* snapshotOAuth(options.context, context);
-            const sealed = yield* snapshotOAuth(options.envelope, envelope);
+            const detached = yield* snapshotContext.effect(context);
+            const sealed = yield* snapshotEnvelope.effect(envelope);
             const key = yield* copyKey(sealed.keyId);
             const nonce = yield* decodeBase64(sealed.nonce, 24, 24);
 
@@ -233,3 +236,5 @@ export const payloadEncryption = <C, P, S extends Envelope>(
     };
   });
 };
+
+const snapshotKeyringSchema = makeOAuthSnapshot(keyringSchema);

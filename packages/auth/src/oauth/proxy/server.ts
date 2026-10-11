@@ -12,7 +12,7 @@ import {
   OAuthRedirectUri,
   OAuthVerifiedExternalIdentity,
 } from "../signInModels";
-import { snapshotOAuth, snapshotOAuthSync } from "../signInSnapshot";
+import { makeOAuthSnapshot } from "../signInSnapshot";
 import {
   Begin,
   ConfigurationError,
@@ -63,7 +63,7 @@ export const layer = <E, R>(options: Options<E, R>) => {
   const declarations = Object.entries(options.providers);
 
   const environments = Result.try({
-    try: () => snapshotOAuthSync(Schema.Array(Environment), options.environments),
+    try: () => snapshotEnvironments.sync(options.environments),
     catch: () => ConfigurationError.make({}),
   });
 
@@ -166,9 +166,9 @@ export const layer = <E, R>(options: Options<E, R>) => {
 
         if (stored === undefined) return yield* Rejected.make({});
 
-        const record = yield* snapshotOAuth(Record, stored).pipe(
-          Effect.mapError(() => Unavailable.make({})),
-        );
+        const record = yield* snapshotRecord
+          .effect(stored)
+          .pipe(Effect.mapError(() => Unavailable.make({})));
 
         if (record.context.id !== id || record.context.proxy !== proxy)
           return yield* Unavailable.make({});
@@ -192,9 +192,9 @@ export const layer = <E, R>(options: Options<E, R>) => {
       });
 
       const transition = Effect.fnUntraced(function* (previous: Record, next: Record) {
-        const checked = yield* snapshotOAuth(Record, next).pipe(
-          Effect.mapError(() => Unavailable.make({})),
-        );
+        const checked = yield* snapshotRecord
+          .effect(next)
+          .pipe(Effect.mapError(() => Unavailable.make({})));
 
         if (!(yield* persistence.compareAndSet(proxy, previous.version, checked)))
           return yield* Rejected.make({});
@@ -224,7 +224,7 @@ export const layer = <E, R>(options: Options<E, R>) => {
             ...(input.loginHint === undefined ? {} : { loginHint: input.loginHint }),
           })
           .pipe(
-            Effect.flatMap((value) => snapshotOAuth(OAuthProtocolPreparation, value)),
+            Effect.flatMap((value) => snapshotOAuthProtocolPreparation.effect(value)),
             Effect.mapError(() => Unavailable.make({})),
           );
 
@@ -416,7 +416,7 @@ export const layer = <E, R>(options: Options<E, R>) => {
             .pipe(
               Effect.timeout(30_000),
               Effect.mapError(() => Unavailable.make({})),
-              Effect.flatMap((value) => snapshotOAuth(OAuthVerifiedExternalIdentity, value)),
+              Effect.flatMap((value) => snapshotOAuthVerifiedExternalIdentity.effect(value)),
               Effect.mapError(() => Unavailable.make({})),
             );
 
@@ -546,3 +546,9 @@ export const routes = Layer.unwrap(
     );
   }),
 );
+
+const snapshotRecord = makeOAuthSnapshot(Record);
+const snapshotOAuthProtocolPreparation = makeOAuthSnapshot(OAuthProtocolPreparation);
+const snapshotOAuthVerifiedExternalIdentity = makeOAuthSnapshot(OAuthVerifiedExternalIdentity);
+
+const snapshotEnvironments = makeOAuthSnapshot(Schema.Array(Environment));
