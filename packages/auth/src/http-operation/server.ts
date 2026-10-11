@@ -55,6 +55,7 @@ const responseSchema = Schema.Union([
 
 const encodeResponse = Schema.encodeEffect(Schema.fromJsonString(responseSchema));
 const encodeCredential = Schema.encodeSync(Schema.fromJsonString(CredentialWire));
+const decodeRequestBody = Schema.decodeEffect(Schema.fromJsonString(HttpRequestBody));
 
 export interface OAuthHttpCallback<R = never> {
   readonly route: AnyRoute;
@@ -455,7 +456,7 @@ export const make = <
           callback === undefined && route.method === "GET"
             ? undefined
             : callback === undefined
-              ? (yield* Schema.decodeEffect(Schema.fromJsonString(HttpRequestBody))(
+              ? (yield* decodeRequestBody(
                   yield* boundedText(request, config.maximumBodyBytes),
                 ).pipe(Effect.mapError(() => OperationHttpError.make({ reason: "request" }))))
                   .payload
