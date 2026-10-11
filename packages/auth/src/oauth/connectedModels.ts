@@ -195,6 +195,12 @@ export const OAuthConnectedContinuation = Schema.Union([
     clientId: Schema.NonEmptyString.check(Schema.isMaxLength(1024)),
     nonce: OAuthTransactionSecrets.fields.oidcNonce,
     authTime: Schema.optionalKey(numericDate),
+    /** ID-token `sub` for verifier continuity when the durable subject differs. */
+    subject: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(1024))),
+    /** Concrete ID-token `iss` from the original authentication. */
+    issuer: Schema.optionalKey(
+      Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(2048)),
+    ),
   }),
   Schema.TaggedStruct("OAuth", {}),
 ]);

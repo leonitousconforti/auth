@@ -44,6 +44,7 @@ export * as HuggingFace from "./HuggingFace.ts";
 export * as Keycloak from "./Keycloak.ts";
 export * as Kick from "./Kick.ts";
 export * as Line from "./Line.ts";
+export * as Microsoft from "./Microsoft.ts";
 export * as Okta from "./Okta.ts";
 export * as Railway from "./Railway.ts";
 export * as Roblox from "./Roblox.ts";

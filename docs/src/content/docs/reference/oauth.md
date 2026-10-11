@@ -404,30 +404,31 @@ expired-row cleanup and ingress limits.
 
 ## Providers
 
-| Integration       | Configure                                                              |
-| ----------------- | ---------------------------------------------------------------------- |
-| Atlassian         | [`Atlassian.provider`](../guide/atlassian)                             |
-| Auth0             | [`Auth0.provider`](../guide/enterprise-oidc)                           |
-| Cognito           | [`Cognito.provider`](../guide/enterprise-oidc)                         |
-| Figma             | [`Figma.provider`](../guide/figma)                                     |
-| GitHub            | [`GitHub.provider`](../guide/github)                                   |
-| GitLab            | [`GitLab.provider`](../guide/gitlab), with optional self-hosted issuer |
-| Google            | [`Google.provider`](../guide/google)                                   |
-| Hugging Face      | [`HuggingFace.provider`](../guide/huggingface)                         |
-| Keycloak          | [`Keycloak.provider`](../guide/enterprise-oidc)                        |
-| Kick              | [`Kick.provider`](../guide/kick)                                       |
-| LINE              | [`Line.provider`](../guide/line)                                       |
-| Okta              | [`Okta.provider`](../guide/enterprise-oidc)                            |
-| Railway           | [`Railway.provider`](../guide/railway)                                 |
-| Roblox            | [`Roblox.provider`](../guide/roblox)                                   |
-| Slack             | [`Slack.provider`](../guide/slack)                                     |
-| Vercel            | [`Vercel.provider`](../guide/vercel)                                   |
-| X                 | [`X.provider`](../guide/x)                                             |
-| Zitadel           | [`Zitadel.provider`](../guide/enterprise-oidc)                         |
-| Zoom              | [`Zoom.provider`](../guide/zoom)                                       |
-| GitHub API access | `GitHub.accessProfile` plus provider `access`                          |
-| Strava            | `Strava.provider`, with optional access profile                        |
-| Other OAuth/OIDC  | `OpenIdConnect.provider`                                               |
+| Integration        | Configure                                                              |
+| ------------------ | ---------------------------------------------------------------------- |
+| Atlassian          | [`Atlassian.provider`](../guide/atlassian)                             |
+| Auth0              | [`Auth0.provider`](../guide/enterprise-oidc)                           |
+| Cognito            | [`Cognito.provider`](../guide/enterprise-oidc)                         |
+| Figma              | [`Figma.provider`](../guide/figma)                                     |
+| GitHub             | [`GitHub.provider`](../guide/github)                                   |
+| GitLab             | [`GitLab.provider`](../guide/gitlab), with optional self-hosted issuer |
+| Google             | [`Google.provider`](../guide/google)                                   |
+| Hugging Face       | [`HuggingFace.provider`](../guide/huggingface)                         |
+| Keycloak           | [`Keycloak.provider`](../guide/enterprise-oidc)                        |
+| Kick               | [`Kick.provider`](../guide/kick)                                       |
+| LINE               | [`Line.provider`](../guide/line)                                       |
+| Microsoft Entra ID | [`Microsoft.provider`](../guide/microsoft)                             |
+| Okta               | [`Okta.provider`](../guide/enterprise-oidc)                            |
+| Railway            | [`Railway.provider`](../guide/railway)                                 |
+| Roblox             | [`Roblox.provider`](../guide/roblox)                                   |
+| Slack              | [`Slack.provider`](../guide/slack)                                     |
+| Vercel             | [`Vercel.provider`](../guide/vercel)                                   |
+| X                  | [`X.provider`](../guide/x)                                             |
+| Zitadel            | [`Zitadel.provider`](../guide/enterprise-oidc)                         |
+| Zoom               | [`Zoom.provider`](../guide/zoom)                                       |
+| GitHub API access  | `GitHub.accessProfile` plus provider `access`                          |
+| Strava             | `Strava.provider`, with optional access profile                        |
+| Other OAuth/OIDC   | `OpenIdConnect.provider`                                               |
 
 `GitHub.accessProfile` defaults to `read:user`, rotating refresh tokens, provider
 revocation, and thirty days of local refresh retention. `Strava.accessProfile`
@@ -479,7 +480,14 @@ the provider configuration and are independent of sign-in scopes.
 Keep S256 PKCE and issuer-response validation enabled for providers that support
 them. `pkceS256: false` and `responseIssuerMode: "unsupported"` are explicit provider
 configuration choices. `userInfo: "merge"` fills missing ID-token claims after
-checking the same subject; ID-token claims take precedence.
+checking the same subject; ID-token claims take precedence. Discovery accepts a
+`{tenantid}` path segment when it matches the configured authority; verification
+substitutes the signed `tid` and checks the selected signing key's issuer. A
+concrete GUID authority discovered from that template keeps its own issuer, and
+the signing key must still publish a matching issuer. Commercial `consumers` pins the
+personal-account issuer. A tenant domain does not match that template. `common`
+and `organizations` stay on it. Refresh against the template requires that
+original `iss`.
 
 Sign-in accepts per-request `prompt` and `loginHint`. Public clients use
 `authentication: { method: "none", publicClient: true }`. Load secrets with
@@ -521,7 +529,9 @@ opt-in verified email fields. Google exposes verified `hd` for
 [workspace policy](../guide/slack#identity-and-workspace-policy). LINE keeps
 optional `amr`. Roblox keeps optional `type` and `created_at` and preserves the
 trailing-slash issuer. Railway merges UserInfo because its ID token omits name,
-email, and picture.
+email, and picture. `Microsoft.provider` keeps `oid` and `tid`. The durable
+subject is `oid:tid` when the token issuer equals the configured authority, and
+`tid:oid:tid` when it does not.
 
 Set `userInfo: "merge"` when an OIDC identity token omits needed profile claims.
 Provider schemas describe the returned projection; applications choose permission

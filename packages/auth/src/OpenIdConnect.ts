@@ -10,6 +10,7 @@ export {
 export {
   type IdTokenSignedResponseAlg,
   type OidcProfileSchema,
+  type OidcSubjectDecoder,
   type OidcUserInfoMode,
   type OpenIdConnectAuthentication,
   OpenIdConnectConfigurationError,

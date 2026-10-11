@@ -53,6 +53,8 @@ export type OidcUserInfoMode = typeof OidcUserInfoMode.Type;
 
 export type OidcProfileSchema = Schema.Codec<Schema.JsonObject>;
 
+export type OidcSubjectDecoder = (claims: unknown) => Effect.Effect<string, OAuthProtocolRejected>;
+
 export class OpenIdConnectConfigurationError extends Schema.TaggedError<OpenIdConnectConfigurationError>()(
   "OpenIdConnectConfigurationError",
   {
@@ -118,6 +120,9 @@ export interface OpenIdConnectOidcProvider extends ProviderGeneration {
   readonly pkceS256: boolean;
   readonly userInfo: OidcUserInfoMode;
   readonly profileSchema: OidcProfileSchema;
+  /** Defaults to the verified ID-token `sub`. Presets that cannot use `sub` or
+   * email as the durable subject supply their own decoder over verified claims. */
+  readonly decodeSubject?: OidcSubjectDecoder;
   readonly maxAgeSeconds?: number;
 }
 

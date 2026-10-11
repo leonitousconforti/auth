@@ -29,6 +29,7 @@ import { persistedResponseIssuerMode, type OpenIdConnectConfigurationError } fro
 import { decodeOidcProfile } from "../profile";
 import { ProviderRevocation } from "../ProviderRevocation";
 import { tokens } from "../receipt";
+import { subjectInTenant } from "../tenantSubject";
 import {
   sameConnectedProfile,
   type InstalledConnectedConfiguration,
@@ -58,6 +59,10 @@ const prepareInput = Schema.Struct({
   flowId: RequestBindingFlowId,
   prompt: Schema.optionalKey(OAuthAuthorizationPrompt),
   loginHint: Schema.optionalKey(OAuthLoginHint),
+});
+
+const tokenIssuer = Schema.Struct({
+  iss: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(2048)),
 });
 
 const userInfoSubject = Schema.Struct({
@@ -296,13 +301,40 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
           ).pipe(Effect.mapError(unavailable))
         : undefined;
 
+    const issued = yield* Schema.decodeUnknownEffect(tokenIssuer)(
+      Redacted.value(verified.claims),
+    ).pipe(Effect.mapError(unavailable));
+
+    const decodedSubject =
+      provider.decodeSubject === undefined
+        ? verified.subject
+        : yield* provider
+            .decodeSubject(Redacted.value(verified.claims))
+            .pipe(Effect.mapError(unavailable));
+
+    const namespaced = yield* subjectInTenant(
+      provider.issuer,
+      Redacted.value(verified.claims),
+      decodedSubject,
+    ).pipe(Effect.mapError(unavailable));
+
+    if (
+      previous !== undefined &&
+      (previous.continuation.issuer !== issued.iss || namespaced !== previous.identity.subject)
+    )
+      return yield* unavailable();
+
+    const subject = previous === undefined ? namespaced : previous.identity.subject;
+
     return {
-      identity: { provider: provider.provider, issuer: provider.issuer, subject: verified.subject },
+      identity: { provider: provider.provider, issuer: provider.issuer, subject },
       ...(profile === undefined ? {} : { profile }),
       continuation: previous?.continuation ?? {
         _tag: "Oidc" as const,
         clientId: provider.clientId,
         nonce: Redacted.make(Redacted.value(originalNonce)),
+        subject: verified.subject,
+        issuer: issued.iss,
         ...(verified.authTime === undefined ? {} : { authTime: verified.authTime }),
       },
     };
@@ -630,7 +662,8 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
             nonce: previous.nonce,
             accessToken: grant.accessToken,
             previous: {
-              subject: request.context.identity.subject,
+              subject: previous.subject ?? request.context.identity.subject,
+              ...(previous.issuer === undefined ? {} : { issuer: previous.issuer }),
               ...(previous.authTime === undefined ? {} : { authTime: previous.authTime }),
             },
           })

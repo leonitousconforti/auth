@@ -34,6 +34,7 @@ export default defineConfig({
       "src/Keycloak.ts",
       "src/Kick.ts",
       "src/Line.ts",
+      "src/Microsoft.ts",
       "src/Okta.ts",
       "src/Railway.ts",
       "src/Roblox.ts",

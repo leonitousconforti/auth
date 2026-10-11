@@ -27,6 +27,8 @@ const metadata = {
   alg: Schema.optionalKey(Schema.NonEmptyString),
   use: Schema.optionalKey(Schema.Literals(["sig", "enc"])),
   key_ops: Schema.optionalKey(operations),
+  /** Optional issuer restriction published with a public key. */
+  issuer: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))),
 };
 
 const rsa = { ...metadata, kty: Schema.Literal("RSA"), n: encodedBytes, e: encodedBytes };

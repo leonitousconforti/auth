@@ -28,6 +28,7 @@ import type { InstalledConfiguration } from "./configuration";
 import { persistedResponseIssuerMode, type OpenIdConnectConfigurationError } from "./models";
 import { decodeOidcProfile } from "./profile";
 import { tokens } from "./receipt";
+import { subjectInTenant } from "./tenantSubject";
 
 const beginInput = Schema.Struct({
   provider: OAuthProviderKey,
@@ -300,11 +301,22 @@ export const makeOpenIdConnectOAuthProtocol = Effect.fn("makeOpenIdConnectOAuthP
 
           const profile = yield* decodeOidcProfile(claims, provider.profileSchema);
 
+          const decodedSubject =
+            provider.decodeSubject === undefined
+              ? verified.subject
+              : yield* provider.decodeSubject(Redacted.value(verified.claims));
+
+          const subject = yield* subjectInTenant(
+            provider.issuer,
+            Redacted.value(verified.claims),
+            decodedSubject,
+          );
+
           return yield* snapshotOAuth(OAuthVerifiedExternalIdentity, {
             identity: {
               provider: provider.provider,
               issuer: provider.issuer,
-              subject: verified.subject,
+              subject,
             },
             ...(profile === undefined ? {} : { profile }),
             ...(verified.upstreamAuthenticatedAt === undefined

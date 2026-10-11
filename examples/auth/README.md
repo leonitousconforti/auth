@@ -57,6 +57,9 @@ instance. Follow each provider guide for setup.
 shape. LINE verifies web-login HS256 ID tokens. Railway merges UserInfo. Roblox
 keeps the trailing-slash issuer and does not receive email.
 
+`example:microsoft` is the same shape for Entra ID. The common authority stores
+`tid:oid:tid`. See the [Microsoft Entra ID guide](../../docs/src/content/docs/guide/microsoft.md).
+
 `example:x`, `example:figma`, `example:atlassian`, and `example:kick` are the same
 sign-in shape for those presets. Each allowlists one configured subject and stores
 development state in its own SQLite file.

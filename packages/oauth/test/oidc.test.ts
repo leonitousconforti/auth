@@ -52,6 +52,58 @@ const sign = (key: CryptoKey, data: jose.JWTPayload) =>
     new jose.SignJWT(data).setProtectedHeader({ alg: "RS256", kid: "key" }).sign(key),
   ).pipe(Effect.map(Redacted.make));
 
+// Regression at 25217c71: pinning a discovery template admitted an issuer-less
+// signing key. Provider JWKS cannot be made to omit issuer in a live workflow.
+// The same signed token must fail without key authority and pass with it.
+it.effect("requires signing-key issuer authority after pinning discovery metadata", () =>
+  Effect.gen(function* () {
+    yield* TestClock.setTime(seconds * 1000);
+    const keys = yield* generate;
+    const jwk = yield* Effect.promise(() => jose.exportJWK(keys.publicKey));
+    const tenant = "11111111-1111-1111-1111-111111111111";
+    const issuer = `https://login.microsoftonline.com/${tenant}/v2.0`;
+    const template = "https://login.microsoftonline.com/{tenantid}/v2.0";
+
+    const documentUrl =
+      "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration";
+
+    const token = yield* sign(keys.privateKey, { ...claims, iss: issuer, tid: tenant });
+
+    for (const keyIssuer of [undefined, template]) {
+      const http = transport((request) =>
+        Response.json(
+          request.url === documentUrl
+            ? { ...metadata, issuer: template }
+            : {
+                keys: [
+                  { ...jwk, kid: "key", ...(keyIssuer === undefined ? {} : { issuer: keyIssuer }) },
+                ],
+              },
+        ),
+      );
+
+      const discovered = yield* Oidc.discover(issuer, {
+        metadataUrl: documentUrl,
+        timeoutMs: 1000,
+      }).pipe(Effect.provideService(HttpClient.HttpClient, http));
+
+      const verifier = yield* Oidc.makeVerifier({
+        metadata: discovered,
+        clientId: "client",
+        timeoutMs: 1000,
+      }).pipe(Effect.provideService(HttpClient.HttpClient, http));
+
+      const result = yield* verifier.verify(token, verification).pipe(Effect.result);
+
+      expect(result).toMatchObject(
+        keyIssuer === undefined
+          ? { _tag: "Failure", failure: { _tag: "OAuthRejected", reason: "claims" } }
+          : { _tag: "Success", success: { subject: "provider-subject" } },
+      );
+    }
+  }).pipe(Effect.scoped, Effect.provide(cryptoLayer)),
+);
+
 it.effect(
   "verifies signed OIDC claims/hashes, retains profile extensions and clamps authentication time to captured start",
   () =>

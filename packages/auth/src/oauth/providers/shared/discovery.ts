@@ -5,7 +5,15 @@ import { OpenIdConnectConfigurationError } from "./models";
 
 /** Private, first-party discovery supplements; generic OIDC remains strict. */
 export const discoveryProfile = Symbol("effect-auth/OpenIdConnect/discoveryProfile");
-export const DiscoveryProfile = Schema.Literals(["slack", "roblox", "line", "railway", "cognito"]);
+
+export const DiscoveryProfile = Schema.Literals([
+  "slack",
+  "roblox",
+  "line",
+  "railway",
+  "cognito",
+  "microsoft",
+]);
 
 const pinned = {
   slack: {
@@ -55,6 +63,30 @@ export const supplementDiscovery = Effect.fnUntraced(function* (
       metadata.jwks_uri !== `${metadata.issuer}/.well-known/jwks.json`
     )
       return yield* OpenIdConnectConfigurationError.make({ reason: "metadata" });
+  } else if (profile === "microsoft") {
+    if (metadata.jwks_uri === undefined)
+      return yield* OpenIdConnectConfigurationError.make({ reason: "metadata" });
+
+    let sameOrigin = false;
+
+    try {
+      const issuer = new URL(metadata.issuer);
+      const authorization = new URL(metadata.authorization_endpoint);
+      const token = new URL(metadata.token_endpoint);
+      const jwks = new URL(metadata.jwks_uri);
+
+      sameOrigin =
+        issuer.origin === authorization.origin &&
+        issuer.origin === token.origin &&
+        issuer.origin === jwks.origin &&
+        authorization.pathname.endsWith("/oauth2/v2.0/authorize") &&
+        token.pathname.endsWith("/oauth2/v2.0/token") &&
+        jwks.pathname.endsWith("/discovery/v2.0/keys");
+    } catch {
+      sameOrigin = false;
+    }
+
+    if (!sameOrigin) return yield* OpenIdConnectConfigurationError.make({ reason: "metadata" });
   } else {
     const expected = pinned[profile];
 
@@ -73,7 +105,8 @@ export const supplementDiscovery = Effect.fnUntraced(function* (
   // LINE documents HS256 for web login at developers.line.biz/en/docs/line-login/verify-id-token/
   // and omits it from discovery. Cognito documents PKCE at
   // docs.aws.amazon.com/cognito/latest/developerguide/using-pkce-in-authorization-code.html
-  // and also omits it. Supply only the missing advertisement; an explicit
+  // and also omits it. Entra ID completes S256 PKCE but omits it from discovery.
+  // Supply only the missing advertisement; an explicit
   // incompatible capability still fails the shared validation.
   const algorithms = metadata.id_token_signing_alg_values_supported ?? [];
 

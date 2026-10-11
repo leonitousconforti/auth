@@ -58,6 +58,7 @@
     "./Kick": "./src/Kick.ts",
     "./X": "./src/X.ts",
     "./Line": "./src/Line.ts",
+    "./Microsoft": "./src/Microsoft.ts",
     "./Railway": "./src/Railway.ts",
     "./Roblox": "./src/Roblox.ts",
     "./Operations": "./src/Operations.ts",

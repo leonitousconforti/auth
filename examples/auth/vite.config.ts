@@ -72,6 +72,11 @@ export default defineConfig({
         cache: false,
         dependsOn: ["build"],
       },
+      "example:microsoft": {
+        command: "bun src/microsoft-app.ts",
+        cache: false,
+        dependsOn: ["build"],
+      },
       "example:roblox": {
         command: "bun src/roblox-app.ts",
         cache: false,

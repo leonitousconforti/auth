@@ -12,7 +12,7 @@ import {
   stringify,
   utf8,
 } from "./internal/encoding";
-import type { SigningKey, VerificationKey } from "./Jwk";
+import type { PublicKey, SigningKey, VerificationKey } from "./Jwk";
 import type { Jwks } from "./Jwks";
 import { type Header, type Requirements, VerifyOptions as JwsVerifyOptions } from "./Jws";
 import * as Jws from "./Jws";
@@ -172,10 +172,15 @@ export const verifyWithKeySet = Effect.fnUntraced(function* <S extends Schema.Co
   schema: S,
   token: Redacted.Redacted<string>,
   options: VerifyOptions,
-): Effect.fn.Return<Verified<S["Type"]>, JwtError, Signature | Jwks | S["DecodingServices"]> {
+): Effect.fn.Return<
+  Verified<S["Type"]> & { readonly key: PublicKey },
+  JwtError,
+  Signature | Jwks | S["DecodingServices"]
+> {
   const policy = yield* parse(VerifyOptions, options, "parameters");
+  const jws = yield* Jws.verifyWithKeySet(token, policy);
 
-  return yield* decodeClaims(schema, yield* Jws.verifyWithKeySet(token, policy), policy);
+  return { ...(yield* decodeClaims(schema, jws, policy)), key: jws.key };
 });
 
 /** Parsing only. This result does not establish authenticity or validate claims. */

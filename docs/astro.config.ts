@@ -57,6 +57,7 @@ export default defineConfig({
             { label: "Hugging Face", slug: "guide/huggingface" },
             { label: "Kick", slug: "guide/kick" },
             { label: "LINE", slug: "guide/line" },
+            { label: "Microsoft Entra ID", slug: "guide/microsoft" },
             { label: "Railway", slug: "guide/railway" },
             { label: "Roblox", slug: "guide/roblox" },
             { label: "Slack", slug: "guide/slack" },

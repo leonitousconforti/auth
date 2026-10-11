@@ -202,5 +202,7 @@ export const verifyWithKeySet = Effect.fnUntraced(function* (
     ...(parsed.protectedHeader.kid === undefined ? {} : { kid: parsed.protectedHeader.kid }),
   });
 
-  return yield* verifyAsymmetric(parsed, key);
+  const verified = yield* verifyAsymmetric(parsed, key);
+
+  return { ...verified, key };
 });

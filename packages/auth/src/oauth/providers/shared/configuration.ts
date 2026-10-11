@@ -1,4 +1,5 @@
 import type * as OAuth from "@yielded/oauth/OAuth";
+import * as Oidc from "@yielded/oauth/Oidc";
 import { Effect, Predicate, Redacted, Schema } from "effect";
 
 import { OAuthProviderKey, OAuthGeneration } from "../../schema";
@@ -21,6 +22,7 @@ import {
   OidcUserInfoMode,
   OpenIdConnectConfigurationError,
   type OidcProfileSchema,
+  type OidcSubjectDecoder,
   type OpenIdConnectOAuthProvider,
   type OpenIdConnectOAuthProtocolOptions,
   type OpenIdConnectOidcProvider,
@@ -78,6 +80,11 @@ const optionsSchema = <R>() =>
             userInfo: OidcUserInfoMode,
             profileSchema: Schema.declare<OidcProfileSchema>((input): input is OidcProfileSchema =>
               Schema.isSchema(input),
+            ),
+            decodeSubject: Schema.optionalKey(
+              Schema.declare<OidcSubjectDecoder>((input): input is OidcSubjectDecoder =>
+                Predicate.isFunction(input),
+              ),
             ),
             maxAgeSeconds: Schema.optionalKey(
               Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 86400 })),
@@ -216,6 +223,7 @@ export interface InstalledProvider<R> extends NativeProvider {
 
 const metadataSchema = Schema.Struct({
   issuer: OAuthIssuer,
+  signing_key_issuer_required: Schema.optionalKey(Schema.Literal(true)),
   authorization_endpoint: boundedString(2048),
   token_endpoint: boundedString(2048),
   jwks_uri: Schema.optionalKey(boundedString(2048)),
@@ -349,7 +357,8 @@ export const installProvider = Effect.fn("OpenIdConnect.installProvider")(functi
     Effect.mapError(() => configError("metadata")),
   );
 
-  if (metadata.issuer !== provider.issuer) return yield* configError("issuer");
+  if (!Oidc.discoveredIssuerMatches(provider.issuer, metadata.issuer))
+    return yield* configError("issuer");
   if (
     provider.responseIssuerMode !== "discovered" &&
     (metadata.authorization_response_iss_parameter_supported === true) !==
