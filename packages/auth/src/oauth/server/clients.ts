@@ -256,7 +256,8 @@ export const makeClients = Effect.fnUntraced(function* (
       };
     },
     Effect.scoped,
-    Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error", credentials: "omit" }),
+    // Workerd supports manual redirects; the status check above rejects them.
+    Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual", credentials: "omit" }),
     Effect.catchTag("HttpClientError", () => Unavailable.make({})),
     Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Unavailable.make({}) }),
     permits.withPermitsIfAvailable(1),
