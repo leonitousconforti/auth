@@ -103,10 +103,7 @@ export const oauthCallback = <R extends AnyRoute, ResponseR = never>(
   });
 };
 
-const boundedText = Effect.fn("OperationHttp.boundedText")(function* (
-  request: Request,
-  maximum: number,
-) {
+const boundedText = Effect.fnUntraced(function* (request: Request, maximum: number) {
   return yield* Effect.tryPromise({
     try: async (signal) => {
       if (request.body === null) return "";
@@ -292,7 +289,7 @@ const inject = (route: AnyRoute, input: unknown, credentials: HttpCredentials) =
     catch: () => OperationHttpError.make({ reason: "credentials" }),
   });
 
-const applyCommands = Effect.fn("OperationHttp.applyCommands")(function* (
+const applyCommands = Effect.fnUntraced(function* (
   headers: Headers,
   commands: ReadonlyArray<AuthCredentialCommand>,
   config: OperationHttpConfiguration,

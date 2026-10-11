@@ -10,9 +10,7 @@ import { OperationHttpServerConfig } from "./OperationHttpServerConfig";
 import { generationCookieConfiguration, optionalCookie } from "./session-cache-cookie";
 
 /** Browser mutation admission is independent of body encoding. */
-export const mutationSecurity = Effect.fn("OperationHttp.mutationSecurity")(function* (
-  request: Request,
-) {
+export const mutationSecurity = Effect.fnUntraced(function* (request: Request) {
   const config = yield* OperationHttpServerConfig;
   const requestOrigin = request.headers.get("origin");
 
@@ -26,7 +24,7 @@ export const mutationSecurity = Effect.fn("OperationHttp.mutationSecurity")(func
     return yield* OperationHttpError.make({ reason: "csrf" });
 });
 
-export const requestSecurity = Effect.fn("OperationHttp.requestSecurity")(function* (
+export const requestSecurity = Effect.fnUntraced(function* (
   request: Request,
   kind: "operation" | "callback" | "read" | "request",
 ) {
