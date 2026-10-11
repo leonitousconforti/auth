@@ -1,5 +1,11 @@
 # @yielded/drizzle-effect-v4-patch
 
+## 0.1.0-beta.34
+
+### Patch Changes
+
+- [#203](https://github.com/yielded-dev/auth/pull/203) [`5264de7`](https://github.com/yielded-dev/auth/commit/5264de78aee570c82718b2841ec38ea17544fa3e) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Support Effect 4.0.3 across authentication workflows and companion packages. Require Effect 4.0.3 or later.
+
 ## 0.1.0-beta.33
 
 No changes in this release.
