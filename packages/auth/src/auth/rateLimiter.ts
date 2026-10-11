@@ -1,4 +1,4 @@
-import { Clock, Crypto, Duration, Effect, Layer, Schema, Semaphore } from "effect";
+import { Clock, Crypto, Duration, Effect, Layer, Schema } from "effect";
 import { Base64Url } from "effect/encoding";
 import * as KeyValueStore from "effect/persistence/KeyValueStore";
 import * as RateLimiter from "effect/persistence/RateLimiter";
@@ -14,29 +14,29 @@ const storeFailure = (message: string) =>
     }),
   );
 
-// Each stock store owns one bucket, so dropping an entry also releases its
-// counter. A shared stock memory store would retain every key indefinitely.
+// Buckets own only their token state; no per-key Layers or background fibers.
 const boundedMemoryStore = (whenFull: "reject" | "evict") =>
-  Layer.effect(
-    RateLimiter.RateLimiterStore,
-    Effect.sync(() => {
-      // Insertion order is recency order: every check moves its key to the end.
-      const entries = new Map<
-        string,
-        { readonly store: RateLimiter.RateLimiterStore["Service"]; expiresAt: number }
-      >();
+  Layer.sync(RateLimiter.RateLimiterStore, () => {
+    // Insertion order is recency order: every check moves its key to the end.
+    const entries = new Map<string, { tokens: number; lastRefill: number; expiresAt: number }>();
 
-      const lock = Semaphore.makeUnsafe(1);
-      const unsupported = storeFailure("Auth rate limits support only one-token consumption");
+    // A lower bound is enough: refreshed buckets can leave this stale until the
+    // next capacity scan, but no expired bucket is ever skipped.
+    let earliestExpiry = Infinity;
+    const unsupported = storeFailure("Auth rate limits support only one-token consumption");
 
-      return RateLimiter.RateLimiterStore.of({
-        fixedWindow: () => unsupported,
-        adaptiveConsume: () => unsupported,
-        adaptiveFeedback: () => unsupported,
-        tokenBucket: Effect.fnUntraced(
-          function* (request) {
-            if (request.allowOverflow || request.tokens !== 1) return yield* unsupported;
-
+    return RateLimiter.RateLimiterStore.of({
+      fixedWindow: () => unsupported,
+      adaptiveConsume: () => unsupported,
+      adaptiveFeedback: () => unsupported,
+      tokenBucket: (request) =>
+        Effect.clockWith((clock) =>
+          // All reads and writes finish synchronously, so admission is atomic
+          // across fibers without allocating a permit or yielding mid-update.
+          Effect.suspend(() => {
+            if (request.allowOverflow || request.tokens !== 1) return unsupported;
+            const now = clock.currentTimeMillisUnsafe();
+            const refillRateMillis = Duration.toMillis(request.refillRate);
             let entry = entries.get(request.key);
 
             if (entry === undefined) {
@@ -47,45 +47,46 @@ const boundedMemoryStore = (whenFull: "reject" | "evict") =>
                     break;
                   }
                 } else {
-                  const now = yield* Clock.currentTimeMillis;
-
-                  for (const [key, candidate] of entries) {
-                    if (candidate.expiresAt <= now) entries.delete(key);
+                  if (earliestExpiry <= now) {
+                    earliestExpiry = Infinity;
+                    for (const [key, candidate] of entries) {
+                      if (candidate.expiresAt <= now) entries.delete(key);
+                      else earliestExpiry = Math.min(earliestExpiry, candidate.expiresAt);
+                    }
                   }
                   if (entries.size >= maximumKeys) {
-                    return yield* storeFailure("Auth rate limit memory capacity exhausted");
+                    return storeFailure("Auth rate limit memory capacity exhausted");
                   }
                 }
               }
-
-              // This layer has only synchronous memory state and no resources. Build
-              // it in its own short scope so dropped entries retain no layer memo map.
-              const store = yield* RateLimiter.RateLimiterStore.pipe(
-                Effect.provide(RateLimiter.layerStoreMemory, { local: true }),
-              );
-
-              entry = { store, expiresAt: 0 };
+              entry = { tokens: request.limit, lastRefill: now, expiresAt: 0 };
             } else entries.delete(request.key);
             entries.set(request.key, entry);
 
-            const result = yield* entry.store.tokenBucket(request);
-            const now = yield* Clock.currentTimeMillis;
+            // Keep Effect's memory-store arithmetic, including policy changes
+            // and fractional refill intervals. A denied check spends no token.
+            const tokensToAdd = Math.floor((now - entry.lastRefill) / refillRateMillis);
 
-            // Without overflow, a full idle refill window restores every token.
-            // Retain the longer horizon if the host changes its budget in place.
+            if (tokensToAdd > 0) {
+              entry.tokens = Math.min(request.limit, entry.tokens + tokensToAdd);
+              entry.lastRefill += tokensToAdd * refillRateMillis;
+            }
+            if (entry.tokens >= request.limit) entry.lastRefill = now;
+            const remaining = entry.tokens - request.tokens;
+
+            if (remaining >= 0) entry.tokens = remaining;
+            // Preserve the longer idle horizon when policy changes in place.
             entry.expiresAt = Math.max(
               entry.expiresAt,
-              now + Math.ceil(Duration.toMillis(request.refillRate) * request.limit),
+              now + Math.ceil(refillRateMillis * request.limit),
             );
+            earliestExpiry = Math.min(earliestExpiry, entry.expiresAt);
 
-            return result;
-          },
-          Effect.uninterruptible,
-          Semaphore.withPermit(lock),
+            return Effect.succeed([remaining, Math.max(0, now - entry.lastRefill)] as const);
+          }),
         ),
-      });
-    }),
-  );
+    });
+  });
 
 const Bucket = Schema.fromJsonString(
   Schema.Struct({ tokens: Schema.Finite, lastRefill: Schema.Finite }),
