@@ -164,9 +164,12 @@ export const makeSessionModule = <
 >(
   moduleId: Id,
   claims: Claims,
+  contract?: ReturnType<typeof makeSessionContract<Id, Claims>>,
 ) => {
   const { Session, CompletionResult, operations, group, stepUpOperations, stepUpGroup } =
-    makeSessionContract(moduleId, claims);
+    contract?.moduleId === moduleId && contract.Session.fields.claims === claims
+      ? contract
+      : makeSessionContract(moduleId, claims);
 
   const ClaimsCodec: Schema.Codec<
     Claims["Type"],

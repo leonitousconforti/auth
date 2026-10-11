@@ -1,6 +1,10 @@
 import { Context, Effect, Exit, Layer, Option, Schema, Scope, type Types } from "effect";
 
-import { make as makeContract, type AnyAuthContract } from "../operations/actions";
+import {
+  make as makeContract,
+  sessionContractFor,
+  type AnyAuthContract,
+} from "../operations/actions";
 import type { AuthenticationAuthority } from "../sessions/AuthenticationAuthority";
 import {
   configuredLayer,
@@ -231,7 +235,18 @@ const bind = <
   const invalid = configurationError(strategies, defaultStrategy, namespace, sessionNamespace);
 
   if (invalid !== undefined) throw invalid;
-  const sessions = makeSessionModule(sessionNamespace, options.claims);
+  type ContractDefinition = Contract extends AnyAuthContract
+    ? Contract
+    : ReturnType<typeof makeContract<Id, Claims>>;
+
+  const contract = (shared ??
+    makeContract(namespace, { claims: options.claims })) as ContractDefinition;
+
+  const sessions = makeSessionModule(
+    sessionNamespace,
+    options.claims,
+    sessionContractFor(contract, sessionNamespace, options.claims),
+  );
 
   const modules = Object.fromEntries(
     Object.entries(strategies).map(([key, strategy]) => [
@@ -251,13 +266,6 @@ const bind = <
   const selected = Object.fromEntries(
     Object.entries(modules).map(([key, module]) => [key, module.strategy]),
   ) as BoundSelection<typeof modules>;
-
-  type ContractDefinition = Contract extends AnyAuthContract
-    ? Contract
-    : ReturnType<typeof makeContract<Id, Claims>>;
-
-  const contract = (shared ??
-    makeContract(namespace, { claims: options.claims })) as ContractDefinition;
 
   const create = Effect.gen(function* () {
     const built = yield* build(selected, defaultStrategy);

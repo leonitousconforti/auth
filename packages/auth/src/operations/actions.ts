@@ -274,6 +274,29 @@ const sessionActions = <
   }),
 });
 
+// Only exact contracts constructed here can donate their session operations.
+// Structural contracts may have arbitrary `sessions` properties; never trust them.
+const ownedSessionContracts = new WeakMap<
+  AnyAuthContract,
+  { readonly moduleId: string; readonly claims: Schema.Top; readonly contract: unknown }
+>();
+
+export const sessionContractFor = <
+  Id extends string,
+  Claims extends Schema.Codec<unknown, unknown, unknown, unknown>,
+>(
+  contract: AnyAuthContract,
+  moduleId: Id,
+  claims: Claims,
+) => {
+  const sessions = ownedSessionContracts.get(contract);
+
+  if (sessions?.moduleId !== moduleId || sessions.claims !== claims) return undefined;
+
+  // The identity checks retain the exact constructor's namespace and claims codec.
+  return sessions.contract as ReturnType<typeof makeSessionContract<Id, Claims>>;
+};
+
 /** A browser-safe contract. The action callback only receives schemas; it never
  * receives server configuration, keys, persistence or service implementations. */
 export const make = <
@@ -323,13 +346,21 @@ export const make = <
   );
 
   // Each entry is bound with the exact schemas from the corresponding definition.
-  return Object.freeze({
+  const contract = Object.freeze({
     namespace,
     basePath,
     claims: options.claims,
     sessions,
     actions: Object.freeze(actions) as unknown as BoundActions<typeof defaults & Additional>,
   });
+
+  ownedSessionContracts.set(contract, {
+    moduleId: sessions.moduleId,
+    claims: options.claims,
+    contract: sessions,
+  });
+
+  return contract;
 };
 
 export interface AnyAuthContract {

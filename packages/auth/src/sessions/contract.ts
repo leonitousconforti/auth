@@ -182,7 +182,7 @@ export const makeSessionContract = <
     replay: "non-idempotent",
   });
 
-  const operations = {
+  const operations = Object.freeze({
     Complete,
     CompletePending,
     RejectPending,
@@ -193,7 +193,7 @@ export const makeSessionContract = <
     List,
     Revoke,
     RevokeAll,
-  };
+  });
 
   return Object.freeze({
     moduleId,
