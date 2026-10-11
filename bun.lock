@@ -220,7 +220,7 @@
     },
     "packages/auth": {
       "name": "@yielded/auth",
-      "version": "0.1.0-beta.32",
+      "version": "0.1.0-beta.33",
       "dependencies": {
         "@yielded/crypto": "workspace:*",
         "@yielded/jose": "workspace:*",
@@ -242,7 +242,7 @@
     },
     "packages/auth-electron": {
       "name": "@yielded/auth-electron",
-      "version": "0.1.0-beta.32",
+      "version": "0.1.0-beta.33",
       "dependencies": {
         "@yielded/auth": "workspace:*",
       },
@@ -261,7 +261,7 @@
     },
     "packages/auth-persistence": {
       "name": "@yielded/auth-persistence",
-      "version": "0.1.0-beta.32",
+      "version": "0.1.0-beta.33",
       "dependencies": {
         "@yielded/auth": "workspace:*",
         "@yielded/crypto": "workspace:*",
@@ -284,7 +284,7 @@
     },
     "packages/auth-persistence-drizzle": {
       "name": "@yielded/auth-persistence-drizzle",
-      "version": "0.1.0-beta.32",
+      "version": "0.1.0-beta.33",
       "dependencies": {
         "@yielded/auth": "workspace:*",
         "@yielded/auth-persistence": "workspace:*",
@@ -337,7 +337,7 @@
     },
     "packages/auth-react-native": {
       "name": "@yielded/auth-react-native",
-      "version": "0.1.0-beta.32",
+      "version": "0.1.0-beta.33",
       "dependencies": {
         "@yielded/auth": "workspace:*",
       },
@@ -369,7 +369,7 @@
     },
     "packages/auth-simplewebauthn": {
       "name": "@yielded/auth-simplewebauthn",
-      "version": "0.1.0-beta.32",
+      "version": "0.1.0-beta.33",
       "dependencies": {
         "@yielded/auth": "workspace:*",
         "tldts": "catalog:",
@@ -394,7 +394,7 @@
     },
     "packages/crypto": {
       "name": "@yielded/crypto",
-      "version": "0.1.0-beta.32",
+      "version": "0.1.0-beta.33",
       "devDependencies": {
         "@effect/vitest": "catalog:",
         "@types/node": "catalog:",
@@ -410,7 +410,7 @@
     },
     "packages/drizzle-effect-v4-patch": {
       "name": "@yielded/drizzle-effect-v4-patch",
-      "version": "0.1.0-beta.32",
+      "version": "0.1.0-beta.33",
       "bin": {
         "yielded-drizzle-effect": "./dist/cli.mjs",
       },
@@ -425,7 +425,7 @@
     },
     "packages/jose": {
       "name": "@yielded/jose",
-      "version": "0.1.0-beta.32",
+      "version": "0.1.0-beta.33",
       "dependencies": {
         "@yielded/crypto": "workspace:*",
       },
@@ -446,7 +446,7 @@
     },
     "packages/oauth": {
       "name": "@yielded/oauth",
-      "version": "0.1.0-beta.32",
+      "version": "0.1.0-beta.33",
       "dependencies": {
         "@yielded/jose": "workspace:*",
       },

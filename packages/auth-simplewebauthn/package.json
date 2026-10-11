@@ -1,6 +1,6 @@
 {
   "name": "@yielded/auth-simplewebauthn",
-  "version": "0.1.0-beta.32",
+  "version": "0.1.0-beta.33",
   "description": "SimpleWebAuthn browser ceremonies and server verification for Yielded Auth.",
   "homepage": "https://yielded.dev/auth/",
   "bugs": {
