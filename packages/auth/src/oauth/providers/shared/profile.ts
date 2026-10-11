@@ -44,6 +44,57 @@ export const OidcStandardUserProfile = Schema.Struct({
 
 export type OidcStandardUserProfile = typeof OidcStandardUserProfile.Type;
 
+const firstConsentName = Schema.Struct({
+  name: Schema.optionalKey(
+    Schema.Struct({
+      firstName: Schema.optionalKey(text),
+      lastName: Schema.optionalKey(text),
+    }),
+  ),
+});
+
+/** Merge Apple's first-consent `user` form field into ID-token claims. Name is
+ * only sent once; later callbacks leave these fields absent. */
+export const mergeAppleCallbackUser = Effect.fnUntraced(function* (
+  claims: Schema.JsonObject,
+  user: string | undefined,
+) {
+  if (user === undefined) return claims;
+
+  const parsed = yield* Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))(user).pipe(
+    Effect.orElseSucceed(() => undefined),
+  );
+
+  if (parsed === undefined) return claims;
+
+  const payload = yield* Schema.decodeUnknownEffect(firstConsentName)(parsed).pipe(
+    Effect.orElseSucceed(() => undefined),
+  );
+
+  if (payload?.name === undefined) return claims;
+  const given = payload.name.firstName?.trim();
+  const family = payload.name.lastName?.trim();
+
+  const parts = [given, family].filter(
+    (value): value is string => value !== undefined && value.length > 0,
+  );
+
+  const name = parts.join(" ");
+  // given_name and family_name each allow 256. The combined name must too.
+  const mergedName = name.length > 0 && name.length <= 256 ? name : undefined;
+
+  return {
+    ...claims,
+    ...(given === undefined || given.length === 0 || claims.given_name !== undefined
+      ? {}
+      : { given_name: given }),
+    ...(family === undefined || family.length === 0 || claims.family_name !== undefined
+      ? {}
+      : { family_name: family }),
+    ...(mergedName === undefined || claims.name !== undefined ? {} : { name: mergedName }),
+  };
+});
+
 /** Standard OpenID Connect user claims, plus Google's optional hosted domain.
  * Generic OIDC uses this schema unless a preset supplies its own. The adapter
  * projects these from verified ID tokens, optionally merged with UserInfo.
@@ -58,6 +109,24 @@ export const OidcUserProfile = Schema.Struct({
 
 export type OidcUserProfile = typeof OidcUserProfile.Type;
 
+const standardFlags = ["email_verified", "phone_number_verified"] as const;
+
+/** Keep every standard claim, and replace only flags the host codec normalized. */
+const claimsWithHostFlags = (claims: unknown, profile: Schema.JsonObject) =>
+  Schema.decodeUnknownEffect(Schema.Record(Schema.String, Schema.Unknown))(claims).pipe(
+    Effect.map((raw) => {
+      const normalized = { ...raw };
+
+      for (const key of standardFlags) {
+        const value = profile[key];
+
+        if (typeof value === "boolean") normalized[key] = value;
+      }
+
+      return normalized;
+    }),
+  );
+
 export const decodeOidcProfile = Effect.fn("OpenIdConnect.decodeProfile")(function* (
   claims: unknown,
   schema: Schema.Codec<Schema.JsonObject>,
@@ -67,7 +136,14 @@ export const decodeOidcProfile = Effect.fn("OpenIdConnect.decodeProfile")(functi
     Effect.mapError(() => OAuthProtocolRejected.make({})),
   );
 
+  // A host codec may turn Apple's "true"/"false" into a boolean and drop every
+  // other claim. Display still comes from the verified claims; only that flag moves.
   const display = yield* Schema.decodeUnknownEffect(OidcStandardUserProfile)(claims).pipe(
+    Effect.catch(() =>
+      claimsWithHostFlags(claims, profile).pipe(
+        Effect.flatMap((value) => Schema.decodeEffect(OidcStandardUserProfile)(value)),
+      ),
+    ),
     Effect.mapError(() => OAuthProtocolRejected.make({})),
   );
 

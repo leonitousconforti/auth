@@ -59,10 +59,13 @@ export const makeOAuthNativeFlow = Effect.fnUntraced(function* <Flow extends OAu
     exactSqlText(sql, flow.column(key), flow.value(key, input));
 
   const access = Effect.fnUntraced(function* (
-    input: OAuthSignInAccess & { readonly subjectId?: SubjectId },
+    input: OAuthSignInAccess & {
+      readonly subjectId?: SubjectId;
+      readonly formPostSubject?: boolean;
+    },
   ) {
     const nativeId =
-      input.subjectId === undefined
+      input.formPostSubject === true || input.subjectId === undefined
         ? undefined
         : yield* mapping.subjectId.toNative(input.subjectId);
 
@@ -79,9 +82,11 @@ export const makeOAuthNativeFlow = Effect.fnUntraced(function* <Flow extends OAu
       sql`${millis(f.binderExpiresAt)} > ${now}`,
       sql`${millis(f.expiresAt)} > ${now}`,
       sql`${millis(f.issuedAt)} <= ${now}`,
-      nativeId === undefined
-        ? sql`${flow.column(f.subjectId)} is null`
-        : sql`${flow.column(f.subjectId)} = ${flow.value(f.subjectId, nativeId)}`,
+      input.formPostSubject === true
+        ? sql`${flow.column(f.subjectId)} is not null`
+        : nativeId === undefined
+          ? sql`${flow.column(f.subjectId)} is null`
+          : sql`${flow.column(f.subjectId)} = ${flow.value(f.subjectId, nativeId)}`,
       input.responseIssuer === undefined
         ? exact(f.responseIssuerMode, "unsupported")
         : sql.and([exact(f.responseIssuerMode, "required"), exact(f.issuer, input.responseIssuer)]),
@@ -156,7 +161,7 @@ export const makeOAuthNativeFlow = Effect.fnUntraced(function* <Flow extends OAu
     );
   });
 
-  const consume = Effect.fnUntraced(function* (
+  const consumeMatching = Effect.fnUntraced(function* (
     input: OAuthSignInAccess & { readonly subjectId?: SubjectId },
   ) {
     const predicate = yield* access(input);
@@ -229,6 +234,36 @@ export const makeOAuthNativeFlow = Effect.fnUntraced(function* <Flow extends OAu
       });
 
     return value;
+  });
+
+  const consume = Effect.fnUntraced(function* (
+    input: OAuthSignInAccess & {
+      readonly subjectId?: SubjectId;
+      readonly formPostSubject?: boolean;
+    },
+  ) {
+    if (input.formPostSubject !== true) return yield* consumeMatching(input);
+
+    const predicate = yield* access(input);
+
+    const rows = mysql
+      ? yield* sql`select ${flow.fields("oauth_flow_")} from ${flow.name} where ${predicate} for update`
+      : yield* sql`select ${flow.fields("oauth_flow_")} from ${flow.name} where ${predicate}`;
+
+    if (rows.length === 0) return undefined;
+    invariant(rows.length === 1);
+    const row = flow.decode(rows[0]!, "oauth_flow_");
+    const encoded = row[f.snapshot];
+
+    invariant(typeof encoded === "string");
+    const value = persisted.decode(encoded);
+    const owner = subjectId(value);
+
+    if (value.context.responseMode !== "form_post" || owner === undefined) return undefined;
+
+    const { formPostSubject: _formPostSubject, ...matched } = input;
+
+    return yield* consumeMatching({ ...matched, subjectId: owner });
   });
 
   const cleanup = (moduleId: string, limit: number) =>

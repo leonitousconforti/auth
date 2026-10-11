@@ -20,7 +20,7 @@ import { HookDenied } from "../hooks/models";
 import { IdentityConflict } from "../identity/models";
 import { reportAuthDiagnostic, reportAuthFailure } from "../internal/diagnostics";
 import type { AuthInvocation } from "../operations/context";
-import type { AuthOperationResult } from "../operations/credentials";
+import { formPostBinding, type AuthOperationResult } from "../operations/credentials";
 import { InvalidOperationInput } from "../operations/errors";
 import { makeOperation, operationGroup } from "../operations/operation";
 import { makeRequestBinding } from "../operations/requestBinding";
@@ -555,7 +555,9 @@ export const makeOAuthMethod = <
                       authorizationUrl: prepared.authorizationUrl,
                       expiresAtMillis,
                     }),
-                    credentialCommands: Object.freeze([command]),
+                    credentialCommands: Object.freeze([
+                      formPostBinding(command, prepared.responseMode),
+                    ]),
                   }),
                 });
               },

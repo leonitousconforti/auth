@@ -25,7 +25,7 @@ const providerSchema = <const Key extends string, S extends Schema.Codec<Schema.
       profile: Schema.optionalKey(
         Schema.Struct({
           ...OAuthDisplayProfile.fields,
-          providerData: Schema.optionalKey(data),
+          providerData: Schema.optionalKey(Schema.toType(data)),
         }),
       ),
     }),

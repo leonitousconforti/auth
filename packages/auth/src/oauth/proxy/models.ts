@@ -97,6 +97,8 @@ export const FlowContext = Schema.Struct({
   verifierDigest: Random,
   configuration: OAuthProtocolConfiguration,
   upstream: OAuthProtocolConfiguration,
+  /** Provider callback transport captured at prepare; the app handoff uses GET. */
+  responseMode: Schema.Literals(["query", "form_post"]),
   expiresAtMillis: OAuthInstant,
 });
 

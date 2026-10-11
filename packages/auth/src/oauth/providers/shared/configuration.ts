@@ -18,11 +18,14 @@ import {
 import { DiscoveryProfile, discoveryProfile } from "./discovery";
 import {
   advertisedIdTokenAlgorithms,
+  hasStaticSecret,
   IdTokenSignedResponseAlg,
+  isPrivateKeyAuthentication,
   OidcUserInfoMode,
   OpenIdConnectConfigurationError,
   type OidcProfileSchema,
   type OidcSubjectDecoder,
+  type OpenIdConnectAuthentication,
   type OpenIdConnectOAuthProvider,
   type OpenIdConnectOAuthProtocolOptions,
   type OpenIdConnectOidcProvider,
@@ -61,11 +64,64 @@ export const identitySourceSchema = <R>() =>
     }),
   ]);
 
+const privateKeyJwt = Schema.Struct({
+  algorithm: Schema.Literal("ES256"),
+  keyId: boundedString(256),
+  issuer: boundedString(2048),
+  subject: boundedString(1024),
+  audience: boundedString(2048),
+  lifetimeSeconds: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 15_777_000 })),
+  privateKey: secret,
+});
+
 export const authentication = Schema.Union([
   Schema.Struct({ method: Schema.Literal("client_secret_basic"), secret }),
-  Schema.Struct({ method: Schema.Literal("client_secret_post"), secret }),
+  Schema.Struct({
+    method: Schema.Literal("client_secret_post"),
+    secret,
+    privateKeyJwt: Schema.optionalKey(Schema.Never),
+  }),
+  Schema.Struct({
+    method: Schema.Literal("client_secret_post"),
+    privateKeyJwt,
+    secret: Schema.optionalKey(Schema.Never),
+  }),
   Schema.Struct({ method: Schema.Literal("none"), publicClient: Schema.Literal(true) }),
 ]);
+
+/** OAuth clients store a static secret or accept one on each token request. */
+export const nativeAuthentication = (
+  authentication: OpenIdConnectAuthentication,
+): OAuth.Authentication => {
+  if (isPrivateKeyAuthentication(authentication)) return { method: "client_secret_post" };
+  if (!hasStaticSecret(authentication)) return authentication;
+
+  return authentication.method === "client_secret_basic"
+    ? { method: "client_secret_basic", secret: authentication.secret }
+    : { method: "client_secret_post", secret: authentication.secret };
+};
+
+/** Clone credential bytes so later wipes do not clear the caller's copy. */
+export const copyAuth = (value: OpenIdConnectAuthentication): OpenIdConnectAuthentication => {
+  if (isPrivateKeyAuthentication(value)) {
+    const policy = value.privateKeyJwt;
+
+    return {
+      method: "client_secret_post",
+      privateKeyJwt: {
+        ...policy,
+        privateKey: Redacted.make(Redacted.value(policy.privateKey)),
+      },
+    };
+  }
+  if (!hasStaticSecret(value)) return { ...value };
+
+  const secret = Redacted.make(Redacted.value(value.secret));
+
+  return value.method === "client_secret_basic"
+    ? { method: "client_secret_basic", secret }
+    : { method: "client_secret_post", secret };
+};
 
 const common = {
   provider: OAuthProviderKey,
@@ -83,6 +139,7 @@ const common = {
   ).check(Schema.isMaxLength(32)),
   authorizationParameters: Schema.optionalKey(fields),
   tokenParameters: Schema.optionalKey(fields),
+  responseMode: Schema.optionalKey(Schema.Literals(["query", "form_post"])),
 };
 
 const optionsSchema = <R>() =>
@@ -337,13 +394,7 @@ export const prepareConfigurations = Effect.fn("OpenIdConnect.prepareConfigurati
       ...(provider.tokenParameters === undefined
         ? {}
         : { tokenParameters: { ...provider.tokenParameters } }),
-      authentication:
-        provider.authentication.method === "none"
-          ? { ...provider.authentication }
-          : {
-              ...provider.authentication,
-              secret: Redacted.make(Redacted.value(provider.authentication.secret)),
-            },
+      authentication: copyAuth(provider.authentication),
     };
 
     return provider.protocol === "oidc"
@@ -354,6 +405,16 @@ export const prepareConfigurations = Effect.fn("OpenIdConnect.prepareConfigurati
           identitySource: copyIdentitySource(provider.identitySource),
         };
   });
+
+  for (const provider of providers) {
+    const authentication = provider.authentication;
+
+    if (isPrivateKeyAuthentication(authentication)) {
+      const privateKey = authentication.privateKeyJwt.privateKey;
+
+      yield* Effect.addFinalizer(() => Effect.sync(() => Redacted.wipeUnsafe(privateKey)));
+    }
+  }
 
   const generations = new Set<string>();
   const active = new Set<string>();
@@ -457,7 +518,7 @@ export const installProvider = Effect.fn("OpenIdConnect.installProvider")(functi
     const usesAsymmetric = algorithms?.some((algorithm) => algorithm !== "HS256") === true;
 
     if (usesHmac && usesAsymmetric) return yield* configError("parameters");
-    if (usesHmac && provider.authentication.method === "none")
+    if (usesHmac && !hasStaticSecret(provider.authentication))
       return yield* configError("authentication");
     if (
       algorithms === undefined ||
@@ -478,7 +539,7 @@ export const installProvider = Effect.fn("OpenIdConnect.installProvider")(functi
     {
       metadata,
       clientId: provider.clientId,
-      authentication: provider.authentication,
+      authentication: nativeAuthentication(provider.authentication),
       timeoutMs: timeoutSeconds * 1000,
       ...(provider.protocol === "oauth"
         ? nativeOAuthClientOptions(provider)
@@ -498,6 +559,7 @@ export const installProvider = Effect.fn("OpenIdConnect.installProvider")(functi
         scopes: provider.scopes,
         state: placeholder,
         ...(provider.pkceS256 ? { codeChallenge: Redacted.value(placeholder) } : {}),
+        ...(provider.responseMode === undefined ? {} : { responseMode: provider.responseMode }),
         ...(provider.authorizationParameters === undefined
           ? {}
           : { parameters: provider.authorizationParameters }),

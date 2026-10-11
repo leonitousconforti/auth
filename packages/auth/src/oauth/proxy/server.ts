@@ -253,6 +253,7 @@ export const layer = <E, R>(options: Options<E, R>) => {
           verifierDigest: input.verifierDigest,
           configuration,
           upstream: prepared.configuration,
+          responseMode: prepared.responseMode ?? "query",
           expiresAtMillis: (yield* now) + 300_000,
         }).pipe(Effect.mapError(() => Unavailable.make({})));
 
@@ -304,7 +305,21 @@ export const layer = <E, R>(options: Options<E, R>) => {
         return yield* Schema.encodeEffect(OAuthVerifiedExternalIdentity)(payload.identity);
       });
 
-      const callback = Effect.fnUntraced(function* (provider: string, url: URL) {
+      const callback = Effect.fnUntraced(function* (provider: string, request: Request, url: URL) {
+        const formPost = request.method === "POST";
+
+        if (
+          formPost &&
+          (url.search !== "" ||
+            request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !==
+              "application/x-www-form-urlencoded")
+        )
+          return yield* Rejected.make({});
+
+        const params = formPost
+          ? new URLSearchParams(yield* readText(HttpServerRequest.fromWeb(request).stream, 16384))
+          : url.searchParams;
+
         const known = new Set([
           "code",
           "state",
@@ -315,27 +330,29 @@ export const layer = <E, R>(options: Options<E, R>) => {
           "scope",
           "authuser",
           "prompt",
+          ...(formPost ? ["user"] : []),
         ]);
 
         const seen = new Set<string>();
 
-        for (const [key, value] of url.searchParams) {
+        for (const [key, value] of params) {
           if (!known.has(key) || seen.has(key) || value.length > 4096)
             return yield* Rejected.make({});
           seen.add(key);
         }
-        const state = url.searchParams.get("state");
-        const code = url.searchParams.get("code");
-        const error = url.searchParams.get("error");
+        const state = params.get("state");
+        const code = params.get("code");
+        const error = params.get("error");
 
         if (state === null || (code === null) === (error === null)) return yield* Rejected.make({});
         const record = yield* load(state);
         const context = record.context;
-        const issuer = url.searchParams.get("iss");
+        const issuer = params.get("iss");
 
         if (
           record._tag !== "Pending" ||
           context.upstream.provider !== provider ||
+          context.responseMode !== (formPost ? "form_post" : "query") ||
           (context.upstream.responseIssuerMode === "required"
             ? issuer !== context.upstream.issuer
             : issuer !== null)
@@ -349,7 +366,8 @@ export const layer = <E, R>(options: Options<E, R>) => {
           !sameConfiguration(payload.preparation.configuration, context.upstream)
         )
           return yield* Unavailable.make({});
-        const scope = url.searchParams.get("scope");
+        const scope = params.get("scope");
+        const user = params.get("user");
 
         const response = yield* Schema.decodeEffect(OAuthCallbackResponse)(
           code === null
@@ -365,6 +383,7 @@ export const layer = <E, R>(options: Options<E, R>) => {
                 code,
                 ...(issuer === null ? {} : { issuer }),
                 ...(scope === null ? {} : { scope }),
+                ...(user === null || user.length === 0 ? {} : { user }),
               },
         ).pipe(Effect.mapError(() => Rejected.make({})));
 
@@ -448,8 +467,8 @@ export const layer = <E, R>(options: Options<E, R>) => {
             (entry) => url.pathname === `${path}/${entry.provider}/callback`,
           );
 
-          if (request.method === "GET" && entry !== undefined)
-            return yield* callback(entry.provider, url);
+          if (entry !== undefined && (request.method === "GET" || request.method === "POST"))
+            return yield* callback(entry.provider, request, url);
           if (
             request.method !== "POST" ||
             url.search !== "" ||

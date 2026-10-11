@@ -19,7 +19,11 @@ import { IdentityConflict, LastSignInMethod } from "../identity/models";
 import { reportAuthFailure } from "../internal/diagnostics";
 import { AuthenticationClock } from "../operations/clock";
 import { requireAuthenticated, type AuthInvocation } from "../operations/context";
-import type { AuthOperationResult, AuthCredentialCommand } from "../operations/credentials";
+import {
+  formPostBinding,
+  type AuthOperationResult,
+  type AuthCredentialCommand,
+} from "../operations/credentials";
 import { AuthenticationRequired } from "../operations/errors";
 import { makeOperation, operationGroup } from "../operations/operation";
 import { makeRequestBinding } from "../operations/requestBinding";
@@ -415,6 +419,7 @@ export const makeOAuthAccounts = <
 
           const intent = snapshotOAuthSync(OAuthLinkIntentContext, {
             ...prepared.configuration,
+            ...(prepared.responseMode === undefined ? {} : { responseMode: prepared.responseMode }),
             namespace: "effect-auth/oauth-link-context/v1",
             moduleId: id,
             generation: policy.generation,
@@ -482,7 +487,7 @@ export const makeOAuthAccounts = <
               authorizationUrl: prepared.authorizationUrl,
               expiresAtMillis,
             },
-            credentialCommands: [command],
+            credentialCommands: [formPostBinding(command, prepared.responseMode)],
           };
         },
         Effect.tapCause((cause) =>
@@ -493,7 +498,10 @@ export const makeOAuthAccounts = <
 
       const complete = Effect.fn("OAuthAccounts.complete")(
         function* (invocation: AuthInvocation, raw: typeof OAuthLinkComplete.Type) {
-          const caller = yield* available(invocation);
+          const authenticated = yield* available(invocation).pipe(
+            Effect.catchTag("AuthenticationRequired", () => Effect.succeed(undefined)),
+          );
+
           const request = yield* snapshotOAuth(OAuthLinkComplete, raw);
           const response = request.response;
 
@@ -506,10 +514,9 @@ export const makeOAuthAccounts = <
             )),
           };
 
-          const access = snapshotOAuthSync(OAuthLinkAccess, {
+          const binding = {
             moduleId: id,
             generation: policy.generation,
-            subjectId: caller.subjectId,
             flowId: request.flowId,
             provider: request.provider,
             callbackId: request.callbackId,
@@ -517,15 +524,31 @@ export const makeOAuthAccounts = <
             requestBindingVerifier: binder.verifier,
             requestBindingExpiresAtMillis: binder.expiresAtMillis,
             ...(response.issuer === undefined ? {} : { responseIssuer: response.issuer }),
-          });
+          };
+
+          const access = snapshotOAuthSync(
+            OAuthLinkAccess,
+            authenticated === undefined
+              ? { ...binding, formPostSubject: true as const }
+              : { ...binding, subjectId: authenticated.subjectId },
+          );
 
           const consumed = yield* consume(access, (value, journal) =>
             journal.prepare(snapshotOAuthSync(OAuthLinkConsumeDecision, value)),
           ).pipe(Effect.flatMap(read));
 
-          if (consumed._tag !== "Consumed") return yield* OAuthRejected.make({});
+          if (consumed._tag !== "Consumed") {
+            if (authenticated === undefined) return yield* AuthenticationRequired.make({});
+
+            return yield* OAuthRejected.make({});
+          }
           const flow = snapshotOAuthSync(OAuthLinkFlow, consumed.flow);
           const context = flow.context;
+
+          if (authenticated === undefined && context.responseMode !== "form_post")
+            return yield* AuthenticationRequired.make({});
+
+          const caller = authenticated ?? { subjectId: context.revision.subjectId };
 
           if (
             context.moduleId !== id ||
@@ -792,11 +815,14 @@ export const makeOAuthAccounts = <
     credentials: true,
   });
 
+  // form_post completion carries the binding cookie. A guest reaches the handler,
+  // which accepts only a form_post continuation whose sealed subject and binding
+  // match. Begin, list, and unlink stay authenticated.
   const Complete = makeOperation(`${moduleId}/accounts/link/complete`, {
     payload: OAuthLinkComplete,
     success: OAuthLinkResult,
     error: Failure,
-    access: "authenticated",
+    access: "any",
     exposure: "public",
     replay: "single-use",
     credentials: true,

@@ -46,7 +46,11 @@ export type Metadata = typeof Metadata.Type;
 
 export const Authentication = Schema.Union([
   Schema.Struct({ method: Schema.Literal("client_secret_basic"), secret: V.secret(4096) }),
-  Schema.Struct({ method: Schema.Literal("client_secret_post"), secret: V.secret(4096) }),
+  Schema.Struct({
+    method: Schema.Literal("client_secret_post"),
+    /** Omit when each token request supplies clientSecret. */
+    secret: Schema.optionalKey(V.secret(4096)),
+  }),
   Schema.Struct({ method: Schema.Literal("none"), publicClient: Schema.Literal(true) }),
 ]);
 
@@ -109,22 +113,31 @@ export interface AuthorizationInput extends Parameters {
   readonly maxAgeSeconds?: number;
   readonly prompt?: "none" | "login" | "consent" | "select_account";
   readonly loginHint?: string;
+  /** Defaults to query. form_post is required by some issuers when name or
+   * email scopes are requested. */
+  readonly responseMode?: "query" | "form_post";
 }
 
 export interface CodeGrantInput extends Parameters {
   readonly code: Redacted.Redacted<string>;
   readonly redirectUri: string;
   readonly pkceVerifier?: Redacted.Redacted<string>;
+  /** Used when client_secret_post has no stored secret. */
+  readonly clientSecret?: Redacted.Redacted<string>;
 }
 
 export interface RefreshGrantInput extends Parameters {
   readonly refreshToken: Redacted.Redacted<string>;
   readonly scopes?: ReadonlyArray<string>;
+  /** Used when client_secret_post has no stored secret. */
+  readonly clientSecret?: Redacted.Redacted<string>;
 }
 
 export interface RevocationInput {
   readonly token: Redacted.Redacted<string>;
   readonly tokenTypeHint: "access_token" | "refresh_token";
+  /** Used when client_secret_post has no stored secret. */
+  readonly clientSecret?: Redacted.Redacted<string>;
 }
 
 export interface Client {
@@ -179,24 +192,30 @@ const Authorization = Schema.Struct({
   maxAgeSeconds: Schema.optionalKey(V.integer(0, 86400)),
   prompt: Schema.optionalKey(Schema.Literals(["none", "login", "consent", "select_account"])),
   loginHint: Schema.optionalKey(V.text(1024)),
+  responseMode: Schema.optionalKey(Schema.Literals(["query", "form_post"])),
 });
+
+const requestSecret = Schema.optionalKey(V.secret(8192));
 
 const CodeGrant = Schema.Struct({
   ...additional,
   code: V.secret(16384),
   redirectUri: V.Callback,
   pkceVerifier: Schema.optionalKey(V.Verifier),
+  clientSecret: requestSecret,
 });
 
 const RefreshGrant = Schema.Struct({
   ...additional,
   refreshToken: V.secret(16384),
   scopes: Schema.optionalKey(V.Scopes),
+  clientSecret: requestSecret,
 });
 
 const Revocation = Schema.Struct({
   token: V.secret(16384),
   tokenTypeHint: Schema.Literals(["access_token", "refresh_token"]),
+  clientSecret: requestSecret,
 });
 
 const ExpiresIn = Schema.Union([
@@ -310,6 +329,7 @@ const authenticated = Effect.fnUntraced(function* (
   authentication: Authentication,
   body: URLSearchParams,
   format: "form" | "json" = "form",
+  clientSecret?: Redacted.Redacted<string>,
 ) {
   let request = HttpClientRequest.post(url).pipe(HttpClientRequest.acceptJson);
 
@@ -324,8 +344,13 @@ const authenticated = Effect.fnUntraced(function* (
     request = HttpClientRequest.setHeader(request, "authorization", `Basic ${credential}`);
   } else {
     body.set("client_id", clientId);
-    if (authentication.method === "client_secret_post")
-      body.set("client_secret", yield* V.reveal(authentication.secret));
+    if (authentication.method === "client_secret_post") {
+      const secret = authentication.secret ?? clientSecret;
+
+      if (secret === undefined) return yield* Unavailable.make({});
+      body.set("client_secret", yield* V.reveal(secret));
+      if (authentication.secret === undefined) Redacted.wipeUnsafe(secret);
+    }
   }
 
   if (format === "json") {
@@ -403,13 +428,20 @@ export const make = Effect.fnUntraced(function* (
 
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => {
-      if (authentication.method !== "none") Redacted.wipeUnsafe(authentication.secret);
-      if (revocationAuthentication.method !== "none")
+      if (authentication.method !== "none" && authentication.secret !== undefined)
+        Redacted.wipeUnsafe(authentication.secret);
+      if (
+        revocationAuthentication.method !== "none" &&
+        revocationAuthentication.secret !== undefined
+      )
         Redacted.wipeUnsafe(revocationAuthentication.secret);
     }),
   );
 
-  const send = Effect.fnUntraced(function* (body: URLSearchParams) {
+  const send = Effect.fnUntraced(function* (
+    body: URLSearchParams,
+    clientSecret?: Redacted.Redacted<string>,
+  ) {
     yield* available;
 
     const request = yield* authenticated(
@@ -418,6 +450,7 @@ export const make = Effect.fnUntraced(function* (
       authentication,
       body,
       tokenBodyFormat,
+      clientSecret,
     );
 
     return yield* Transport.json(yield* Transport.request(http, request, options));
@@ -432,7 +465,7 @@ export const make = Effect.fnUntraced(function* (
     body.set("client_id", options.clientId);
     body.set("redirect_uri", value.redirectUri);
     body.set("response_type", "code");
-    body.set("response_mode", "query");
+    body.set("response_mode", value.responseMode === "form_post" ? "form_post" : "query");
     if (value.scopes.length > 0) body.set("scope", value.scopes.join(scopeSeparator));
     body.set("state", yield* V.reveal(value.state));
     if (value.codeChallenge !== undefined) {
@@ -460,7 +493,7 @@ export const make = Effect.fnUntraced(function* (
       body.set("code_verifier", yield* V.reveal(value.pkceVerifier));
     body.set("redirect_uri", value.redirectUri);
 
-    return yield* send(body);
+    return yield* send(body, value.clientSecret);
   }, use);
 
   const refreshGrant = Effect.fnUntraced(function* (input: RefreshGrantInput) {
@@ -473,7 +506,7 @@ export const make = Effect.fnUntraced(function* (
     if (value.scopes !== undefined && value.scopes.length > 0)
       body.set("scope", value.scopes.join(scopeSeparator));
 
-    return yield* send(body);
+    return yield* send(body, value.clientSecret);
   }, use);
 
   const fetchProfile = Effect.fnUntraced(function* (input: Redacted.Redacted<string>) {
@@ -516,6 +549,8 @@ export const make = Effect.fnUntraced(function* (
         token: yield* V.reveal(value.token),
         token_type_hint: value.tokenTypeHint,
       }),
+      "form",
+      value.clientSecret,
     );
 
     const response = yield* Transport.request(http, request, options);
@@ -533,7 +568,10 @@ const Bearer = Schema.Redacted(V.text(16384).check(Schema.isPattern(/^[A-Za-z0-9
 const detachAuthentication = Effect.fnUntraced(function* (
   authentication: Authentication,
 ): Effect.fn.Return<Authentication, Unavailable> {
-  return authentication.method === "none"
-    ? { ...authentication }
-    : { ...authentication, secret: Redacted.make(yield* V.reveal(authentication.secret)) };
+  if (authentication.method === "none") return { ...authentication };
+  if (authentication.method === "client_secret_post" && authentication.secret === undefined)
+    return { method: "client_secret_post" };
+  if (authentication.secret === undefined) return yield* Unavailable.make({});
+
+  return { ...authentication, secret: Redacted.make(yield* V.reveal(authentication.secret)) };
 });

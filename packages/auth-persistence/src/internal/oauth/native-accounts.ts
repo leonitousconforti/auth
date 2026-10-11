@@ -185,7 +185,7 @@ export const makeNativeOAuthAccountsServices = Effect.fnUntraced(function* (
             prepare,
           );
         }),
-        flow.mysql ? "transaction" : "statement",
+        flow.mysql || original.formPostSubject === true ? "transaction" : "statement",
       ),
     link: (original, prepare) =>
       run(

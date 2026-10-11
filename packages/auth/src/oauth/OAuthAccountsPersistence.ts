@@ -47,6 +47,8 @@ export class OAuthAccountsPersistence extends Context.Service<
       prepare: PrepareOAuthCommit<typeof OAuthLinkIssueDecision.Type, A>,
     ) => Effect.Effect<PreparedCommit<A>, OAuthUnavailable>;
     /** Conditional engine-time deletion checks exact callback and subject binding.
+     * form_post may omit the live session subject; deletion still binds the subject
+     * sealed at the authenticated begin, and only when that continuation is form_post.
      * Provider exchange begins only after this receipt is confirmed. */
     readonly consume: <A>(
       input: OAuthLinkAccess,

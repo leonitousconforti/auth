@@ -15,8 +15,13 @@ import {
 import { installOAuthConfigurations } from "../shared/configuration";
 import { installOAuthConnectedConfigurations } from "../shared/connected/configuration";
 import { makeConnectedProtocolWithCompatibility } from "../shared/connected/protocol";
-import { OpenIdConnectConfigurationError, type OpenIdConnectOAuthProvider } from "../shared/models";
+import {
+  hasStaticSecret,
+  OpenIdConnectConfigurationError,
+  type OpenIdConnectOAuthProvider,
+} from "../shared/models";
 import { resolveOptions } from "../shared/options";
+import { PrivateKeyClientSecret } from "../shared/privateKeyJwt";
 import { makeOpenIdConnectOAuthProtocol } from "../shared/protocol";
 import { ProviderRevocation } from "../shared/ProviderRevocation";
 import { githubApiHeaders } from "./email";
@@ -235,6 +240,7 @@ const revocationLayer = (options: Pick<GitHubOAuthAppConnectedProtocolOptions, "
         revoke: Effect.fn("GitHubOAuthApp.revoke")(function* (input) {
           if (
             input.authentication.method !== "client_secret_post" ||
+            !hasStaticSecret(input.authentication) ||
             input.context.configuration.profile.clientRegistrationId !== input.clientId ||
             input.context.identity.provider !== gitHubOAuthAppProviderKey ||
             input.context.identity.issuer !== issuer
@@ -328,7 +334,7 @@ export const makeGitHubOAuthAppProtocol = Effect.fn("makeGitHubOAuthAppProtocol"
       ...saved,
       providers: saved.registrations.map(signInProvider),
     }),
-  );
+  ).pipe(Effect.provide(PrivateKeyClientSecret.layerUnused));
 });
 
 export const makeGitHubOAuthAppConnectedProtocol = Effect.fn("makeGitHubOAuthAppConnectedProtocol")(
@@ -370,6 +376,8 @@ export const makeGitHubOAuthAppConnectedProtocol = Effect.fn("makeGitHubOAuthApp
         true,
       ),
       compatibility,
-    ).pipe(Effect.provide(revocationLayer(saved)));
+    ).pipe(
+      Effect.provide(Layer.mergeAll(revocationLayer(saved), PrivateKeyClientSecret.layerUnused)),
+    );
   },
 );

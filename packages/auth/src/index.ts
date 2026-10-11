@@ -33,6 +33,7 @@ export * as BrowserLogin from "./BrowserLogin.ts";
 export * as BrowserLoginContract from "./BrowserLoginContract.ts";
 
 export * as OpenIdConnect from "./OpenIdConnect.ts";
+export * as Apple from "./Apple.ts";
 export * as Auth0 from "./Auth0.ts";
 export * as Atlassian from "./Atlassian.ts";
 export * as Cognito from "./Cognito.ts";

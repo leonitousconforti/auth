@@ -373,6 +373,8 @@ only loopback completions may use HTTP with insecure host-only cookies.
 Mount `OAuthProxy.routes` and register the provider callback. Supply a separate
 protector keyring, an HTTP client, crypto, and `OAuthProxyPersistence.layer` with
 SQLite, D1, or PostgreSQL. Apply its migration. Replicas share storage and keys.
+Callbacks use the provider's declared GET query or POST form transport; Apple
+first-consent `user` data reaches provider verification. App handoffs use GET.
 The [proxy application](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/oauth-proxy-application.ts)
 shows the complete composition.
 
@@ -406,6 +408,7 @@ expired-row cleanup and ingress limits.
 
 | Integration        | Configure                                                              |
 | ------------------ | ---------------------------------------------------------------------- |
+| Apple              | [`Apple.provider`](../guide/apple)                                     |
 | Atlassian          | [`Atlassian.provider`](../guide/atlassian)                             |
 | Auth0              | [`Auth0.provider`](../guide/enterprise-oidc)                           |
 | Cognito            | [`Cognito.provider`](../guide/enterprise-oidc)                         |
@@ -534,7 +537,8 @@ optional `amr`. Roblox keeps optional `type` and `created_at` and preserves the
 trailing-slash issuer. Railway merges UserInfo because its ID token omits name,
 email, and picture. `Microsoft.provider` keeps `oid` and `tid`. The durable
 subject is `oid:tid` when the token issuer equals the configured authority, and
-`tid:oid:tid` when it does not.
+`tid:oid:tid` when it does not. `Apple.provider` decodes string
+`email_verified` and `is_private_email` flags and merges the first-consent name.
 
 Set `userInfo: "merge"` when an OIDC identity token omits needed profile claims.
 Provider schemas describe the returned projection; applications choose permission

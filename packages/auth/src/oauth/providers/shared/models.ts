@@ -71,10 +71,36 @@ export class OpenIdConnectConfigurationError extends Schema.TaggedError<OpenIdCo
   },
 ) {}
 
+/** PKCS8 DER, base64, retained until the provider scope closes. Signing yields Signature. */
+export interface PrivateKeyJwt {
+  readonly algorithm: "ES256";
+  readonly keyId: string;
+  readonly issuer: string;
+  readonly subject: string;
+  readonly audience: string;
+  readonly lifetimeSeconds: number;
+  readonly privateKey: Redacted.Redacted<string>;
+}
+
 export type OpenIdConnectAuthentication =
   | { readonly method: "client_secret_basic"; readonly secret: Redacted.Redacted<string> }
   | { readonly method: "client_secret_post"; readonly secret: Redacted.Redacted<string> }
+  | { readonly method: "client_secret_post"; readonly privateKeyJwt: PrivateKeyJwt }
   | { readonly method: "none"; readonly publicClient: true };
+
+export const isPrivateKeyAuthentication = (
+  authentication: OpenIdConnectAuthentication,
+): authentication is {
+  readonly method: "client_secret_post";
+  readonly privateKeyJwt: PrivateKeyJwt;
+} => "privateKeyJwt" in authentication;
+
+export const hasStaticSecret = (
+  authentication: OpenIdConnectAuthentication,
+): authentication is
+  | { readonly method: "client_secret_basic"; readonly secret: Redacted.Redacted<string> }
+  | { readonly method: "client_secret_post"; readonly secret: Redacted.Redacted<string> } =>
+  "secret" in authentication;
 
 export interface PlainOAuthIdentity {
   readonly subject: string;
@@ -110,6 +136,8 @@ interface ProviderGeneration {
   readonly scopes: ReadonlyArray<string>;
   readonly authorizationParameters?: Readonly<Record<string, string>>;
   readonly tokenParameters?: Readonly<Record<string, string>>;
+  /** Defaults to query. */
+  readonly responseMode?: "query" | "form_post";
 }
 
 export interface OpenIdConnectOidcProvider extends ProviderGeneration {

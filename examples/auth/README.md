@@ -61,6 +61,9 @@ keeps the trailing-slash issuer and does not receive email.
 shape. Linear reads the GraphQL viewer. Dropbox reads the current account.
 Notion reads `owner.user` from the token response.
 
+`example:apple` is the same shape for Sign in with Apple. The callback is
+form_post, and the client secret is an ES256 JWT minted from `APPLE_PRIVATE_KEY`.
+
 `example:microsoft` is the same shape for Entra ID. The common authority stores
 `tid:oid:tid`. See the [Microsoft Entra ID guide](../../docs/src/content/docs/guide/microsoft.md).
 

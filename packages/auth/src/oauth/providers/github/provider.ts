@@ -9,6 +9,7 @@ import { installOAuthConfigurations } from "../shared/configuration";
 import type { OpenIdConnectConfigurationError } from "../shared/models";
 import type { Requirements } from "../shared/native";
 import { resolveOptions, resolveRegistration, type RegistrationOptions } from "../shared/options";
+import { PrivateKeyClientSecret } from "../shared/privateKeyJwt";
 import { makeOpenIdConnectOAuthProtocol } from "../shared/protocol";
 import type { GitHubOAuthAppConnectedProtocolOptions, GitHubOAuthAppGeneration } from "./models";
 import {
@@ -80,7 +81,7 @@ export const provider = (
         })),
         timeoutSeconds: options.timeoutSeconds ?? 10,
       }),
-    );
+    ).pipe(Effect.provide(PrivateKeyClientSecret.layerUnused));
 
     const profiles = options.access;
 

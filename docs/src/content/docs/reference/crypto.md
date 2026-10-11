@@ -135,7 +135,8 @@ and the resulting PKCS8 use `Redacted`. Keys are limited to 16 KiB of DER.
 private components. RSA defaults to 2048 bits with exponent 65537; `modulusLength`
 also accepts 3072 or 4096. The caller owns the exported secret bytes. Native
 generation is joined before interruption completes. Custom `Signature` services
-implement generation alongside encoding, signing and verification.
+implement generation, `decodePrivateKey`, encoding, signing and verification.
+`decodePrivateKey` imports extractable PKCS8 and returns typed components.
 [JOSE](./jose.mdx) owns JWK metadata and JWTs. PHC password hashes, PEM text and
 Auth envelopes are outside this package. SHA-1 HMAC is available
 for existing protocols such as TOTP.

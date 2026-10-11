@@ -13,6 +13,7 @@ export const DiscoveryProfile = Schema.Literals([
   "railway",
   "cognito",
   "microsoft",
+  "apple",
 ]);
 
 const pinned = {
@@ -39,6 +40,12 @@ const pinned = {
     authorization_endpoint: "https://backboard.railway.com/oauth/auth",
     token_endpoint: "https://backboard.railway.com/oauth/token",
     jwks_uri: "https://backboard.railway.com/oauth/jwks",
+  },
+  apple: {
+    issuer: "https://appleid.apple.com",
+    authorization_endpoint: "https://appleid.apple.com/auth/authorize",
+    token_endpoint: "https://appleid.apple.com/auth/token",
+    jwks_uri: "https://appleid.apple.com/auth/keys",
   },
 } as const;
 
@@ -97,6 +104,9 @@ export const supplementDiscovery = Effect.fnUntraced(function* (
       metadata.jwks_uri !== expected.jwks_uri
     )
       return yield* OpenIdConnectConfigurationError.make({ reason: "metadata" });
+
+    // Apple does not advertise S256. Do not invent a PKCE method for it.
+    if (profile === "apple") return metadata;
   }
 
   // Slack documents code_verifier at docs.slack.dev/reference/methods/openid.connect.token/

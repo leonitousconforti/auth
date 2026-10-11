@@ -23,7 +23,9 @@ refresh token is omitted, and an array scope is joined with spaces. A receipt
 alone does not establish a successful grant or authenticated identity. Tokens
 stay redacted. Profile fetches default to GET; POST and a JSON body are
 available, and identity can instead be taken from the token receipt. JSON token
-requests reject a repeated parameter name before the request is sent. For initial OIDC sign-in, require an ID token and call `verifier.verify`
+requests reject a repeated parameter name before the request is sent. Authorization
+defaults to `response_mode=query`; `form_post` is available when the issuer POSTs
+the callback. `client_secret_post` may omit its stored secret and take `clientSecret` on that token request. For initial OIDC sign-in, require an ID token and call `verifier.verify`
 with the captured verification time, nonce, access token, and authorization code.
 On refresh, verify any returned ID token against the previous identity; accepting
 an omitted ID token is application policy.

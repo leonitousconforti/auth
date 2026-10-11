@@ -100,14 +100,14 @@ redacted JSON claims. It performs no signature or claim-policy checks.
 
 ## Keys and compact operations
 
-| Module | Entry points                                    | Contract                                                                                              |
-| ------ | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `Jwk`  | `importPublic`, `importPrivate`, `importSecret` | Validate a JWK and bind it to an explicitly chosen algorithm; private/symmetric inputs are `Redacted` |
-| `Jwk`  | `exportPublic`, `exportPrivate`                 | Export imported JWKs; private/symmetric output stays `Redacted`                                       |
-| `Jwk`  | `generateKeyPair`                               | Generate typed public and redacted private JWKs through the selected crypto backend                   |
-| `Jws`  | `sign`, `verify`, `verifyWithKeySet`            | Compact JWS over redacted bytes, with an explicit verification algorithm list                         |
-| `Jwt`  | `sign`, `verify`, `verifyWithKeySet`            | Compact signed JWT with a claims Schema                                                               |
-| `Jwe`  | `encrypt`, `decrypt`                            | Compact `dir` / `A256GCM`; redacted plaintext and tokens                                              |
+| Module | Entry points                                                   | Contract                                                                                                                    |
+| ------ | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `Jwk`  | `importPublic`, `importPrivate`, `importSecret`, `importPkcs8` | Validate a JWK, or import PKCS8 DER, and bind it to an explicitly chosen algorithm; private/symmetric inputs are `Redacted` |
+| `Jwk`  | `exportPublic`, `exportPrivate`                                | Export imported JWKs; private/symmetric output stays `Redacted`                                                             |
+| `Jwk`  | `generateKeyPair`                                              | Generate typed public and redacted private JWKs through the selected crypto backend                                         |
+| `Jws`  | `sign`, `verify`, `verifyWithKeySet`                           | Compact JWS over redacted bytes, with an explicit verification algorithm list                                               |
+| `Jwt`  | `sign`, `verify`, `verifyWithKeySet`                           | Compact signed JWT with a claims Schema                                                                                     |
+| `Jwe`  | `encrypt`, `decrypt`                                           | Compact `dir` / `A256GCM`; redacted plaintext and tokens                                                                    |
 
 Private keys require complete RSA CRT parameters, P-256 coordinates and scalar,
 or Ed25519 public and private bytes. Native key parsing validates the components.

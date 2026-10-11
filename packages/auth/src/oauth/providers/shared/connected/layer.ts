@@ -8,6 +8,7 @@ import {
   resolveProvider,
   type ProviderOptions,
 } from "../options";
+import { PrivateKeyClientSecret } from "../privateKeyJwt";
 import type {
   OpenIdConnectConnectedOAuthProvider,
   OpenIdConnectConnectedOidcProvider,
@@ -53,7 +54,9 @@ export const layer = <R = never>(options: Options<R>) =>
       ),
     ).pipe(
       Effect.flatMap((configuration) =>
-        makeOpenIdConnectConnectedProtocol(installConnectedConfigurations<R>(configuration)),
+        makeOpenIdConnectConnectedProtocol(installConnectedConfigurations<R>(configuration)).pipe(
+          Effect.provide(PrivateKeyClientSecret.layer),
+        ),
       ),
     ),
   );

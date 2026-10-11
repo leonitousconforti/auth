@@ -181,6 +181,25 @@ const failResponse = (error: OperationHttpError) =>
       }),
   ).pipe(Effect.orDie);
 
+const callbackParameters = Effect.fn("OperationHttp.callbackParameters")(function* (
+  request: Request,
+  url: URL,
+) {
+  if (request.method === "GET") return url.searchParams;
+  if (request.method !== "POST" || url.search !== "")
+    return yield* OperationHttpError.make({
+      reason: request.method === "POST" ? "request" : "method",
+    });
+
+  const contentType = request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
+
+  if (contentType !== "application/x-www-form-urlencoded")
+    return yield* OperationHttpError.make({ reason: "request" });
+  const config = yield* OperationHttpServerConfig;
+
+  return new URLSearchParams(yield* boundedText(request, config.maximumBodyBytes));
+});
+
 const callbackPayload = Effect.fn("OperationHttp.callbackPayload")(function* (
   callback: OAuthHttpCallback<unknown>,
   request: Request,
@@ -194,19 +213,24 @@ const callbackPayload = Effect.fn("OperationHttp.callbackPayload")(function* (
     "error_description",
     "error_uri",
     "iss",
+    "user",
+    "id_token",
     ...(callback.allowedQueryParameters ?? []),
   ]);
 
   const seen = new Set<string>();
+  const params = yield* callbackParameters(request, url);
 
-  for (const [name, value] of url.searchParams) {
-    if (!allowed.has(name) || seen.has(name) || value.length > 4096)
+  for (const [name, value] of params) {
+    const limit = name === "id_token" ? 65536 : 4096;
+
+    if (!allowed.has(name) || seen.has(name) || value.length > limit)
       return yield* OperationHttpError.make({ reason: "request" });
     seen.add(name);
   }
-  const state = url.searchParams.get("state");
-  const code = url.searchParams.get("code");
-  const error = url.searchParams.get("error");
+  const state = params.get("state");
+  const code = params.get("code");
+  const error = params.get("error");
 
   if (
     state === null ||
@@ -215,7 +239,8 @@ const callbackPayload = Effect.fn("OperationHttp.callbackPayload")(function* (
     (code === null) === (error === null)
   )
     return yield* OperationHttpError.make({ reason: "request" });
-  const issuer = url.searchParams.get("iss");
+  const issuer = params.get("iss");
+  const user = params.get("user");
 
   const response =
     code === null
@@ -225,7 +250,13 @@ const callbackPayload = Effect.fn("OperationHttp.callbackPayload")(function* (
           error: error === "access_denied" ? "access-denied" : "rejected",
           ...(issuer === null ? {} : { issuer }),
         }
-      : { _tag: "Code", state, code, ...(issuer === null ? {} : { issuer }) };
+      : {
+          _tag: "Code",
+          state,
+          code,
+          ...(issuer === null ? {} : { issuer }),
+          ...(user === null || user.length === 0 ? {} : { user }),
+        };
 
   return {
     flowId: yield* callback.flowId(request, credentials),
@@ -287,13 +318,19 @@ const applyCommands = Effect.fn("OperationHttp.applyCommands")(function* (
       const value = command._tag === "Issue" ? Redacted.value(command.credential) : "";
       const maxAge = command._tag === "Issue" ? Math.max(0, command.expiresAtMillis - now) : 0;
 
+      const sameSite =
+        command._tag === "Issue" && command.sameSite === "none" ? "none" : cookie.sameSite;
+
+      if (sameSite === "none" && !cookie.secure)
+        return yield* OperationHttpError.make({ reason: "credentials" });
+
       headers.append(
         "set-cookie",
         Cookies.serializeCookie(
           Cookies.makeCookieUnsafe(cookie.name, value, {
             path: cookie.path,
             secure: cookie.secure,
-            sameSite: cookie.sameSite,
+            sameSite,
             httpOnly: true,
             ...(cookie.domain === undefined ? {} : { domain: cookie.domain }),
             maxAge: Duration.millis(maxAge),
@@ -398,7 +435,10 @@ export const make = <
 
           return new Response(null, { status: 204, headers });
         }
-        if (request.method !== (callback === undefined ? route.method : "GET"))
+        if (
+          request.method !==
+          (callback === undefined ? route.method : request.method === "POST" ? "POST" : "GET")
+        )
           return yield* OperationHttpError.make({ reason: "method" });
         if (callback === undefined && url.search !== "")
           return yield* OperationHttpError.make({ reason: "request" });

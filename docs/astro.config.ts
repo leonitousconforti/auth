@@ -49,6 +49,7 @@ export default defineConfig({
           items: [
             { label: "OAuth setup", slug: "guide/oauth" },
             { label: "Enterprise OpenID", slug: "guide/enterprise-oidc" },
+            { label: "Apple", slug: "guide/apple" },
             { label: "Atlassian", slug: "guide/atlassian" },
             { label: "Dropbox", slug: "guide/dropbox" },
             { label: "Figma", slug: "guide/figma" },

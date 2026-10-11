@@ -6,7 +6,11 @@ import { HookDenied, LifecycleEventId, lifecycleEvent, lifecycleSnapshot } from 
 import { IdentityConflict } from "../identity/models";
 import { AuthenticationClock } from "../operations/clock";
 import type { AuthInvocation } from "../operations/context";
-import type { AuthCredentialCommand, AuthOperationResult } from "../operations/credentials";
+import {
+  formPostBinding,
+  type AuthCredentialCommand,
+  type AuthOperationResult,
+} from "../operations/credentials";
 import { AuthenticationRequired } from "../operations/errors";
 import { makeOperation, operationGroup } from "../operations/operation";
 import { makeRequestBinding } from "../operations/requestBinding";
@@ -78,6 +82,7 @@ const preparationSchema = Schema.Struct({
   configuration: M.OAuthConnectedConfiguration,
   authorizationUrl: OAuthAuthorizationUrl,
   secrets: OAuthTransactionSecrets,
+  responseMode: Schema.optionalKey(Schema.Literals(["query", "form_post"])),
 });
 
 const encoder = new TextEncoder();
@@ -380,6 +385,7 @@ export const makeOAuthConnected = <const Id extends string>(
 
         const intent = snapshotOAuthSync(M.OAuthConnectedIntentContext, {
           ...prepared.configuration,
+          ...(prepared.responseMode === undefined ? {} : { responseMode: prepared.responseMode }),
           namespace: "effect-auth/oauth-connected-context/v1",
           moduleId: id,
           generation: policy.generation,
@@ -393,6 +399,7 @@ export const makeOAuthConnected = <const Id extends string>(
             ? { reconnect: snapshotOAuthSync(M.OAuthConnectedTarget, owned.grant!.context) }
             : {}),
           maximumEvidenceAgeMillis: policy.maximumEvidenceAgeMillis,
+          authenticatedCaller: caller,
           returnTarget,
           stateDigest: yield* stateDigest(request.flowId, provider, prepared.secrets.state),
           requestBindingVerifier: binder.verifier,
@@ -451,7 +458,7 @@ export const makeOAuthConnected = <const Id extends string>(
             authorizationUrl: prepared.authorizationUrl,
             expiresAtMillis,
           },
-          credentialCommands: [command],
+          credentialCommands: [formPostBinding(command, prepared.responseMode)],
         };
       }, connectedSafe);
 
@@ -459,7 +466,10 @@ export const makeOAuthConnected = <const Id extends string>(
         invocation: AuthInvocation,
         raw: typeof M.OAuthConnectedComplete.Type,
       ) {
-        const caller = yield* connectedCaller(invocation);
+        const authenticated = yield* connectedCaller(invocation).pipe(
+          Effect.catchTag("AuthenticationRequired", () => Effect.succeed(undefined)),
+        );
+
         const request = yield* snapshotOAuth(M.OAuthConnectedComplete, raw);
         const response = request.response;
 
@@ -475,10 +485,9 @@ export const makeOAuthConnected = <const Id extends string>(
           )),
         };
 
-        const access = snapshotOAuthSync(M.OAuthConnectedAccess, {
+        const binding = {
           moduleId: id,
           generation: policy.generation,
-          subjectId: caller.subjectId,
           flowId: request.flowId,
           provider: request.provider,
           callbackId: request.callbackId,
@@ -486,15 +495,33 @@ export const makeOAuthConnected = <const Id extends string>(
           requestBindingVerifier: binder.verifier,
           requestBindingExpiresAtMillis: binder.expiresAtMillis,
           ...(response.issuer === undefined ? {} : { responseIssuer: response.issuer }),
-        });
+        };
+
+        const access = snapshotOAuthSync(
+          M.OAuthConnectedAccess,
+          authenticated === undefined
+            ? { ...binding, formPostSubject: true as const }
+            : { ...binding, subjectId: authenticated.subjectId },
+        );
 
         const consumed = yield* consume(access, (value, journal) =>
           journal.prepare(snapshotOAuthSync(M.OAuthConnectedConsumeDecision, value)),
         ).pipe(Effect.flatMap(connectedRead));
 
-        if (consumed._tag !== "Consumed") return yield* OAuthRejected.make({});
+        if (consumed._tag !== "Consumed") {
+          if (authenticated === undefined) return yield* AuthenticationRequired.make({});
+
+          return yield* OAuthRejected.make({});
+        }
         const flow = yield* snapshotOAuth(M.OAuthConnectedFlow, consumed.flow);
         const context = flow.context;
+
+        if (authenticated === undefined && context.responseMode !== "form_post")
+          return yield* AuthenticationRequired.make({});
+
+        const caller = authenticated ?? context.authenticatedCaller;
+
+        if (caller === undefined) return yield* AuthenticationRequired.make({});
 
         if (
           context.moduleId !== id ||
@@ -760,11 +787,14 @@ export const makeOAuthConnected = <const Id extends string>(
     credentials: true,
   });
 
+  // form_post completion carries the binding cookie. A guest reaches the handler,
+  // which accepts only a form_post continuation whose sealed caller and binding
+  // match. Begin, list, and disconnect stay authenticated.
   const Complete = makeOperation(`${moduleId}/connected/complete`, {
     payload: M.OAuthConnectedComplete,
     success: M.OAuthConnectedResult,
     error: Failure,
-    access: "authenticated",
+    access: "any",
     exposure: "public",
     replay: "single-use",
     credentials: true,

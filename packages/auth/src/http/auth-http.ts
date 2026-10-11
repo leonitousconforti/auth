@@ -498,12 +498,19 @@ export const make = <
             continue;
           }
 
+          const sameSite =
+            command._tag === "Issue" && command.sameSite === "none" ? "none" : cookie.sameSite;
+
+          if (sameSite === "none" && !cookie.secure)
+            return yield* OperationHttpError.make({ reason: "credentials" });
+
           response = yield* HttpServerResponse.setCookie(
             response,
             cookie.name,
             command._tag === "Issue" ? Redacted.value(command.credential) : "",
             {
               ...cookie,
+              sameSite,
               httpOnly: true,
               maxAge: Duration.millis(
                 command._tag === "Issue" ? Math.max(0, command.expiresAtMillis - now) : 0,
@@ -808,26 +815,32 @@ export const make = <
   };
 
   /** Mount these alongside handlers(api) when composing an existing HttpApi.
-   * routes() already includes them. Callback GETs use state/binding admission. */
+   * routes() already includes them. GET and POST both reach the operation
+   * server. POST carries a form_post body on the same path. */
   const callbackRoutes = () =>
     Layer.unwrap(
       Effect.gen(function* () {
         const server = yield* makeServer();
 
         return HttpRouter.addAll(
-          server.callbackPaths.map((path) =>
-            HttpRouter.route(
-              "GET",
-              Schema.decodeUnknownSync(Schema.TemplateLiteral(["/", Schema.String]))(path),
-              Effect.gen(function* () {
-                const request = yield* HttpServerRequest.toWeb(
-                  yield* HttpServerRequest.HttpServerRequest,
-                ).pipe(Effect.orDie);
+          server.callbackPaths.flatMap((path) => {
+            const template = Schema.decodeUnknownSync(Schema.TemplateLiteral(["/", Schema.String]))(
+              path,
+            );
 
-                return HttpServerResponse.fromWeb(yield* server.handle(request));
-              }),
-            ),
-          ),
+            const handler = Effect.gen(function* () {
+              const request = yield* HttpServerRequest.toWeb(
+                yield* HttpServerRequest.HttpServerRequest,
+              ).pipe(Effect.orDie);
+
+              return HttpServerResponse.fromWeb(yield* server.handle(request));
+            });
+
+            return [
+              HttpRouter.route("GET", template, handler),
+              HttpRouter.route("POST", template, handler),
+            ];
+          }),
         );
       }),
     );

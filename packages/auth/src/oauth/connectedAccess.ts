@@ -14,12 +14,7 @@ import { Base64Url } from "effect/encoding";
 
 import { hasCommitScope, type PreparedCommit } from "../hooks/commit";
 import { reportAuthFailure } from "../internal/diagnostics";
-import {
-  AuthenticationAssurance,
-  AssuranceEvidence,
-  requireAuthenticated,
-  type AuthInvocation,
-} from "../operations/context";
+import { requireAuthenticated, type AuthInvocation } from "../operations/context";
 import { AuthenticationRequired } from "../operations/errors";
 import { SecurityRevision } from "../sessions/models";
 import { OAuthAccountRevision } from "./accountsModels";
@@ -49,24 +44,7 @@ export const OAuthConnectedAccessFailure = Schema.Union([
 
 export type OAuthConnectedAccessFailure = typeof OAuthConnectedAccessFailure.Type;
 
-const invocationSchema = Schema.TaggedStruct("Authenticated", {
-  subjectId: M.OAuthConnectedTokenContext.fields.subjectId,
-  sessionId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(256))),
-  assurance: Schema.Struct({
-    ...AuthenticationAssurance.fields,
-    method: Schema.NonEmptyString.check(Schema.isMaxLength(128)),
-    factors: AuthenticationAssurance.fields.factors.check(Schema.isMaxLength(8)),
-    evidence: Schema.optionalKey(
-      Schema.NonEmptyArray(
-        Schema.Struct({
-          ...AssuranceEvidence.fields,
-          method: Schema.NonEmptyString.check(Schema.isMaxLength(128)),
-          factors: AssuranceEvidence.fields.factors.check(Schema.isMaxLength(8)),
-        }),
-      ).check(Schema.isMaxLength(64)),
-    ),
-  }),
-});
+const invocationSchema = M.OAuthConnectedCaller;
 
 export const connectedCaller = Effect.fn("OAuthConnected.caller")(function* (
   invocation: AuthInvocation,

@@ -25,7 +25,12 @@ import {
 } from "../../../signInModels";
 import { snapshotOAuth } from "../../../signInSnapshot";
 import { type ConnectedCompatibility } from "../compatibility";
-import { persistedResponseIssuerMode, type OpenIdConnectConfigurationError } from "../models";
+import {
+  persistedResponseIssuerMode,
+  type OpenIdConnectAuthentication,
+  type OpenIdConnectConfigurationError,
+} from "../models";
+import { PrivateKeyClientSecret } from "../privateKeyJwt";
 import { decodeOidcProfile } from "../profile";
 import { ProviderRevocation } from "../ProviderRevocation";
 import { tokens } from "../receipt";
@@ -155,12 +160,16 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
 ): Effect.fn.Return<
   OAuthConnectedProtocol["Service"],
   OpenIdConnectConfigurationError | OAuthUnavailable,
-  R | Setup | ProviderRevocation | Crypto.Crypto | Scope.Scope
+  R | Setup | ProviderRevocation | Crypto.Crypto | PrivateKeyClientSecret | Scope.Scope
 > {
   const decoderContext = (yield* Effect.context<R>()).pipe(withoutObservability);
   const crypto = yield* Crypto.Crypto;
+  const clientSecrets = yield* PrivateKeyClientSecret;
   const providerRevocation = yield* ProviderRevocation;
   const scope = yield* Effect.scope;
+
+  const requestSecret = (authentication: OpenIdConnectAuthentication) =>
+    clientSecrets.mint(authentication).pipe(Effect.mapError(unavailable));
 
   // Provider-owned revocation bypasses the generic OAuth client's transport.
   // Own the entire operation, including provider callbacks, in this lifetime.
@@ -447,6 +456,9 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
           : {}),
         ...(request.prompt === undefined ? {} : { prompt: request.prompt }),
         ...(request.loginHint === undefined ? {} : { loginHint: request.loginHint }),
+        ...(entry.provider.responseMode === undefined
+          ? {}
+          : { responseMode: entry.provider.responseMode }),
       })
       .pipe(Effect.mapError(unavailable));
 
@@ -473,6 +485,9 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
         ...(pkce === undefined ? {} : { pkceVerifier: pkce.verifier }),
         ...(nonce === undefined ? {} : { oidcNonce: nonce }),
       },
+      ...(entry.provider.responseMode === undefined
+        ? {}
+        : { responseMode: entry.provider.responseMode }),
     };
 
     return yield* snapshotOAuth(prepareOutput, result);
@@ -503,6 +518,8 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
       return yield* rejected();
     const start = yield* checkedStart(request.verificationStartedAt);
 
+    const clientSecret = yield* requestSecret(provider.authentication);
+
     const receipt = yield* entry.client
       .codeGrant({
         code: request.response.code,
@@ -512,8 +529,16 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
           : { pkceVerifier: request.secrets.pkceVerifier }),
         ...(provider.tokenParameters === undefined ? {} : { parameters: provider.tokenParameters }),
         resources: saved.profile.resources,
+        ...(clientSecret === undefined ? {} : { clientSecret }),
       })
-      .pipe(Effect.mapError(unavailable));
+      .pipe(
+        Effect.mapError(unavailable),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (clientSecret !== undefined) Redacted.wipeUnsafe(clientSecret);
+          }),
+        ),
+      );
 
     const grant = yield* tokens(receipt, compatibility, {
       scopes: saved.profile.scopes,
@@ -629,6 +654,8 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
     )
       return yield* unavailable();
 
+    const clientSecret = yield* requestSecret(provider.authentication);
+
     const receipt = yield* entry.client
       .refreshGrant({
         refreshToken: request.material.refreshToken,
@@ -637,8 +664,16 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
           ? {}
           : { parameters: provider.refreshParameters }),
         resources: saved.profile.resources,
+        ...(clientSecret === undefined ? {} : { clientSecret }),
       })
-      .pipe(Effect.mapError(unavailable));
+      .pipe(
+        Effect.mapError(unavailable),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (clientSecret !== undefined) Redacted.wipeUnsafe(clientSecret);
+          }),
+        ),
+      );
 
     const grant = yield* tokens(receipt, compatibility, {
       scopes: saved.profile.scopes,
@@ -752,13 +787,43 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
 
       return "Confirmed" as const;
     }
-    if (request.material.refreshToken !== undefined)
+    if (revocation.mode !== "rfc7009") return yield* unavailable();
+    const revocationAuthentication = revocation.authentication;
+
+    if (request.material.refreshToken !== undefined) {
+      const clientSecret = yield* requestSecret(revocationAuthentication);
+
       yield* entry.client
-        .revoke({ token: request.material.refreshToken, tokenTypeHint: "refresh_token" })
-        .pipe(Effect.mapError(unavailable));
+        .revoke({
+          token: request.material.refreshToken,
+          tokenTypeHint: "refresh_token",
+          ...(clientSecret === undefined ? {} : { clientSecret }),
+        })
+        .pipe(
+          Effect.mapError(unavailable),
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (clientSecret !== undefined) Redacted.wipeUnsafe(clientSecret);
+            }),
+          ),
+        );
+    }
+    const accessSecret = yield* requestSecret(revocationAuthentication);
+
     yield* entry.client
-      .revoke({ token: request.material.accessToken, tokenTypeHint: "access_token" })
-      .pipe(Effect.mapError(unavailable));
+      .revoke({
+        token: request.material.accessToken,
+        tokenTypeHint: "access_token",
+        ...(accessSecret === undefined ? {} : { clientSecret: accessSecret }),
+      })
+      .pipe(
+        Effect.mapError(unavailable),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (accessSecret !== undefined) Redacted.wipeUnsafe(accessSecret);
+          }),
+        ),
+      );
 
     return "Confirmed" as const;
   });
@@ -810,7 +875,7 @@ export const makeOpenIdConnectConnectedProtocol = <R, Setup>(
 ): Effect.Effect<
   OAuthConnectedProtocol["Service"],
   OpenIdConnectConfigurationError | OAuthUnavailable,
-  R | Setup | Crypto.Crypto | Scope.Scope
+  R | Setup | Crypto.Crypto | PrivateKeyClientSecret | Scope.Scope
 > =>
   makeConnectedProtocolWithCompatibility(installation).pipe(
     Effect.provide(ProviderRevocation.layerUnsupported),

@@ -23,6 +23,7 @@ export default defineConfig({
       "src/OAuth.ts",
       "src/OAuthProxy.ts",
       "src/OpenIdConnect.ts",
+      "src/Apple.ts",
       "src/Auth0.ts",
       "src/Atlassian.ts",
       "src/Cognito.ts",

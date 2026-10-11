@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 
+import { AssuranceEvidence, AuthenticationAssurance } from "../operations/context";
 import { RequestBindingFlowId } from "../operations/requestBinding";
 import { SecurityRevision } from "../sessions/models";
 import {
@@ -148,6 +149,28 @@ export const OAuthConnectedActionAuthorization = Schema.Struct({
 
 export type OAuthConnectedActionAuthorization = typeof OAuthConnectedActionAuthorization.Type;
 
+/** Authenticated caller sealed at begin so form_post completion can authorize without the session cookie. */
+export const OAuthConnectedCaller = Schema.TaggedStruct("Authenticated", {
+  subjectId: OAuthAccountRevision.fields.subjectId,
+  sessionId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(256))),
+  assurance: Schema.Struct({
+    ...AuthenticationAssurance.fields,
+    method: Schema.NonEmptyString.check(Schema.isMaxLength(128)),
+    factors: AuthenticationAssurance.fields.factors.check(Schema.isMaxLength(8)),
+    evidence: Schema.optionalKey(
+      Schema.NonEmptyArray(
+        Schema.Struct({
+          ...AssuranceEvidence.fields,
+          method: Schema.NonEmptyString.check(Schema.isMaxLength(128)),
+          factors: AssuranceEvidence.fields.factors.check(Schema.isMaxLength(8)),
+        }),
+      ).check(Schema.isMaxLength(64)),
+    ),
+  }),
+});
+
+export type OAuthConnectedCaller = typeof OAuthConnectedCaller.Type;
+
 /** Digest this immutable intent before adding its accepted begin authorization. */
 export const OAuthConnectedIntentContext = Schema.Struct({
   ...OAuthSignInTransactionContext.fields,
@@ -157,6 +180,7 @@ export const OAuthConnectedIntentContext = Schema.Struct({
   grantId: OAuthGrantId,
   reconnect: Schema.optionalKey(OAuthConnectedTarget),
   maximumEvidenceAgeMillis: OAuthConnectedPolicy.fields.maximumEvidenceAgeMillis,
+  authenticatedCaller: Schema.optionalKey(OAuthConnectedCaller),
 });
 
 export type OAuthConnectedIntentContext = typeof OAuthConnectedIntentContext.Type;
@@ -338,8 +362,14 @@ export const OAuthConnectedDisconnected = Schema.TaggedStruct("Disconnected", {
 
 export const OAuthConnectedAccess = Schema.Struct({
   ...OAuthSignInAccess.fields,
-  subjectId: OAuthAccountRevision.fields.subjectId,
-});
+  subjectId: Schema.optionalKey(OAuthAccountRevision.fields.subjectId),
+  /** Read the subject sealed at begin. Only a form_post continuation may be consumed this way. */
+  formPostSubject: Schema.optionalKey(Schema.Literal(true)),
+}).check(
+  Schema.makeFilter(
+    (value) => (value.formPostSubject === true) !== (value.subjectId !== undefined),
+  ),
+);
 
 export type OAuthConnectedAccess = typeof OAuthConnectedAccess.Type;
 

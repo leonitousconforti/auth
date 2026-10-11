@@ -72,6 +72,11 @@ export default defineConfig({
         cache: false,
         dependsOn: ["build"],
       },
+      "example:apple": {
+        command: "bun src/apple-app.ts",
+        cache: false,
+        dependsOn: ["build"],
+      },
       "example:linear": {
         command: "bun src/linear-app.ts",
         cache: false,

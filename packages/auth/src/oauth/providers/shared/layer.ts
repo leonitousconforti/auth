@@ -17,6 +17,7 @@ import {
   resolveProvider,
   type ProviderOptions as RegistrationInput,
 } from "./options";
+import { PrivateKeyClientSecret } from "./privateKeyJwt";
 import { makeOpenIdConnectOAuthProtocol } from "./protocol";
 
 export type Provider<R = never> = RegistrationInput<
@@ -88,7 +89,7 @@ export const provider = <R = never>(
           providers: registrations,
           timeoutSeconds: options.timeoutSeconds ?? 10,
         }),
-      );
+      ).pipe(Effect.provide(PrivateKeyClientSecret.layer));
 
       const access = "registrations" in options ? options.registrations : [options];
 
@@ -105,7 +106,7 @@ export const provider = <R = never>(
           providers: connectedProviders,
           timeoutSeconds: options.timeoutSeconds ?? 10,
         }),
-      );
+      ).pipe(Effect.provide(PrivateKeyClientSecret.layer));
 
       return { ...protocol, connected };
     }),
@@ -118,8 +119,10 @@ export const provider = <R = never>(
  * the openid scope, ID-token profile claims, and
  * OidcUserProfile. Set pkceS256 false only for issuers that cannot complete
  * PKCE. Plain OAuth defaults to no scopes. clientSecret uses client_secret_basic
- * unless tokenEndpointAuthMethod is supplied. Discovery must confirm the host's
- * capabilities. Invalid configuration fails when building the Layer.
+ * unless tokenEndpointAuthMethod is supplied. Authorization defaults to
+ * response_mode=query; set responseMode to form_post when the issuer POSTs the
+ * callback. Discovery must confirm the host's capabilities. Invalid
+ * configuration fails when building the Layer.
  *
  * Keep retired generations in providers until their outstanding flows expire;
  * never reuse a generation for changed credentials or protocol configuration.
@@ -136,7 +139,9 @@ export const layer = <R = never>(options: Options<R>) =>
       ),
     ).pipe(
       Effect.flatMap((configuration) =>
-        makeOpenIdConnectOAuthProtocol(installConfigurations<R>(configuration)),
+        makeOpenIdConnectOAuthProtocol(installConfigurations<R>(configuration)).pipe(
+          Effect.provide(PrivateKeyClientSecret.layer),
+        ),
       ),
     ),
   );

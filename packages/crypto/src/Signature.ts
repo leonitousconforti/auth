@@ -138,6 +138,11 @@ export class Signature extends Context.Service<
     readonly encodePrivateKey: (
       input: Redacted.Redacted<PrivateKeyParameters>,
     ) => Effect.Effect<Redacted.Redacted<Uint8Array>, OperationError>;
+    /** Import extractable PKCS8 and return typed components. JOSE turns these
+     * into a JWK; this is the reverse of encodePrivateKey. */
+    readonly decodePrivateKey: (
+      input: PrivateKeyInput,
+    ) => Effect.Effect<KeyPairParameters, OperationError>;
     readonly sign: (input: SignInput) => Effect.Effect<Uint8Array, OperationError>;
     readonly verify: (input: VerifyInput) => Effect.Effect<boolean, OperationError>;
   }

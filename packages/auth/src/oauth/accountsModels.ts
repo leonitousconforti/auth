@@ -212,8 +212,14 @@ export const OAuthLinkResult = Schema.Union([
 
 export const OAuthLinkAccess = Schema.Struct({
   ...OAuthSignInAccess.fields,
-  subjectId: OAuthAccountRevision.fields.subjectId,
-});
+  subjectId: Schema.optionalKey(OAuthAccountRevision.fields.subjectId),
+  /** Read the subject sealed at begin. Only a form_post continuation may be consumed this way. */
+  formPostSubject: Schema.optionalKey(Schema.Literal(true)),
+}).check(
+  Schema.makeFilter(
+    (value) => (value.formPostSubject === true) !== (value.subjectId !== undefined),
+  ),
+);
 
 export type OAuthLinkAccess = typeof OAuthLinkAccess.Type;
 

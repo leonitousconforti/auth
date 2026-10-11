@@ -7,6 +7,7 @@ import {
   type PrivateKey,
   PrivateKeyInput,
   GenerateKeyPairInput,
+  type KeyPairParameters,
   PrivateKeyParameters,
   type PublicKey,
   PublicKeyInput,
@@ -141,6 +142,43 @@ export const makeSignature = (subtle: SubtleCrypto): Signature["Service"] => {
     return key;
   });
 
+  const privateParametersFromJwk = Effect.fnUntraced(function* (
+    algorithm: Algorithm,
+    jwk: JsonWebKey,
+  ) {
+    const parameters: PrivateKeyParameters = yield* Effect.gen(function* () {
+      switch (algorithm) {
+        case "ECDSA-P256-SHA256":
+          return {
+            algorithm,
+            ...(yield* Schema.decodeUnknownEffect(GeneratedEc)(jwk, { reportInput: false })),
+          };
+        case "Ed25519":
+          return {
+            algorithm,
+            ...(yield* Schema.decodeUnknownEffect(GeneratedEd)(jwk, { reportInput: false })),
+          };
+        case "RSASSA-PKCS1-v1_5-SHA256":
+        case "RSA-PSS-SHA256":
+          return {
+            algorithm,
+            ...(yield* Schema.decodeUnknownEffect(GeneratedRsa)(jwk, { reportInput: false })),
+          };
+      }
+    }).pipe(Effect.mapError(() => CryptoUnavailable.make({})));
+
+    yield* decode(PrivateKeyParameters, parameters, "key");
+
+    const publicKey: PublicKeyParameters =
+      "n" in parameters
+        ? { algorithm: parameters.algorithm, n: parameters.n.slice(), e: parameters.e.slice() }
+        : "y" in parameters
+          ? { algorithm: parameters.algorithm, x: parameters.x.slice(), y: parameters.y.slice() }
+          : { algorithm: "Ed25519", x: parameters.x.slice() };
+
+    return { publicKey, privateKey: Redacted.make(parameters) } satisfies KeyPairParameters;
+  });
+
   return Signature.of({
     importPrivateKey: Effect.fnUntraced(function* (input) {
       const value = yield* decode(PrivateKeyInput, input, "key");
@@ -228,37 +266,7 @@ export const makeSignature = (subtle: SubtleCrypto): Signature["Service"] => {
 
       // JsonWebKey does not guarantee algorithm-specific fields. Decode only at
       // this native boundary; callers receive typed components, never loose JWKs.
-      const parameters: PrivateKeyParameters = yield* Effect.gen(function* () {
-        switch (value.algorithm) {
-          case "ECDSA-P256-SHA256":
-            return {
-              algorithm: value.algorithm,
-              ...(yield* Schema.decodeUnknownEffect(GeneratedEc)(jwk, { reportInput: false })),
-            };
-          case "Ed25519":
-            return {
-              algorithm: value.algorithm,
-              ...(yield* Schema.decodeUnknownEffect(GeneratedEd)(jwk, { reportInput: false })),
-            };
-          case "RSASSA-PKCS1-v1_5-SHA256":
-          case "RSA-PSS-SHA256":
-            return {
-              algorithm: value.algorithm,
-              ...(yield* Schema.decodeUnknownEffect(GeneratedRsa)(jwk, { reportInput: false })),
-            };
-        }
-      }).pipe(Effect.mapError(() => CryptoUnavailable.make({})));
-
-      yield* decode(PrivateKeyParameters, parameters, "key");
-
-      const publicKey: PublicKeyParameters =
-        "n" in parameters
-          ? { algorithm: parameters.algorithm, n: parameters.n.slice(), e: parameters.e.slice() }
-          : "y" in parameters
-            ? { algorithm: parameters.algorithm, x: parameters.x.slice(), y: parameters.y.slice() }
-            : { algorithm: "Ed25519", x: parameters.x.slice() };
-
-      return { publicKey, privateKey: Redacted.make(parameters) };
+      return yield* privateParametersFromJwk(value.algorithm, jwk);
     }, Effect.uninterruptible),
     encodePublicKey: Effect.fnUntraced(function* (input) {
       const parameters = yield* decode(PublicKeyParameters, input, "key");
@@ -287,6 +295,35 @@ export const makeSignature = (subtle: SubtleCrypto): Signature["Service"] => {
       });
 
       return Redacted.make(new Uint8Array(encoded));
+    }),
+    decodePrivateKey: Effect.fnUntraced(function* (input) {
+      const value = yield* decode(PrivateKeyInput, input, "key");
+      const algorithm = value.algorithm;
+
+      return yield* withSecret(value.privateKey, (material) =>
+        Effect.gen(function* () {
+          yield* decode(derBytes, material, "key");
+
+          const key = yield* Effect.tryPromise({
+            try: () =>
+              subtle.importKey("pkcs8", material, importAlgorithm(algorithm), true, ["sign"]),
+            catch: importError,
+          });
+
+          if (algorithm === "RSA-PSS-SHA256" || algorithm === "RSASSA-PKCS1-v1_5-SHA256") {
+            yield* Schema.decodeUnknownEffect(RsaAlgorithm)(key.algorithm).pipe(
+              Effect.mapError(() => InvalidInput.make({ reason: "key" })),
+            );
+          }
+
+          const jwk = yield* Effect.tryPromise({
+            try: () => subtle.exportKey("jwk", key),
+            catch: nativeError,
+          });
+
+          return yield* privateParametersFromJwk(algorithm, jwk);
+        }).pipe(Effect.uninterruptible),
+      );
     }),
     sign: Effect.fnUntraced(function* (input) {
       const value = yield* decode(SignInput, input, "data");

@@ -171,7 +171,7 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
             prepare,
           );
         }),
-        flow.mysql ? "transaction" : "statement",
+        flow.mysql || input.formPostSubject === true ? "transaction" : "statement",
       ),
     settle: (original, prepare) =>
       run(

@@ -33,6 +33,7 @@ each AEAD nonce unique for its key. HMAC, AES-GCM and signature services offer
 scoped imports for repeated key use. Handles snapshot nonextractable native keys;
 closure joins native work and prevents further use. Signature operations use PKCS8/SPKI DER keys;
 raw key components can be encoded through the native key parser.
+`decodePrivateKey` imports extractable PKCS8 and returns those components.
 [JOSE](../jose/README.md) and password-hash serialization belong to other layers.
 
 See the [usage and supported profiles](../../docs/src/content/docs/reference/crypto.md)

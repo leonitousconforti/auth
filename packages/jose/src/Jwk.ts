@@ -330,6 +330,76 @@ export const importPrivate = Effect.fnUntraced(function* (
   }) satisfies PrivateKey;
 });
 
+/** Import PKCS8 DER through the crypto backend, then bind the resulting JWK. */
+export const importPkcs8 = Effect.fnUntraced(function* (
+  input: Redacted.Redacted<Uint8Array>,
+  selected: AsymmetricAlgorithm,
+  options?: { readonly kid?: string },
+) {
+  const algorithm = yield* read(AsymmetricAlgorithm, selected);
+  const signatures = yield* Signature.Signature;
+
+  const pair = yield* signatures
+    .decodePrivateKey({ algorithm: algorithms[algorithm], privateKey: input })
+    .pipe(Effect.mapError(() => InvalidKey.make({})));
+
+  const parameters = Redacted.value(pair.privateKey);
+
+  const meta = {
+    alg: algorithm,
+    use: "sig" as const,
+    ...(options?.kid === undefined ? {} : { kid: options.kid }),
+  };
+
+  const jwk: PrivateJwk =
+    parameters.algorithm === "ECDSA-P256-SHA256"
+      ? {
+          ...meta,
+          kty: "EC",
+          crv: "P-256",
+          x: Base64Url.encode(parameters.x),
+          y: Base64Url.encode(parameters.y),
+          d: Base64Url.encode(parameters.d),
+        }
+      : parameters.algorithm === "Ed25519"
+        ? {
+            ...meta,
+            kty: "OKP",
+            crv: "Ed25519",
+            x: Base64Url.encode(parameters.x),
+            d: Base64Url.encode(parameters.d),
+          }
+        : {
+            ...meta,
+            kty: "RSA",
+            n: Base64Url.encode(parameters.n),
+            e: Base64Url.encode(parameters.e),
+            d: Base64Url.encode(parameters.d),
+            p: Base64Url.encode(parameters.p),
+            q: Base64Url.encode(parameters.q),
+            dp: Base64Url.encode(parameters.dp),
+            dq: Base64Url.encode(parameters.dq),
+            qi: Base64Url.encode(parameters.qi),
+          };
+
+  return yield* importPrivate(Redacted.make(jwk), algorithm).pipe(
+    Effect.ensuring(
+      Effect.sync(() => {
+        parameters.d.fill(0);
+        if ("p" in parameters)
+          for (const part of [
+            parameters.p,
+            parameters.q,
+            parameters.dp,
+            parameters.dq,
+            parameters.qi,
+          ])
+            part.fill(0);
+      }),
+    ),
+  );
+});
+
 export const importSecret = Effect.fnUntraced(function* (
   input: Redacted.Redacted<unknown>,
   selected: "HS256" | "dir",

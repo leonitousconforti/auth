@@ -50,6 +50,7 @@
     "./HuggingFace": "./src/HuggingFace.ts",
     "./Zitadel": "./src/Zitadel.ts",
     "./Zoom": "./src/Zoom.ts",
+    "./Apple": "./src/Apple.ts",
     "./Auth0": "./src/Auth0.ts",
     "./Atlassian": "./src/Atlassian.ts",
     "./Cognito": "./src/Cognito.ts",
