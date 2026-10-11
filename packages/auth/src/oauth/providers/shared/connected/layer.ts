@@ -55,7 +55,7 @@ export const layer = <R = never>(options: Options<R>) =>
     ).pipe(
       Effect.flatMap((configuration) =>
         makeOpenIdConnectConnectedProtocol(installConnectedConfigurations<R>(configuration)).pipe(
-          Effect.provide(PrivateKeyClientSecret.layer),
+          Effect.provideServiceEffect(PrivateKeyClientSecret, PrivateKeyClientSecret.make),
         ),
       ),
     ),

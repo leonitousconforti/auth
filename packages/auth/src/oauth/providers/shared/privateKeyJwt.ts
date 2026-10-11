@@ -3,7 +3,19 @@ import { Signature } from "@yielded/crypto/Signature";
 import { Jwk, Jwt } from "@yielded/jose";
 import type { PrivateKey } from "@yielded/jose/Jwk";
 import { Unavailable } from "@yielded/oauth/Errors";
-import { Clock, Context, Effect, Layer, Redacted, Result, Schema } from "effect";
+import {
+  Clock,
+  Context,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Redacted,
+  Result,
+  Schema,
+  Scope,
+  Semaphore,
+} from "effect";
 import { Base64 } from "effect/encoding";
 
 import {
@@ -41,34 +53,26 @@ export const signPrivateKeyJwt = Effect.fn("OpenIdConnect.signPrivateKeyJwt")(fu
   ).pipe(Effect.mapError(() => Unavailable.make({})));
 });
 
-/** Import the stored PKCS8 DER and sign a client secret for this token request. */
-export const mintStoredPrivateKeyJwt = Effect.fn("OpenIdConnect.mintStoredPrivateKeyJwt")(
-  function* (policy: PrivateKeyJwt) {
-    const der = Result.getOrUndefined(Base64.decode(Redacted.value(policy.privateKey)));
+/** Import detached PKCS8 bytes. The acquiring Scope owns the returned key. */
+const importPrivateKeyJwt = Effect.fnUntraced(function* (policy: PrivateKeyJwt) {
+  const der = Result.getOrUndefined(Base64.decode(Redacted.value(policy.privateKey)));
 
-    if (der === undefined || der.length === 0) return yield* Unavailable.make({});
+  if (der === undefined || der.length === 0) return yield* Unavailable.make({});
 
-    const key = yield* Jwk.importPkcs8(Redacted.make(der), policy.algorithm, {
-      kid: policy.keyId,
-    }).pipe(
-      Effect.mapError(() => Unavailable.make({})),
-      Effect.ensuring(Effect.sync(() => der.fill(0))),
-    );
-
-    return yield* signPrivateKeyJwt(policy, key).pipe(
-      Effect.ensuring(Effect.sync(() => Redacted.wipeUnsafe(key.material))),
-    );
-  },
-);
-
-/** Per-request client_secret_post material. Static secrets stay on the OAuth client. */
-export const postedClientSecret = Effect.fn("OpenIdConnect.postedClientSecret")(function* (
-  authentication: OpenIdConnectAuthentication,
-) {
-  if (!isPrivateKeyAuthentication(authentication)) return undefined;
-
-  return yield* mintStoredPrivateKeyJwt(authentication.privateKeyJwt);
+  return yield* Jwk.importPkcs8(Redacted.make(der), policy.algorithm, {
+    kid: policy.keyId,
+  }).pipe(
+    Effect.mapError(() => Unavailable.make({})),
+    Effect.ensuring(Effect.sync(() => der.fill(0))),
+  );
 });
+
+const wipe = (key: PrivateKey) =>
+  Effect.sync(() => {
+    Redacted.value(key.material).fill(0);
+    Redacted.wipeUnsafe(key.material);
+    Redacted.wipeUnsafe(key.jwk);
+  });
 
 /** Inward client-authentication port. Concrete policy is provided at composition. */
 export class PrivateKeyClientSecret extends Context.Service<
@@ -84,20 +88,82 @@ export class PrivateKeyClientSecret extends Context.Service<
     mint: () => Effect.succeed(undefined),
   });
 
-  /** Mint one ES256 client secret per token request. Requires Signature and Hmac. */
-  static readonly layer = Layer.effect(
-    PrivateKeyClientSecret,
-    Effect.gen(function* () {
-      const signature = yield* Signature;
-      const hmac = yield* Hmac;
+  /** Mint fresh ES256 assertions with one parsed key per installed policy. Keys
+   * stay inside this Layer's crypto services and generation; teardown joins
+   * active mints before wiping every retained key. */
+  static readonly make = Effect.gen(function* () {
+    const signature = yield* Signature;
+    const hmac = yield* Hmac;
+    const keys = new Map<PrivateKeyJwt, PrivateKey>();
 
-      return PrivateKeyClientSecret.of({
-        mint: (authentication) =>
-          postedClientSecret(authentication).pipe(
-            Effect.provideService(Signature, signature),
-            Effect.provideService(Hmac, hmac),
-          ),
-      });
-    }),
-  );
+    // One finalizer preserves join-before-wipe even under a parallel parent Scope.
+    const { keyScope, scope } = yield* Effect.acquireRelease(
+      Effect.all({ keyScope: Scope.make(), scope: Scope.make() }),
+      ({ keyScope, scope }) =>
+        Scope.close(scope, Exit.void).pipe(
+          Effect.ensuring(Scope.close(keyScope, Exit.void)),
+          Effect.ensuring(Effect.sync(() => keys.clear())),
+        ),
+    );
+
+    const imports = yield* Semaphore.make(1);
+
+    const mint = Effect.fnUntraced(
+      function* (policy: PrivateKeyJwt) {
+        const existing = keys.get(policy);
+
+        const key =
+          existing ??
+          (yield* imports.withPermits(1)(
+            Effect.gen(function* () {
+              const existing = keys.get(policy);
+
+              if (existing !== undefined) return existing;
+
+              const key = yield* Effect.acquireRelease(importPrivateKeyJwt(policy), wipe).pipe(
+                Effect.provideService(Scope.Scope, keyScope),
+              );
+
+              keys.set(policy, key);
+
+              return key;
+            }),
+          ));
+
+        return yield* signPrivateKeyJwt(policy, key);
+      },
+      Effect.provideService(Signature, signature),
+      Effect.provideService(Hmac, hmac),
+    );
+
+    return PrivateKeyClientSecret.of({
+      mint: (authentication) =>
+        !isPrivateKeyAuthentication(authentication)
+          ? Effect.succeed(undefined)
+          : Effect.acquireUseRelease(
+              Effect.suspend(() =>
+                scope.state._tag === "Closed"
+                  ? Effect.fail(Unavailable.make({}))
+                  : Effect.forkIn(mint(authentication.privateKeyJwt), scope, {
+                      uninterruptible: false,
+                    }),
+              ),
+              Fiber.join,
+              Fiber.interrupt,
+            ).pipe(
+              Effect.catchCause((cause) =>
+                scope.state._tag === "Closed"
+                  ? Effect.fail(Unavailable.make({}))
+                  : Effect.failCause(cause),
+              ),
+              Effect.flatMap((value) =>
+                scope.state._tag === "Closed"
+                  ? Effect.fail(Unavailable.make({}))
+                  : Effect.succeed(value),
+              ),
+            ),
+    });
+  });
+
+  static readonly layer = Layer.effect(PrivateKeyClientSecret, PrivateKeyClientSecret.make);
 }
