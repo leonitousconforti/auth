@@ -67,25 +67,31 @@ export const requestSecurity = Effect.fnUntraced(function* (
   const cacheName = config.cookies["session-cache"].name;
   const generationName = generationCookieConfiguration(config.cookies["session-cache"]).name;
 
-  const authoritativeCookie = parts
-    .filter((part) => ![cacheName, generationName].includes(part.trim().split("=", 1)[0]))
-    .join(";");
+  const cookieParts = new Map<string, string | undefined>();
+  const authoritativeParts: string[] = [];
 
-  const parsed = Cookies.parseHeader(authoritativeCookie);
+  for (const part of parts) {
+    const name = part.trim().split("=", 1)[0];
+
+    // Undefined records ambiguity without retaining duplicate credential values.
+    cookieParts.set(name, cookieParts.has(name) ? undefined : part);
+    if (name !== cacheName && name !== generationName) authoritativeParts.push(part);
+  }
+
+  const parsed = Cookies.parseHeader(authoritativeParts.join(";"));
   const credentials: Partial<Record<CredentialSlot, Redacted.Redacted<string>>> = {};
 
   for (const slot of credentialSlots) {
     const configured = config.cookies[slot];
 
     if (slot === "session-cache") {
-      const value = native ? undefined : optionalCookie(parts, cacheName);
+      const value = native ? undefined : optionalCookie(cookieParts.get(cacheName), cacheName);
 
       if (value !== undefined) credentials[slot] = Redacted.make(value);
       continue;
     }
-    const cookies = parts.filter((part) => part.trim().split("=", 1)[0] === configured.name);
-
-    if (cookies.length > 1) return yield* OperationHttpError.make({ reason: "credentials" });
+    if (cookieParts.has(configured.name) && cookieParts.get(configured.name) === undefined)
+      return yield* OperationHttpError.make({ reason: "credentials" });
 
     const header =
       config.native === undefined ? null : request.headers.get(config.native.requestHeaders[slot]);
@@ -101,7 +107,9 @@ export const requestSecurity = Effect.fnUntraced(function* (
     }
   }
 
-  const generation = native ? undefined : optionalCookie(parts, generationName);
+  const generation = native
+    ? undefined
+    : optionalCookie(cookieParts.get(generationName), generationName);
 
   return {
     native,

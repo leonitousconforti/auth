@@ -29,16 +29,9 @@ const OptionalCookieValue = Schema.String.check(
   Schema.isPattern(/^[A-Za-z0-9._~-]+$/),
 );
 
-/** Optional cache input has no authority. Ambiguous or unusable values are misses. */
-export const optionalCookie = (parts: ReadonlyArray<string>, name: string): string | undefined => {
-  const matches = parts.filter((part) => part.trim().split("=", 1)[0] === name);
-  const pair = matches[0];
-
-  if (
-    matches.length !== 1 ||
-    pair === undefined ||
-    new TextEncoder().encode(pair).byteLength > maximumCookieBytes
-  )
+/** Optional cache input has no authority. Missing or ambiguous pairs are misses. */
+export const optionalCookie = (pair: string | undefined, name: string): string | undefined => {
+  if (pair === undefined || new TextEncoder().encode(pair).byteLength > maximumCookieBytes)
     return undefined;
   const value = Cookies.parseHeader(pair)[name];
 
