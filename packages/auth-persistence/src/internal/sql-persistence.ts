@@ -8,7 +8,13 @@ import { Table } from "./sql-table";
 import type { StorageTable } from "./storage-tables";
 
 const table = (definition: StorageTable) =>
-  new Table(definition.name, definition.columns, definition.unique, definition.schema);
+  new Table(
+    definition.name,
+    definition.columns,
+    definition.unique,
+    definition.schema,
+    definition.indexes,
+  );
 
 export const AuthPersistence: PersistenceApi<Table> & { readonly table: typeof table } = {
   ...createPersistence({
@@ -20,6 +26,7 @@ export const AuthPersistence: PersistenceApi<Table> & { readonly table: typeof t
         Object.entries(table.columns).map(([key, column]) => [key, column.options]),
       ),
       unique: table.unique,
+      indexes: table.indexes,
     }),
     nativeTables: makeNativeSqlTables,
     acquire: Effect.gen(function* () {

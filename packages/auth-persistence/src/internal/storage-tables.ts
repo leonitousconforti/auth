@@ -12,6 +12,8 @@ export const StorageTable = Schema.Struct({
     }),
   ),
   unique: Schema.Array(Schema.Array(Schema.String)),
+  /** Non-unique access paths for migration tooling, not acquisition requirements. */
+  indexes: Schema.optionalKey(Schema.Array(Schema.Array(Schema.String))),
 });
 
 export type StorageTable = typeof StorageTable.Type;
@@ -25,7 +27,8 @@ const optionalInteger = { ...integer, nullable: true };
 const spec = <C extends Readonly<Record<string, Omit<StorageTable["columns"][string], "name">>>>(
   columns: C,
   unique: ReadonlyArray<ReadonlyArray<Extract<keyof C, string>>>,
-) => ({ columns, unique });
+  indexes: ReadonlyArray<ReadonlyArray<Extract<keyof C, string>>> = [],
+) => ({ columns, unique, indexes });
 
 const oauthFlow = spec(
   {
@@ -63,10 +66,13 @@ export const storageTables = {
       active: boolean,
     },
     [["namespace", "value"]],
+    [["subjectId", "namespace", "value"]],
   ),
-  credentials: spec({ credentialId: text, subjectId: text, revision: text, active: boolean }, [
-    ["credentialId"],
-  ]),
+  credentials: spec(
+    { credentialId: text, subjectId: text, revision: text, active: boolean },
+    [["credentialId"]],
+    [["subjectId", "active", "credentialId"]],
+  ),
   passwords: spec(
     {
       moduleId: text,
@@ -219,6 +225,7 @@ export const storageTables = {
       record: text,
     },
     [["sessionId"], ["digest"]],
+    [["subjectId", "securityRevision", "sessionId"]],
   ),
   pending: spec(
     {
@@ -236,6 +243,7 @@ export const storageTables = {
       consumed: boolean,
     },
     [["digest"]],
+    [["moduleId", "expiresAt", "digest"]],
   ),
 } as const;
 
@@ -261,5 +269,6 @@ export const tableDefinition = (
       ]),
     ),
     unique: table.unique,
+    indexes: table.indexes,
   };
 };

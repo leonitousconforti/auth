@@ -64,6 +64,7 @@ export class Table {
     columns: Readonly<Record<string, ColumnOptions>>,
     readonly unique: ReadonlyArray<ReadonlyArray<string>>,
     readonly schema?: string,
+    readonly indexes: ReadonlyArray<ReadonlyArray<string>> = [],
   ) {
     this.columns = Object.fromEntries(
       Object.entries(columns).map(([key, options]) => [key, new Column(name, options, schema)]),

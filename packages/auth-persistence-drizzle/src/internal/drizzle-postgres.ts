@@ -11,6 +11,7 @@ import {
   pgTable,
   text,
   uniqueIndex,
+  index,
   type PgTable,
 } from "drizzle-orm/pg-core";
 import type { Effect } from "effect";
@@ -34,8 +35,8 @@ const makeTable = (definition: StorageTable) =>
         return [key, column.nullable ? builder : builder.notNull()];
       }),
     ),
-    (columns) =>
-      definition.unique.map((keys, i) => {
+    (columns) => [
+      ...definition.unique.map((keys, i) => {
         const [first, ...rest] = keys;
 
         if (first === undefined)
@@ -46,6 +47,18 @@ const makeTable = (definition: StorageTable) =>
           ...rest.map((key) => columns[key]),
         );
       }),
+      ...(definition.indexes ?? []).map((keys, i) => {
+        const [first, ...rest] = keys;
+
+        if (first === undefined)
+          throw PersistenceConfigurationError.make({ reason: "An empty index is invalid" });
+
+        return index(`${definition.name}_index_${i}`).on(
+          columns[first],
+          ...rest.map((key) => columns[key]),
+        );
+      }),
+    ],
   );
 
 const describe = (table: PgTable): StorageTable => {

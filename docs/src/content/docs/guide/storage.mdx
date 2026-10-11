@@ -74,7 +74,9 @@ export const authSchema = storage.schema;
 />
 
 Only the methods you install add tables. Export them from `authSchema` for Drizzle
-Kit, then review and apply the generated migrations. Keep `prefix` stable: it names
+Kit, then review and apply the generated migrations, including the non-unique
+indexes for subject lookups, session inventory, and pending expiry. These indexes
+trade additional storage and write work for faster lookups. Keep `prefix` stable: it names
 physical tables. To give a table your own layout, pass it in `tables`; the rest
 stay managed. The [managed app](https://github.com/yielded-dev/auth/tree/main/examples/persistence-drizzle-managed)
 shows schema exports, migrations, and Layer wiring.
