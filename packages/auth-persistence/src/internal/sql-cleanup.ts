@@ -15,6 +15,9 @@ export interface SqlCleanupTable {
   readonly keys: readonly [string, ...string[]];
   readonly due: Fragment;
   readonly order: ReadonlyArray<Fragment>;
+  /** Internal capability: managed SQLite pending rows with a stable built-in
+   * clock, globally unique non-null BINARY keys, and no table triggers. */
+  readonly selectedKeysOwnDeletion?: true;
 }
 
 export const cleanupSqlRows = Effect.fnUntraced(function* (
@@ -41,7 +44,7 @@ export const cleanupSqlRows = Effect.fnUntraced(function* (
         ? table.column(keys[0])
         : sql`(${sql.join(", ", false)(keys.map(table.column))})`;
 
-    const deletion = sql`delete from ${table.name} where ${due} and ${rowKey} in (select ${sql.join(", ", false)(aliases)} from (${selection}) as cleanup_candidates)`;
+    const deletion = sql`delete from ${table.name} where ${candidate.selectedKeysOwnDeletion === true ? sql`` : sql`${due} and `}${rowKey} in (select ${sql.join(", ", false)(aliases)} from (${selection}) as cleanup_candidates)`;
 
     if (batch) {
       const planned = (yield* sql`${selection}`).length;

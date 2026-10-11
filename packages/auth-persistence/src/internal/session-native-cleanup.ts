@@ -1,6 +1,6 @@
 import type { LifecycleHooks } from "@yielded/auth/Hooks";
 import type { SessionCleanup } from "@yielded/auth/Sessions";
-import { Effect } from "effect";
+import { Context, Effect } from "effect";
 import { SqlClient } from "effect/sql/SqlClient";
 
 import type { SessionCleanupMapping } from "./models/session-model";
@@ -11,6 +11,13 @@ import { cleanupSqlRows, type SqlCleanupTable } from "./sql-cleanup";
 import { makeSqlCommitExecutor, SqlBatchCommit } from "./sql-commit";
 import type { AnyTableModel } from "./table-model";
 
+/** Acquired only by managed composition after checking the physical SQLite
+ * table. Kept internal so explicit mappings cannot opt into this assumption. */
+export const ManagedSqlitePendingCleanup = Context.Reference<object | undefined>(
+  "@yielded/auth-persistence/ManagedSqlitePendingCleanup",
+  { defaultValue: () => undefined },
+);
+
 export const makeNativeSessionCleanupServices = Effect.fnUntraced(function* (
   tables: NativeSqlTables,
   mapping: SessionCleanupMapping<AnyTableModel, AnyTableModel, unknown, unknown>,
@@ -20,6 +27,7 @@ export const makeNativeSessionCleanupServices = Effect.fnUntraced(function* (
   SqlClient | LifecycleHooks | SqlBatchCommit
 > {
   const batch = yield* SqlBatchCommit;
+  const boundedPending = yield* ManagedSqlitePendingCleanup;
 
   const sql = (yield* SqlClient).withoutTransforms();
   const executor = yield* makeSqlCommitExecutor(sessionUnavailable);
@@ -33,6 +41,7 @@ export const makeNativeSessionCleanupServices = Effect.fnUntraced(function* (
     candidates.push({
       table,
       keys: [p.digest],
+      ...(boundedPending === p.table ? { selectedKeysOwnDeletion: true as const } : {}),
       due: sql`${exactSqlText(sql, table.column(p.moduleId), table.value(p.moduleId, mapping.moduleId))} and ${tables.expression(mapping.clock.toMillis(table.column(p.expiresAt)))} <= ${now}`,
       order: [table.column(p.expiresAt), table.column(p.digest)],
     });
