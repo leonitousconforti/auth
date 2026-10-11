@@ -158,11 +158,18 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
     canJoinTextColumns,
   ).pipe(withStorageValidation, Effect.mapError(sessionUnavailable));
 
-  const verify = Effect.fnUntraced(function* (digest: StatefulSessionRecord<Claims>["digest"]) {
-    const subject = state.subject.as("verified_subject"),
-      session = table.as("verified_session"),
-      owner = mapping.subject;
+  const subject = state.subject.as("verified_subject"),
+    session = table.as("verified_session"),
+    owner = mapping.subject,
+    verifiedSessionFields = session.fields("session_"),
+    verifiedSubjectFields = subject.fields("subject_"),
+    sessionFields = table.fields("session_"),
+    st = state.subject.as("listed_subject"),
+    list = table.as("listed_session"),
+    listedSessionFields = list.fields("session_"),
+    listedSubjectFields = st.fields("subject_");
 
+  const verify = Effect.fnUntraced(function* (digest: StatefulSessionRecord<Claims>["digest"]) {
     let discoveredSubjectId: StatefulSessionRecord<Claims>["subjectId"] | undefined;
     let nativeSubject: unknown;
 
@@ -187,7 +194,7 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
       : sql`true`;
 
     const rows =
-      yield* sql`select ${session.fields("session_")}, ${subject.fields("subject_")} from ${session.name} join ${subject.name} on ${owns} and ${state.activeSubject(subject)} and ${revision} where ${exact(session, s.digest, digest)} and ${live(session)} limit 2`;
+      yield* sql`select ${verifiedSessionFields}, ${verifiedSubjectFields} from ${session.name} join ${subject.name} on ${owns} and ${state.activeSubject(subject)} and ${revision} where ${exact(session, s.digest, digest)} and ${live(session)} limit 2`;
 
     sessionInvariant(rows.length <= 1);
     if (rows[0] === undefined) return undefined;
@@ -410,7 +417,7 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
 
               if (changed !== 1) return yield* SessionConflict.make({});
             } else {
-              const rows = yield* sql`${update} returning ${table.fields("session_")}`;
+              const rows = yield* sql`${update} returning ${sessionFields}`;
 
               if (rows.length !== 1) return yield* SessionConflict.make({});
               record = yield* records.decode(table.decode(rows[0]!, "session_"));
@@ -512,10 +519,7 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
             Number.isSafeInteger(input.limit) && input.limit > 0 && input.limit <= 1000,
           );
 
-          const nativeSubject = yield* mapping.subjectId.toNative(input.subjectId),
-            st = state.subject.as("listed_subject"),
-            list = table.as("listed_session"),
-            owner = mapping.subject;
+          const nativeSubject = yield* mapping.subjectId.toNative(input.subjectId);
 
           const cursor =
             input.cursor === undefined
@@ -529,7 +533,7 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
           // Bind both revisions in SQL so stale rows cannot consume a page.
           if (!joinedRevisions) {
             const subjects =
-              yield* sql`select ${st.fields("subject_")} from ${st.name} where ${state.id(st, owner.id, nativeSubject)} and ${state.activeSubject(st)} limit 2`;
+              yield* sql`select ${listedSubjectFields} from ${st.name} where ${state.id(st, owner.id, nativeSubject)} and ${state.activeSubject(st)} limit 2`;
 
             sessionInvariant(subjects.length <= 1);
             if (subjects[0] === undefined) return { sessions: [] };
@@ -555,7 +559,7 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
               : sql`${state.exact(st, owner.securityRevision, revision)} and ${exact(list, s.securityRevision, revision)}`;
 
             const rows =
-              yield* sql`select ${list.fields("session_")}, ${st.fields("subject_")}, ${list.column(s.subjectId)} as session_owner from ${st.name} left join ${list.name} on ${state.id(list, s.subjectId, nativeSubject)} and ${currentRevision} and ${live(list)}${cursor === undefined ? sql`` : sql` and ${list.column(s.sessionId)} > ${list.value(s.sessionId, cursor)}`} where ${state.id(st, owner.id, nativeSubject)} and ${state.activeSubject(st)} order by ${list.column(s.sessionId)} limit ${input.limit + 1}`;
+              yield* sql`select ${listedSessionFields}, ${listedSubjectFields}, ${list.column(s.subjectId)} as session_owner from ${st.name} left join ${list.name} on ${state.id(list, s.subjectId, nativeSubject)} and ${currentRevision} and ${live(list)}${cursor === undefined ? sql`` : sql` and ${list.column(s.sessionId)} > ${list.value(s.sessionId, cursor)}`} where ${state.id(st, owner.id, nativeSubject)} and ${state.activeSubject(st)} order by ${list.column(s.sessionId)} limit ${input.limit + 1}`;
 
             const first = rows[0];
 
