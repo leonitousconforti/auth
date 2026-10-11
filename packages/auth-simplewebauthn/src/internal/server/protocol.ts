@@ -355,6 +355,9 @@ const checkKey = Effect.fn("simpleWebAuthnPublicKey")(function* (
     const x = yield* decode(byteValue(32, 32), map.get(-2));
     const y = yield* decode(byteValue(32, 32), map.get(-3));
 
+    // Authentication imports the validated key in the SDK's signature check.
+    // Registration with none attestation still needs native key validation here.
+    if (expected !== undefined) return algorithmId;
     jwk = {
       kty: "EC",
       crv: "P-256",
@@ -378,6 +381,7 @@ const checkKey = Effect.fn("simpleWebAuthnPublicKey")(function* (
       exponent % 2 !== 1
     )
       return yield* rejected();
+    if (expected !== undefined) return algorithmId;
     jwk = {
       kty: "RSA",
       alg: "RS256",
