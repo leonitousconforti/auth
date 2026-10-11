@@ -1,3 +1,4 @@
+import { Hmac } from "@yielded/crypto/Hmac";
 import { Signature } from "@yielded/crypto/Signature";
 import type * as OAuth from "@yielded/oauth/OAuth";
 import * as Oidc from "@yielded/oauth/Oidc";
@@ -11,21 +12,22 @@ import {
   type InstalledConnectedProvider,
 } from "./connected/configuration";
 import type { OpenIdConnectConnectedProtocolOptions } from "./connected/models";
-import { discoveryProfile, supplementDiscovery } from "./discovery";
+import { discoveryMetadataUrl, discoveryProfile, supplementDiscovery } from "./discovery";
 import { OpenIdConnectConfigurationError, type OpenIdConnectOAuthProtocolOptions } from "./models";
 import type { Requirements as OAuthRequirements } from "./native";
 
-export type Requirements = OAuthRequirements | Signature;
+export type Requirements = OAuthRequirements | Signature | Hmac;
 
 const configurationError = (error: Effect.Error<ReturnType<typeof Oidc.discover>>) =>
   error._tag === "OAuthConfigurationError"
     ? OpenIdConnectConfigurationError.make({ reason: "metadata" })
     : OAuthUnavailable.make({});
 
-const discover = (issuer: string, timeoutSeconds: number) =>
-  Oidc.discover(issuer, { timeoutMs: timeoutSeconds * 1000 }).pipe(
-    Effect.mapError(configurationError),
-  );
+const discover = (issuer: string, timeoutSeconds: number, metadataUrl: string | undefined) =>
+  Oidc.discover(issuer, {
+    timeoutMs: timeoutSeconds * 1000,
+    ...(metadataUrl === undefined ? {} : { metadataUrl }),
+  }).pipe(Effect.mapError(configurationError));
 
 const makeVerifier = Effect.fn("OpenIdConnect.makeVerifier")(function* (
   metadata: OAuth.Metadata,
@@ -34,10 +36,12 @@ const makeVerifier = Effect.fn("OpenIdConnect.makeVerifier")(function* (
   options: {
     readonly algorithms: ReadonlyArray<Oidc.IdTokenAlgorithm>;
     readonly pkceS256: boolean;
+    readonly clientSecret?: Redacted.Redacted<string>;
   },
 ) {
   const context = Context.make(Crypto.Crypto, yield* Crypto.Crypto).pipe(
     Context.add(Signature, yield* Signature),
+    Context.add(Hmac, yield* Hmac),
   );
 
   const verifier = yield* Oidc.makeVerifier({
@@ -46,6 +50,7 @@ const makeVerifier = Effect.fn("OpenIdConnect.makeVerifier")(function* (
     timeoutMs: timeoutSeconds * 1000,
     algorithms: options.algorithms,
     pkceS256: options.pkceS256,
+    ...(options.clientSecret === undefined ? {} : { clientSecret: options.clientSecret }),
   }).pipe(Effect.mapError(configurationError));
 
   return {
@@ -64,7 +69,11 @@ export const installConfigurations = Effect.fn("OpenIdConnect.installConfigurati
   for (const provider of providers) {
     const raw =
       provider.protocol === "oidc"
-        ? yield* discover(provider.issuer, timeoutSeconds).pipe(
+        ? yield* discover(
+            provider.issuer,
+            timeoutSeconds,
+            discoveryMetadataUrl(provider[discoveryProfile]),
+          ).pipe(
             Effect.flatMap((metadata) => supplementDiscovery(metadata, provider[discoveryProfile])),
           )
         : {
@@ -84,6 +93,9 @@ export const installConfigurations = Effect.fn("OpenIdConnect.installConfigurati
             verifier: yield* makeVerifier(entry.metadata, provider.clientId, timeoutSeconds, {
               algorithms: provider.idTokenSignedResponseAlg,
               pkceS256: provider.pkceS256,
+              ...(provider.authentication.method === "none"
+                ? {}
+                : { clientSecret: provider.authentication.secret }),
             }),
           }
         : entry,
@@ -102,7 +114,7 @@ export const installConnectedConfigurations = Effect.fn(
   for (const provider of providers) {
     const raw =
       provider.protocol === "oidc"
-        ? yield* discover(provider.issuer, timeoutSeconds)
+        ? yield* discover(provider.issuer, timeoutSeconds, undefined)
         : {
             issuer: provider.issuer,
             authorization_endpoint: provider.authorizationEndpoint,
@@ -123,6 +135,9 @@ export const installConnectedConfigurations = Effect.fn(
             verifier: yield* makeVerifier(entry.metadata, provider.clientId, timeoutSeconds, {
               algorithms: provider.idTokenSignedResponseAlg,
               pkceS256: provider.pkceS256,
+              ...(provider.authentication.method === "none"
+                ? {}
+                : { clientSecret: provider.authentication.secret }),
             }),
           }
         : entry,

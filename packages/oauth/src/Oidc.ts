@@ -1,3 +1,4 @@
+import * as Jwk from "@yielded/jose/Jwk";
 import * as Jwks from "@yielded/jose/Jwks";
 import type * as Jws from "@yielded/jose/Jws";
 import * as Jwt from "@yielded/jose/Jwt";
@@ -21,7 +22,7 @@ import * as Transport from "./internal/transport";
 import * as V from "./internal/validation";
 import { JsonObject, Metadata, type RequestOptions } from "./OAuth";
 
-export const IdTokenAlgorithm = Schema.Literals(["RS256", "PS256", "ES256", "EdDSA"]);
+export const IdTokenAlgorithm = Schema.Literals(["RS256", "PS256", "ES256", "EdDSA", "HS256"]);
 export type IdTokenAlgorithm = typeof IdTokenAlgorithm.Type;
 
 export const defaultIdTokenAlgorithms: readonly IdTokenAlgorithm[] = [
@@ -31,15 +32,33 @@ export const defaultIdTokenAlgorithms: readonly IdTokenAlgorithm[] = [
   "EdDSA",
 ];
 
+const idTokenAlgorithms: readonly IdTokenAlgorithm[] = [
+  "RS256",
+  "PS256",
+  "ES256",
+  "EdDSA",
+  "HS256",
+];
+
+export interface DiscoverOptions extends RequestOptions {
+  /** Fetch this document instead of issuer + `/.well-known/openid-configuration`.
+   * The document issuer must still equal the trusted issuer identifier. */
+  readonly metadataUrl?: string;
+}
+
 export interface VerifierOptions extends RequestOptions {
   readonly metadata: Metadata;
   readonly clientId: string;
   /** Algorithms this verifier will accept. Discovery must advertise at least one.
-   * Defaults to RS256, PS256, ES256 and EdDSA. */
+   * Defaults to RS256, PS256, ES256 and EdDSA. HS256 is accepted only when
+   * requested here and a client secret is supplied. */
   readonly algorithms?: ReadonlyArray<IdTokenAlgorithm>;
   /** Require advertised S256 PKCE. Defaults to true. Set false only for issuers
    * that cannot complete authorization-code + PKCE. */
   readonly pkceS256?: boolean;
+  /** Channel or client secret used as the HS256 HMAC key. Required when the
+   * advertised algorithm set is HS256. */
+  readonly clientSecret?: Redacted.Redacted<string>;
 }
 
 export interface VerificationInput {
@@ -61,6 +80,7 @@ export interface Verified {
 
 type VerificationRequirements =
   | Exclude<Effect.Services<ReturnType<typeof Jws.verifyWithKeySet>>, Jwks.Jwks>
+  | Jws.Requirements
   | Crypto.Crypto;
 
 export interface Verifier {
@@ -75,9 +95,10 @@ const Configuration = Schema.Struct({
   clientId: V.text(1024),
   ...V.RequestOptions.fields,
   algorithms: Schema.optionalKey(
-    Schema.Array(IdTokenAlgorithm).check(Schema.isMinLength(1), Schema.isMaxLength(4)),
+    Schema.Array(IdTokenAlgorithm).check(Schema.isMinLength(1), Schema.isMaxLength(5)),
   ),
   pkceS256: Schema.optionalKey(Schema.Boolean),
+  clientSecret: Schema.optionalKey(V.secret(4096)),
 });
 
 const VerifyInput = Schema.Struct({
@@ -105,7 +126,7 @@ const IdClaims = Schema.Struct({
   auth_time: Schema.optionalKey(V.NumericDate),
   nonce: Schema.optionalKey(V.text(256)),
   // Leftmost half of the signing-algorithm hash, unpadded base64url: 22
-  // characters for SHA-256 (RS256, PS256, ES256) and 43 for SHA-512 (Ed25519).
+  // characters for SHA-256 (RS256, PS256, ES256, HS256) and 43 for SHA-512 (Ed25519).
   at_hash: Schema.optionalKey(
     Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{22}(?:[A-Za-z0-9_-]{21})?$/u)),
   ),
@@ -117,23 +138,33 @@ const IdClaims = Schema.Struct({
 const tokenHash = (algorithm: string) =>
   algorithm === "EdDSA"
     ? { digest: "SHA-512" as const, octets: 32 }
-    : algorithm === "RS256" || algorithm === "PS256" || algorithm === "ES256"
+    : algorithm === "RS256" ||
+        algorithm === "PS256" ||
+        algorithm === "ES256" ||
+        algorithm === "HS256"
       ? { digest: "SHA-256" as const, octets: 16 }
       : undefined;
+
+const DiscoverConfiguration = Schema.Struct({
+  ...V.RequestOptions.fields,
+  metadataUrl: Schema.optionalKey(V.Endpoint),
+});
 
 /** OIDC discovery uses the trusted issuer identifier, retaining its exact
  * spelling for claim comparison even if its network URL normalizes. */
 export const discover = Effect.fnUntraced(function* (
   input: string,
-  inputOptions: RequestOptions,
+  inputOptions: DiscoverOptions,
 ): Effect.fn.Return<Metadata, ConfigurationError | Unavailable, HttpClient.HttpClient> {
   const issuer = yield* V.configuration(V.Issuer, input, "issuer");
 
-  const options = yield* V.configuration(V.RequestOptions, inputOptions);
+  const options = yield* V.configuration(DiscoverConfiguration, inputOptions);
+  const url = new URL(options.metadataUrl ?? issuer);
 
-  const url = new URL(issuer);
+  if (options.metadataUrl === undefined) {
+    url.pathname = `${url.pathname.replace(/\/$/u, "")}/.well-known/openid-configuration`;
+  }
 
-  url.pathname = `${url.pathname.replace(/\/$/u, "")}/.well-known/openid-configuration`;
   const http = yield* Transport.capture;
 
   const response = yield* Transport.request(
@@ -153,11 +184,12 @@ export const discover = Effect.fnUntraced(function* (
 
 const claimFailure = () => Rejected.make({ reason: "claims" });
 
-/** Signed ID tokens using advertised RS256, PS256, ES256 or EdDSA. Verification
- * and the bounded JWKS cache belong to the caller's Scope. Owner closure cancels
- * and joins active verification, returning Unavailable; caller interruption joins
- * its operation without closing the verifier. No process cache or automatic
- * exchange retry is created. */
+/** Signed ID tokens using advertised RS256, PS256, ES256, EdDSA, or explicit
+ * HS256. Asymmetric verification and the bounded JWKS cache belong to the
+ * caller's Scope. HS256 uses the supplied client secret as the HMAC key and
+ * does not install JWKS. Owner closure cancels and joins active verification,
+ * returning Unavailable; caller interruption joins its operation without
+ * closing the verifier. No process cache or automatic exchange retry is created. */
 export const makeVerifier = Effect.fnUntraced(function* (
   input: VerifierOptions,
 ): Effect.fn.Return<
@@ -169,7 +201,7 @@ export const makeVerifier = Effect.fnUntraced(function* (
 
   const metadata = V.freeze(options.metadata);
 
-  const algorithms = defaultIdTokenAlgorithms.filter((algorithm) =>
+  const algorithms = idTokenAlgorithms.filter((algorithm) =>
     (options.algorithms ?? defaultIdTokenAlgorithms).includes(algorithm),
   );
 
@@ -177,24 +209,49 @@ export const makeVerifier = Effect.fnUntraced(function* (
     metadata.id_token_signing_alg_values_supported?.includes(algorithm),
   );
 
+  const hmacOnly = advertised.length === 1 && advertised[0] === "HS256";
+
   if (
-    metadata.jwks_uri === undefined ||
     advertised.length === 0 ||
+    advertised.includes("HS256") !== hmacOnly ||
     !metadata.response_types_supported?.includes("code") ||
     ((options.pkceS256 ?? true) && !metadata.code_challenge_methods_supported?.includes("S256"))
   )
     return yield* ConfigurationError.make({ reason: "metadata" });
-  const http = yield* Transport.capture;
+  if (hmacOnly && options.clientSecret === undefined)
+    return yield* ConfigurationError.make({ reason: "authentication" });
 
-  const context = yield* Layer.build(
-    Jwks.layerRemote({
-      url: metadata.jwks_uri,
-      timeoutMs: options.timeoutMs,
-      maxResponseBytes: options.maxResponseBytes,
-    }).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, http))),
-  ).pipe(Effect.mapError(() => Unavailable.make({})));
+  const jwksUri = metadata.jwks_uri;
 
-  const keys = Context.get(context, Jwks.Jwks);
+  if (!hmacOnly && jwksUri === undefined)
+    return yield* ConfigurationError.make({ reason: "metadata" });
+
+  const hmacKey =
+    hmacOnly && options.clientSecret !== undefined
+      ? yield* Jwk.importSecret(
+          Redacted.make({
+            kty: "oct" as const,
+            alg: "HS256" as const,
+            k: Base64Url.encode(new TextEncoder().encode(yield* V.reveal(options.clientSecret))),
+          }),
+          "HS256",
+        ).pipe(Effect.mapError(() => ConfigurationError.make({ reason: "authentication" })))
+      : undefined;
+
+  const keys =
+    hmacOnly || jwksUri === undefined
+      ? undefined
+      : Context.get(
+          yield* Layer.build(
+            Jwks.layerRemote({
+              url: jwksUri,
+              timeoutMs: options.timeoutMs,
+              maxResponseBytes: options.maxResponseBytes,
+            }).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, yield* Transport.capture))),
+          ).pipe(Effect.mapError(() => Unavailable.make({}))),
+          Jwks.Jwks,
+        );
+
   const { use } = yield* Ownership.make;
 
   const verify = Effect.fnUntraced(function* (
@@ -213,18 +270,28 @@ export const makeVerifier = Effect.fnUntraced(function* (
 
     // Jwt verifies the signature before any registered/application claim checks.
     // Unauthenticated malformed/key/signature failures must never burn a receipt.
-    const verified = yield* Jwt.verifyWithKeySet(JsonObject, token, {
+    const jwtPolicy = {
       algorithms: advertised,
       issuer: metadata.issuer,
       audience: options.clientId,
-      requiredClaims: ["iss", "sub", "aud", "exp", "iat"],
+      requiredClaims: ["iss", "sub", "aud", "exp", "iat"] as const,
       clockTolerance: 0,
-    }).pipe(
-      Effect.provideService(Jwks.Jwks, keys),
-      Effect.mapError((error) =>
-        error._tag === "JoseClaimValidationFailed" ? claimFailure() : Unavailable.make({}),
-      ),
-    );
+    };
+
+    const mapJwtError = (error: { readonly _tag: string }) =>
+      error._tag === "JoseClaimValidationFailed" ? claimFailure() : Unavailable.make({});
+
+    const verified =
+      hmacKey !== undefined
+        ? yield* Jwt.verify(JsonObject, token, hmacKey, jwtPolicy).pipe(
+            Effect.mapError(mapJwtError),
+          )
+        : keys === undefined
+          ? yield* Unavailable.make({})
+          : yield* Jwt.verifyWithKeySet(JsonObject, token, jwtPolicy).pipe(
+              Effect.provideService(Jwks.Jwks, keys),
+              Effect.mapError(mapJwtError),
+            );
 
     const claims = yield* V.decode(IdClaims, verified.claims).pipe(Effect.mapError(claimFailure));
 

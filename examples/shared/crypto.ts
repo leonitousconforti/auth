@@ -7,7 +7,8 @@ import { Layer } from "effect";
 // KDF work. This example host chooses WebCrypto and the portable Argon2id backend.
 const admission = KdfAdmission.layer();
 
-export const CryptoLive = Layer.merge(
+export const CryptoLive = Layer.mergeAll(
   WebCrypto.layerCryptoWeb,
+  WebCrypto.layerHmacWeb,
   Portable.layer(globalThis.crypto.subtle).pipe(Layer.provideMerge(admission)),
 );

@@ -94,7 +94,7 @@ const optionsSchema = <R>(providerCohort: boolean) =>
             protocol: Schema.Literal("oidc"),
             idTokenSignedResponseAlg: Schema.Array(IdTokenSignedResponseAlg).check(
               Schema.isMinLength(1),
-              Schema.isMaxLength(4),
+              Schema.isMaxLength(5),
             ),
             pkceS256: Schema.Boolean,
             userInfo: OidcUserInfoMode,
@@ -472,17 +472,23 @@ export const installConnectedProvider = Effect.fn("OpenIdConnect.installConnecte
         provider.idTokenSignedResponseAlg,
       );
 
+      const usesHmac = algorithms?.includes("HS256") === true;
+      const usesAsymmetric = algorithms?.some((algorithm) => algorithm !== "HS256") === true;
+
+      if (usesHmac && usesAsymmetric) return yield* configurationError("parameters");
+      if (usesHmac && provider.authentication.method === "none")
+        return yield* configurationError("authentication");
       if (
         algorithms === undefined ||
         !metadata.response_types_supported?.includes("code") ||
-        metadata.jwks_uri === undefined ||
+        (usesAsymmetric && metadata.jwks_uri === undefined) ||
         (provider.pkceS256 && !metadata.code_challenge_methods_supported?.includes("S256")) ||
         (provider.userInfo === "merge" && metadata.userinfo_endpoint === undefined) ||
         (provider.profiles.some((profile) => profile.retention === "access-and-refresh") &&
           !metadata.grant_types_supported?.includes("refresh_token"))
       )
         return yield* configurationError("metadata");
-      yield* endpoint(metadata.jwks_uri);
+      if (metadata.jwks_uri !== undefined) yield* endpoint(metadata.jwks_uri);
       if (metadata.userinfo_endpoint !== undefined) yield* endpoint(metadata.userinfo_endpoint);
     } else yield* endpoint(provider.identitySource.url);
     if (provider.revocation.mode === "rfc7009") {

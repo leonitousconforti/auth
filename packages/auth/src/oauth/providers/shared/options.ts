@@ -5,6 +5,7 @@ import { OAuthCallbackId, OAuthIssuer, OAuthRedirectUri } from "../../signInMode
 import { authentication as providerAuthentication } from "./configuration";
 import {
   defaultIdTokenSignedResponseAlgs,
+  idTokenSignedResponseAlgs,
   type IdTokenSignedResponseAlg,
   OpenIdConnectConfigurationError,
   type OpenIdConnectAuthentication,
@@ -150,7 +151,7 @@ export type ProviderOptions<P> = P extends { readonly protocol: "oauth" | "oidc"
 export const resolveIdTokenAlgorithms = (
   value: IdTokenSignedResponseAlg | ReadonlyArray<IdTokenSignedResponseAlg> | undefined,
 ): ReadonlyArray<IdTokenSignedResponseAlg> =>
-  defaultIdTokenSignedResponseAlgs.filter((algorithm) =>
+  idTokenSignedResponseAlgs.filter((algorithm) =>
     (value === undefined
       ? defaultIdTokenSignedResponseAlgs
       : typeof value === "string"

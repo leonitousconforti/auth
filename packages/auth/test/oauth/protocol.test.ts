@@ -12,7 +12,7 @@ import {
 } from "@yielded/auth/OAuth";
 import * as OpenIdConnect from "@yielded/auth/OpenIdConnect";
 import { RequestBindingFlowId } from "@yielded/auth/Operations";
-import { layerCryptoWeb } from "@yielded/auth/WebCrypto";
+import { layerWebCrypto } from "@yielded/auth/WebCrypto";
 import * as Admission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
 import {
@@ -37,7 +37,7 @@ const json = (body: unknown, status = 200) => Response.json(body, { status });
 
 const platform = Layer.mergeAll(
   FetchHttpClient.layer,
-  layerCryptoWeb,
+  layerWebCrypto,
   Portable.layer(globalThis.crypto.subtle).pipe(Layer.provide(Admission.layer())),
 );
 

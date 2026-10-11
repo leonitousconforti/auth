@@ -53,6 +53,10 @@ and HTTPS forwarding.
 when `GOOGLE_HOSTED_DOMAIN` is set; GitLab uses `GITLAB_ISSUER` for a self-hosted
 instance. Follow each provider guide for setup.
 
+`example:line`, `example:railway`, and `example:roblox` follow the same sign-in
+shape. LINE verifies web-login HS256 ID tokens. Railway merges UserInfo. Roblox
+keeps the trailing-slash issuer and does not receive email.
+
 Provider-account management is denied until you install an application-owned
 exact-action verifier. If you enable remote revocation, supply a scheduler for
 its jobs as described in the [OAuth reference](../../docs/src/content/docs/reference/oauth.md).

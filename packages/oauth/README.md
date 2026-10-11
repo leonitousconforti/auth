@@ -8,7 +8,8 @@ Use `OAuth.make` for an installed client and `Oidc.makeVerifier` for its OIDC
 verifier. Both require `HttpClient` and an owning `Scope`; keep that scope open
 for their lifetime. `Pkce` requires Effect `Crypto`; verification also requires
 `Signature` from `@yielded/crypto`. `Oidc.discover` retrieves metadata from the
-exact trusted issuer. Closing a factory's scope cancels its work and prevents reuse.
+exact trusted issuer, or from an explicit `metadataUrl` whose document issuer must
+still equal that identifier. Closing a factory's scope cancels its work and prevents reuse.
 
 `client.codeGrant` and `client.refreshGrant` return private `TokenReceipt` values.
 Check the provider-specific receipt, then call `OAuth.tokens`. A receipt alone
@@ -26,7 +27,8 @@ requests; keep token receipts out of logs and telemetry.
 
 Each verifier owns a scoped JWKS cache. It never takes a key endpoint from a token
 or serves expired keys after refresh failure. Configure the issuer's advertised
-code flow and signing algorithms. Keep S256 PKCE enabled unless the issuer cannot
+code flow and signing algorithms. HS256 is accepted only with a client secret of
+at least 32 bytes. Keep S256 PKCE enabled unless the issuer cannot
 support it. Other OAuth grants are outside this package's profile.
 
 See the [public API comments](src/OAuth.ts), [OIDC options](src/Oidc.ts), and

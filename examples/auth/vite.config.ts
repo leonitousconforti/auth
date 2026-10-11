@@ -42,6 +42,21 @@ export default defineConfig({
         cache: false,
         dependsOn: ["build"],
       },
+      "example:line": {
+        command: "bun src/line-app.ts",
+        cache: false,
+        dependsOn: ["build"],
+      },
+      "example:railway": {
+        command: "bun src/railway-app.ts",
+        cache: false,
+        dependsOn: ["build"],
+      },
+      "example:roblox": {
+        command: "bun src/roblox-app.ts",
+        cache: false,
+        dependsOn: ["build"],
+      },
       "example:github": {
         command: "bun src/github-app.ts",
         cache: false,

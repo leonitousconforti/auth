@@ -410,6 +410,9 @@ expired-row cleanup and ingress limits.
 | GitLab            | [`GitLab.provider`](../guide/gitlab), with optional self-hosted issuer |
 | Google            | [`Google.provider`](../guide/google)                                   |
 | Hugging Face      | [`HuggingFace.provider`](../guide/huggingface)                         |
+| LINE              | [`Line.provider`](../guide/line)                                       |
+| Railway           | [`Railway.provider`](../guide/railway)                                 |
+| Roblox            | [`Roblox.provider`](../guide/roblox)                                   |
 | Slack             | [`Slack.provider`](../guide/slack)                                     |
 | Vercel            | [`Vercel.provider`](../guide/vercel)                                   |
 | Zoom              | [`Zoom.provider`](../guide/zoom)                                       |
@@ -506,7 +509,10 @@ Missing claims stay absent. GitHub's nullable `/user.email` is separate from its
 opt-in verified email fields. Google exposes verified `hd` for
 [Workspace policy](../guide/google#identity-and-workspace-policy); GitLab can expose
 `groups`, and Slack exposes its workspace and user identifiers for
-[workspace policy](../guide/slack#identity-and-workspace-policy).
+[workspace policy](../guide/slack#identity-and-workspace-policy). LINE keeps
+optional `amr`. Roblox keeps optional `type` and `created_at` and preserves the
+trailing-slash issuer. Railway merges UserInfo because its ID token omits name,
+email, and picture.
 
 Set `userInfo: "merge"` when an OIDC identity token omits needed profile claims.
 Provider schemas describe the returned projection; applications choose permission

@@ -12,7 +12,14 @@ import type {
 } from "./compatibility";
 import type { DiscoveryProfile, discoveryProfile } from "./discovery";
 
-export const IdTokenSignedResponseAlg = Schema.Literals(["RS256", "PS256", "ES256", "EdDSA"]);
+export const IdTokenSignedResponseAlg = Schema.Literals([
+  "RS256",
+  "PS256",
+  "ES256",
+  "EdDSA",
+  "HS256",
+]);
+
 export type IdTokenSignedResponseAlg = typeof IdTokenSignedResponseAlg.Type;
 
 export const defaultIdTokenSignedResponseAlgs: readonly IdTokenSignedResponseAlg[] = [
@@ -22,11 +29,19 @@ export const defaultIdTokenSignedResponseAlgs: readonly IdTokenSignedResponseAlg
   "EdDSA",
 ];
 
+export const idTokenSignedResponseAlgs: readonly IdTokenSignedResponseAlg[] = [
+  "RS256",
+  "PS256",
+  "ES256",
+  "EdDSA",
+  "HS256",
+];
+
 export const advertisedIdTokenAlgorithms = (
   advertised: ReadonlyArray<string> | undefined,
   allowed: ReadonlyArray<IdTokenSignedResponseAlg>,
 ): ReadonlyArray<IdTokenSignedResponseAlg> | undefined => {
-  const supported = defaultIdTokenSignedResponseAlgs.filter(
+  const supported = idTokenSignedResponseAlgs.filter(
     (algorithm) => allowed.includes(algorithm) && advertised?.includes(algorithm),
   );
 

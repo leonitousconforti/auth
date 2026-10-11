@@ -114,7 +114,8 @@ export const provider = <R = never>(
 /** One protocol Layer for all OAuth/OIDC hosts. Each provider defaults to
  * generation 1, active issuance, callback ID equal to its provider key, required
  * response issuer validation and S256 PKCE. OIDC defaults to advertised
- * RS256/PS256/ES256/EdDSA, the openid scope, ID-token profile claims, and
+ * RS256/PS256/ES256/EdDSA (HS256 only when requested with a client secret),
+ * the openid scope, ID-token profile claims, and
  * OidcUserProfile. Set pkceS256 false only for issuers that cannot complete
  * PKCE. Plain OAuth defaults to no scopes. clientSecret uses client_secret_basic
  * unless tokenEndpointAuthMethod is supplied. Discovery must confirm the host's
