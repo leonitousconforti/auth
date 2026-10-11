@@ -9,6 +9,17 @@ export const utf8 = (value: string) => new TextEncoder().encode(value);
 const Segment = Schema.String.check(
   Schema.isPattern(/^[A-Za-z0-9_-]*$/),
   Schema.isMaxLength(65536),
+  Schema.makeFilter((value) => {
+    const remainder = value.length % 4;
+
+    // Unpadded base64url permits only zero unused bits in its last character.
+    // Check those bits before decoding instead of re-encoding the complete bytes.
+    return (
+      remainder === 0 ||
+      (remainder === 2 && "AQgw".includes(value.slice(-1))) ||
+      (remainder === 3 && "AEIMQUYcgkosw048".includes(value.slice(-1)))
+    );
+  }),
 );
 
 const Token = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(65536));
@@ -40,9 +51,6 @@ export const decode = Effect.fnUntraced(function* (
     onFailure: () => Effect.fail(InvalidToken.make({ reason })),
     onSuccess: Effect.succeed,
   });
-
-  // Canonical, unpadded base64url also rejects non-zero unused bits.
-  if (Base64Url.encode(bytes) !== value) return yield* InvalidToken.make({ reason });
 
   return bytes;
 });
