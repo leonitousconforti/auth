@@ -65,7 +65,7 @@ import { CurrentSessionInvocation, SessionVerificationCapture } from "./invocati
 import {
   AuthenticationEvidence,
   type PendingConsumption,
-  type SessionMetadata,
+  SessionMetadata,
   AuthenticationFlowId,
   AuthenticationRequirement,
   SessionId,
@@ -1561,6 +1561,20 @@ export const makeSessionModule = <
 
   const invocationCodec = Schema.fromJsonString(sourceCodec);
 
+  // Keep the complete detached private source, but project only the fields each
+  // reader consumes. Public reads never need to decode the private proof graph.
+  const capturedMetadataCodec = Schema.fromJsonString(
+    Schema.toCodecJson(
+      Schema.toType(Schema.Struct({ inspection: Schema.Struct({ session: SessionMetadata }) })),
+    ),
+  );
+
+  const capturedSessionCodec = Schema.fromJsonString(
+    Schema.toCodecJson(
+      Schema.toType(Schema.Struct({ inspection: Schema.Struct({ session: Session }) })),
+    ),
+  );
+
   const captureVerification = Effect.fnUntraced(function* (
     credential: Redacted.Redacted<string>,
     value: SessionSource<Claims["Type"]>,
@@ -1574,7 +1588,7 @@ export const makeSessionModule = <
       Effect.mapError(() => SessionInvalid.make({})),
     );
 
-    const detached = yield* Schema.decodeEffect(invocationCodec)(inspection).pipe(
+    const detached = yield* Schema.decodeEffect(capturedMetadataCodec)(inspection).pipe(
       Effect.mapError(() => SessionInvalid.make({})),
     );
 
@@ -1646,7 +1660,7 @@ export const makeSessionModule = <
     if (stored === undefined)
       return Option.none<{ readonly session: Session; readonly checkedAt: DateTime.Utc }>();
 
-    const source = yield* Schema.decodeEffect(invocationCodec)(stored.source).pipe(
+    const source = yield* Schema.decodeEffect(capturedSessionCodec)(stored.source).pipe(
       Effect.mapError(() => SessionInvalid.make({})),
     );
 
