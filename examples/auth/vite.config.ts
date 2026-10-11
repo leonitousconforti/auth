@@ -52,6 +52,26 @@ export default defineConfig({
         cache: false,
         dependsOn: ["build"],
       },
+      "example:x": {
+        command: "bun src/x-app.ts",
+        cache: false,
+        dependsOn: ["build"],
+      },
+      "example:figma": {
+        command: "bun src/figma-app.ts",
+        cache: false,
+        dependsOn: ["build"],
+      },
+      "example:atlassian": {
+        command: "bun src/atlassian-app.ts",
+        cache: false,
+        dependsOn: ["build"],
+      },
+      "example:kick": {
+        command: "bun src/kick-app.ts",
+        cache: false,
+        dependsOn: ["build"],
+      },
       "example:roblox": {
         command: "bun src/roblox-app.ts",
         cache: false,

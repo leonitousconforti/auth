@@ -406,15 +406,19 @@ expired-row cleanup and ingress limits.
 
 | Integration       | Configure                                                              |
 | ----------------- | ---------------------------------------------------------------------- |
+| Atlassian         | [`Atlassian.provider`](../guide/atlassian)                             |
+| Figma             | [`Figma.provider`](../guide/figma)                                     |
 | GitHub            | [`GitHub.provider`](../guide/github)                                   |
 | GitLab            | [`GitLab.provider`](../guide/gitlab), with optional self-hosted issuer |
 | Google            | [`Google.provider`](../guide/google)                                   |
 | Hugging Face      | [`HuggingFace.provider`](../guide/huggingface)                         |
+| Kick              | [`Kick.provider`](../guide/kick)                                       |
 | LINE              | [`Line.provider`](../guide/line)                                       |
 | Railway           | [`Railway.provider`](../guide/railway)                                 |
 | Roblox            | [`Roblox.provider`](../guide/roblox)                                   |
 | Slack             | [`Slack.provider`](../guide/slack)                                     |
 | Vercel            | [`Vercel.provider`](../guide/vercel)                                   |
+| X                 | [`X.provider`](../guide/x)                                             |
 | Zoom              | [`Zoom.provider`](../guide/zoom)                                       |
 | GitHub API access | `GitHub.accessProfile` plus provider `access`                          |
 | Strava            | `Strava.provider`, with optional access profile                        |

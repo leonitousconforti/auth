@@ -33,13 +33,17 @@ export * as BrowserLogin from "./BrowserLogin.ts";
 export * as BrowserLoginContract from "./BrowserLoginContract.ts";
 
 export * as OpenIdConnect from "./OpenIdConnect.ts";
+export * as Atlassian from "./Atlassian.ts";
+export * as Figma from "./Figma.ts";
 export * as GitHub from "./GitHub.ts";
 export * as GitLab from "./GitLab.ts";
 export * as Google from "./Google.ts";
 export * as HuggingFace from "./HuggingFace.ts";
+export * as Kick from "./Kick.ts";
 export * as Line from "./Line.ts";
 export * as Railway from "./Railway.ts";
 export * as Roblox from "./Roblox.ts";
 export * as Slack from "./Slack.ts";
 export * as Vercel from "./Vercel.ts";
+export * as X from "./X.ts";
 export * as Zoom from "./Zoom.ts";

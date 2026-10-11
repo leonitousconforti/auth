@@ -57,6 +57,10 @@ instance. Follow each provider guide for setup.
 shape. LINE verifies web-login HS256 ID tokens. Railway merges UserInfo. Roblox
 keeps the trailing-slash issuer and does not receive email.
 
+`example:x`, `example:figma`, `example:atlassian`, and `example:kick` are the same
+sign-in shape for those presets. Each allowlists one configured subject and stores
+development state in its own SQLite file.
+
 Provider-account management is denied until you install an application-owned
 exact-action verifier. If you enable remote revocation, supply a scheduler for
 its jobs as described in the [OAuth reference](../../docs/src/content/docs/reference/oauth.md).
