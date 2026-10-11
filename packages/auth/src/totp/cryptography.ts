@@ -1,5 +1,5 @@
 import { Aead } from "@yielded/crypto/Aead";
-import { Hmac } from "@yielded/crypto/Hmac";
+import { Hmac, type Key } from "@yielded/crypto/Hmac";
 import { Crypto, Effect, Redacted, Schema } from "effect";
 import { Base64Url } from "effect/encoding";
 
@@ -13,39 +13,41 @@ const encoder = new TextEncoder();
 const bindingCodec = Schema.fromJsonString(TotpSecretBinding);
 const fail = () => TotpUnavailable.make({});
 
-/** RFC 6238 SHA-1, big-endian 64-bit counter and six displayed digits by default. */
+/** RFC 6238 SHA-1 uses a big-endian 64-bit counter. */
+const counterAt = (step: number) => {
+  const bytes = new Uint8Array(8);
+
+  new DataView(bytes.buffer).setBigUint64(0, BigInt(step), false);
+
+  return bytes;
+};
+
+const codeFromMac = (mac: Uint8Array, digits = 6) => {
+  const offset = mac[mac.length - 1]! & 15;
+
+  const binary =
+    ((mac[offset]! & 127) << 24) |
+    (mac[offset + 1]! << 16) |
+    (mac[offset + 2]! << 8) |
+    mac[offset + 3]!;
+
+  return String(binary % 10 ** digits).padStart(digits, "0");
+};
+
 export const codeAt = Effect.fn("Totp.codeAt")(function* (
   secret: Uint8Array,
   step: number,
   digits = 6,
 ) {
   const hmac = yield* Hmac;
-
-  const counter = yield* Effect.try({
-    try: () => {
-      const bytes = new Uint8Array(8);
-
-      new DataView(bytes.buffer).setBigUint64(0, BigInt(step), false);
-
-      return bytes;
-    },
-    catch: fail,
-  });
+  const counter = yield* Effect.try({ try: () => counterAt(step), catch: fail });
 
   const mac = yield* hmac
     .sign({ algorithm: "SHA-1", key: Redacted.make(secret), data: counter })
     .pipe(Effect.mapError(fail));
 
   try {
-    const offset = mac[mac.length - 1]! & 15;
-
-    const binary =
-      ((mac[offset]! & 127) << 24) |
-      (mac[offset + 1]! << 16) |
-      (mac[offset + 2]! << 8) |
-      mac[offset + 3]!;
-
-    return String(binary % 10 ** digits).padStart(digits, "0");
+    return codeFromMac(mac, digits);
   } finally {
     mac.fill(0);
   }
@@ -82,19 +84,30 @@ export const make = Effect.gen(function* () {
     ) {
       const current = Math.floor(nowMillis / 30000);
       let matched: number | null = null;
+      let key: Key | undefined;
 
       for (let delta = -skew; delta <= skew; delta++) {
         const step = current + delta;
 
         if (step >= 0) {
-          const expected = yield* codeAt(secret, step).pipe(Effect.provideService(Hmac, hmac));
+          // The native key belongs only to this match window, including failure
+          // and interruption. Do not retain decrypted secrets across requests.
+          key ??= yield* hmac
+            .importKey({ algorithm: "SHA-1", key: Redacted.make(secret) })
+            .pipe(Effect.mapError(fail));
+          const counter = yield* Effect.try({ try: () => counterAt(step), catch: fail });
+          const mac = yield* key.sign(counter).pipe(Effect.mapError(fail));
 
-          if (equalBytes(encoder.encode(expected), encoder.encode(code))) matched = step;
+          try {
+            if (equalBytes(encoder.encode(codeFromMac(mac)), encoder.encode(code))) matched = step;
+          } finally {
+            mac.fill(0);
+          }
         }
       }
 
       return matched;
-    }),
+    }, Effect.scoped),
     newRecoveryCodes: Effect.fn("Totp.newRecoveryCodes")(function* (
       moduleId: string,
       subjectId: string,
