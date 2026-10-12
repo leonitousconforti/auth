@@ -1,5 +1,14 @@
 # @yielded/auth-persistence-drizzle
 
+## 0.1.0-beta.38
+
+### Patch Changes
+
+- [#236](https://github.com/yielded-dev/auth/pull/236) [`0e77d70`](https://github.com/yielded-dev/auth/commit/0e77d70e99cd7221be4e388e30a34e99a5465a2f) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Allow shared persistence Layers to initialize with the invoking request's SQL connection. Defer direct OAuth factory database access and required schema checks until the first operation.
+- Updated dependencies [[`2186f4f`](https://github.com/yielded-dev/auth/commit/2186f4f649c72d3d37be7fcf25e10f097a4fcb04), [`0e77d70`](https://github.com/yielded-dev/auth/commit/0e77d70e99cd7221be4e388e30a34e99a5465a2f)]:
+  - @yielded/auth@0.1.0-beta.38
+  - @yielded/auth-persistence@0.1.0-beta.38
+
 ## 0.1.0-beta.37
 
 ### Patch Changes

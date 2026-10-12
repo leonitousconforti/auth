@@ -1,5 +1,13 @@
 # @yielded/crypto
 
+## 0.1.0-beta.38
+
+### Patch Changes
+
+- [#234](https://github.com/yielded-dev/auth/pull/234) [`2186f4f`](https://github.com/yielded-dev/auth/commit/2186f4f649c72d3d37be7fcf25e10f097a4fcb04) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Provide `WorkerdPasswordlessServices.layer` for Workers authentication without Argon2 Wasm or Node.js compatibility. Reject OAuth protector construction when the supplied AEAD service lacks XChaCha20-Poly1305 support.
+
+  BEHAVIOR CHANGE: Implement `supports(algorithm)` on custom `Aead` services.
+
 ## 0.1.0-beta.37
 
 No changes in this release.
