@@ -10,7 +10,12 @@ import type {
   OpenIdConnectOAuthProvider,
   OpenIdConnectOidcProvider,
 } from "./models";
-import { installConfigurations, installConnectedConfigurations, type Requirements } from "./oidc";
+import {
+  installConfigurations,
+  installConnectedConfigurations,
+  ProviderDiscovery,
+  type Requirements,
+} from "./oidc";
 import {
   resolveOidcDefaults,
   resolveOptions,
@@ -69,7 +74,9 @@ const resolve = <R>(providers: ReadonlyArray<Provider<R>>) =>
   );
 
 /** Declare an OIDC or OAuth provider for Http.layer. No I/O runs until its
- * Layer builds. The HTTP host supplies the provider ID and callback URLs. */
+ * Layer builds. The HTTP host supplies the provider ID and callback URLs. One
+ * initialization shares equivalent discovery responses; client and verification
+ * policy remain separate for each protocol and registration. */
 export const provider = <R = never>(
   options: ProviderOptions<R>,
 ): ProviderDefinition<OpenIdConnectConfigurationError | OAuthUnavailable, R | Requirements> => ({
@@ -109,7 +116,7 @@ export const provider = <R = never>(
       ).pipe(Effect.provideServiceEffect(PrivateKeyClientSecret, PrivateKeyClientSecret.make));
 
       return { ...protocol, connected };
-    }),
+    }).pipe(Effect.provideServiceEffect(ProviderDiscovery, ProviderDiscovery.make)),
 });
 
 /** One protocol Layer for all OAuth/OIDC hosts. Each provider defaults to
@@ -141,6 +148,7 @@ export const layer = <R = never>(options: Options<R>) =>
       Effect.flatMap((configuration) =>
         makeOpenIdConnectOAuthProtocol(installConfigurations<R>(configuration)).pipe(
           Effect.provideServiceEffect(PrivateKeyClientSecret, PrivateKeyClientSecret.make),
+          Effect.provideServiceEffect(ProviderDiscovery, ProviderDiscovery.make),
         ),
       ),
     ),
