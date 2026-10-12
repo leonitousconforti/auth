@@ -1,5 +1,14 @@
 # @yielded/auth-persistence
 
+## 0.1.0-beta.36
+
+### Patch Changes
+
+- [#229](https://github.com/yielded-dev/auth/pull/229) [`056a322`](https://github.com/yielded-dev/auth/commit/056a3225501b202dea9455bfe16e27221e10e63f) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Keep composed persistence unavailable after interrupted initialization until its Layer is reacquired. Preserve shared setup while another caller is still waiting.
+- Updated dependencies []:
+  - @yielded/auth@0.1.0-beta.36
+  - @yielded/crypto@0.1.0-beta.36
+
 ## 0.1.0-beta.35
 
 ### Patch Changes

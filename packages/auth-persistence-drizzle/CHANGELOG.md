@@ -1,5 +1,13 @@
 # @yielded/auth-persistence-drizzle
 
+## 0.1.0-beta.36
+
+### Patch Changes
+
+- Updated dependencies [[`056a322`](https://github.com/yielded-dev/auth/commit/056a3225501b202dea9455bfe16e27221e10e63f)]:
+  - @yielded/auth-persistence@0.1.0-beta.36
+  - @yielded/auth@0.1.0-beta.36
+
 ## 0.1.0-beta.35
 
 ### Patch Changes
