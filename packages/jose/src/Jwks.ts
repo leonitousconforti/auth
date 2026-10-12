@@ -281,7 +281,8 @@ export const layerRemote = (
       }).pipe(
         Effect.scoped,
         Effect.provideService(FetchHttpClient.RequestInit, {
-          redirect: "error",
+          // Workers supports manual redirects; the status check above rejects them.
+          redirect: "manual",
           credentials: "omit",
         }),
         Effect.catchTag("HttpClientError", () => JwksUnavailable.make({ reason: "transport" })),
