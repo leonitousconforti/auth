@@ -279,7 +279,9 @@ export interface BoundPersistence<
    * configurations fail acquisition with PersistenceConfigurationError.
    * Capture dependencies at acquisition; validate SQL metadata and configure storage
    * once on the first service operation. Initialization failures become that port's
-   * unavailable error. Failure or interruption remains cached until layer reacquisition.
+   * unavailable error until layer reacquisition. Canceling a caller leaves initialization
+   * running for other waiting callers; if initialization is interrupted, later operations
+   * remain unavailable until layer reacquisition.
    * Managed OAuth metadata/token-use authorizations bind policyRevision to the subject's
    * securityRevision; changes to application authorization policy must advance it.
    */

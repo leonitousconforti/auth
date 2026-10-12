@@ -98,8 +98,9 @@ Effect SQL applications supply their own migration runner.
 
 The composed Layer validates mapped columns and unique keys on its first storage
 operation. Retain it at the composition root and rebuild it after schema changes
-or failed initialization. Cookie-cached and anonymous session reads do not trigger
-initialization.
+or failed initialization. Canceling one caller leaves setup running for other waiting
+callers. Interrupted setup requires rebuilding the Layer before storage operations can
+resume. Cookie-cached and anonymous session reads do not trigger initialization.
 
 Composition supports password sign-in, registration and management, email address
 verification and changes, phone sign-in, passkey sign-in and management, OAuth
