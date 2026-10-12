@@ -193,7 +193,8 @@ export const makeClients = Effect.fnUntraced(function* (
   const store = yield* Persistence;
   const permits = yield* Semaphore.make(8);
   const cache = new Map<string, Cached<Client>>();
-  const keyCache = new Map<string, Cached<Jwks.KeySet>>();
+  const keyCache = new Map<string, Cached<Jwks.Jwks["Service"]>>();
+  const localResolvers = new WeakMap<Jwks.KeySet, Jwks.Jwks["Service"]>();
   const crypto = yield* Crypto.Crypto;
 
   const key = yield* hmac
@@ -331,7 +332,19 @@ export const makeClients = Effect.fnUntraced(function* (
   });
 
   const assertionKeys = Effect.fnUntraced(function* (settings: typeof ClientAssertion.Type) {
-    if (settings.jwks !== undefined) return settings.jwks;
+    if (settings.jwks !== undefined) {
+      const cached = localResolvers.get(settings.jwks);
+
+      if (cached !== undefined) return cached;
+
+      const resolver = yield* Jwks.makeLocal(settings.jwks).pipe(
+        Effect.mapError(() => reject("invalid_client")),
+      );
+
+      localResolvers.set(settings.jwks, resolver);
+
+      return resolver;
+    }
     if (settings.jwksUri === undefined) return yield* reject("invalid_client");
     const cached = keyCache.get(settings.jwksUri);
 
@@ -344,10 +357,14 @@ export const makeClients = Effect.fnUntraced(function* (
       Effect.mapError(() => reject("invalid_client")),
     );
 
-    if (response.expires > (yield* Clock.currentTimeMillis))
-      remember(keyCache, settings.jwksUri, { value: keys, expires: response.expires });
+    const resolver = yield* Jwks.makeLocal(keys).pipe(
+      Effect.mapError(() => reject("invalid_client")),
+    );
 
-    return keys;
+    if (response.expires > (yield* Clock.currentTimeMillis))
+      remember(keyCache, settings.jwksUri, { value: resolver, expires: response.expires });
+
+    return resolver;
   });
 
   const verifyAssertion = Effect.fnUntraced(function* (
@@ -357,7 +374,7 @@ export const makeClients = Effect.fnUntraced(function* (
   ) {
     if (client.clientAssertion === undefined) return yield* reject("invalid_client");
     const settings = client.clientAssertion;
-    const keys = yield* assertionKeys(settings);
+    const resolver = yield* assertionKeys(settings);
 
     const { claims } = yield* Jwt.verifyWithKeySet(AssertionClaims, Redacted.make(assertion), {
       algorithms: settings.algorithm === undefined ? AssertionAlgorithms : [settings.algorithm],
@@ -366,7 +383,7 @@ export const makeClients = Effect.fnUntraced(function* (
       audience: [issuer, tokenEndpoint, endpoint],
       requiredClaims: ["iss", "sub", "aud", "exp", "jti"],
     }).pipe(
-      Effect.provide(Jwks.layerLocal(keys)),
+      Effect.provideService(Jwks.Jwks, resolver),
       Effect.provideService(Signature, signatures),
       Effect.mapError(() => reject("invalid_client")),
     );

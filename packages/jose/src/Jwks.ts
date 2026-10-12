@@ -1,4 +1,4 @@
-import type { Signature } from "@yielded/crypto/Signature";
+import { Signature } from "@yielded/crypto/Signature";
 import {
   Clock,
   Context,
@@ -40,22 +40,25 @@ export class Jwks extends Context.Service<
   }
 >()("@yielded/jose/Jwks") {}
 
+/** Capture one detached immutable key-set generation without acquiring resources.
+ * Retain the resolver for that generation; create a new one when keys change.
+ * Each resolution still uses the caller's Signature service and selection policy. */
+export const makeLocal = Effect.fnUntraced(function* (input: unknown) {
+  const set = yield* readSet(input);
+  const importKey = makePublicImporter();
+
+  return Jwks.of({
+    resolve: Effect.fnUntraced(function* (input) {
+      const selection = yield* readSelection(input);
+
+      return yield* importKey(yield* select(set, selection), selection.algorithm);
+    }),
+  });
+});
+
 /** One immutable public key set; local selection never requires HttpClient. */
 export const layerLocal = (input: unknown): Layer.Layer<Jwks, InvalidKey> =>
-  Layer.effect(
-    Jwks,
-    Effect.gen(function* () {
-      const set = yield* readSet(input);
-
-      return Jwks.of({
-        resolve: Effect.fnUntraced(function* (input) {
-          const selection = yield* readSelection(input);
-
-          return yield* importPublic(yield* select(set, selection), selection.algorithm);
-        }),
-      });
-    }),
-  );
+  Layer.effect(Jwks, makeLocal(input));
 
 export interface RemoteOptions {
   /** Trusted application configuration, never a URL from a token. HTTPS only. */
@@ -124,6 +127,36 @@ const select = Effect.fnUntraced(function* (set: KeySet, selection: Selection) {
   return candidates[0];
 });
 
+const makePublicImporter = () => {
+  // Only readSet's immutable snapshots enter this cache. Weak keys release old
+  // remote snapshots and service overrides; algorithms are a fixed finite set.
+  const keys = new WeakMap<
+    PublicJwk,
+    WeakMap<Signature["Service"], Map<AsymmetricAlgorithm, PublicKey>>
+  >();
+
+  return Effect.fnUntraced(function* (jwk: PublicJwk, algorithm: AsymmetricAlgorithm) {
+    const signatures = yield* Signature;
+    let services = keys.get(jwk);
+
+    if (services === undefined) keys.set(jwk, (services = new WeakMap()));
+    let algorithms = services.get(signatures);
+
+    if (algorithms === undefined) services.set(signatures, (algorithms = new Map()));
+    let key = algorithms.get(algorithm);
+
+    if (key === undefined) {
+      key = yield* importPublic(jwk, algorithm);
+      // Publish successes only. Failed or interrupted imports remain retryable.
+      algorithms.set(algorithm, key);
+    }
+
+    // Metadata is frozen, but Uint8Array contents cannot be. Never expose the
+    // retained material to callers or to a verification service implementation.
+    return Object.freeze({ ...key, material: new Uint8Array(key.material) });
+  });
+};
+
 const bounded = (minimum: number, maximum: number) =>
   Schema.Int.check(Schema.isBetween({ minimum, maximum }));
 
@@ -191,6 +224,7 @@ export const layerRemote = (
       }).pipe(Effect.mapError(() => JwksUnavailable.make({ reason: "configuration" })));
 
       const client = HttpClient.withScope(yield* HttpClient.HttpClient);
+      const importKey = makePublicImporter();
 
       const state = yield* SynchronizedRef.make<RemoteState>({
         _tag: "Open",
@@ -346,7 +380,7 @@ export const layerRemote = (
           ),
         );
 
-        return yield* importPublic(candidate, selection.algorithm);
+        return yield* importKey(candidate, selection.algorithm);
       });
 
       return Jwks.of({

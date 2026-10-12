@@ -156,7 +156,9 @@ that every secret copy is erased. Keep keys dedicated to their protocol purpose.
 Provide `Jwks.layerLocal({ keys })` to `Jwt.verifyWithKeySet` or
 `Jws.verifyWithKeySet`. Local verification requires only the selected crypto
 services. Public key sets accept the supported RSA, P-256 and Ed25519 profiles,
-with at most 256 keys; malformed or unsupported entries reject the set.
+with at most 256 keys; malformed or unsupported entries reject the set. Share the
+Layer across requests to reuse successful public-key imports. Returned key bytes
+remain independent, and crypto service overrides retain their own imports.
 
 Remote verification adds a scoped Layer:
 
