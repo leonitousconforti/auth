@@ -1,4 +1,5 @@
 import {
+  Result,
   Cause,
   Context,
   Crypto,
@@ -88,11 +89,7 @@ export const connectedSame = <A>(schema: Schema.Codec<A, unknown, never, never>,
   Schema.encodeSync(Schema.fromJsonString(schema))(b);
 
 export const captureConnectedPolicy = (input: M.OAuthConnectedPolicy) => {
-  try {
-    return snapshotOAuthConnectedPolicy.sync(input);
-  } catch {
-    return undefined;
-  }
+  return Result.getOrUndefined(snapshotOAuthConnectedPolicy.result(input));
 };
 
 export const validateConnectedPolicy = Effect.fn("OAuthConnected.policy")(function* (
@@ -328,7 +325,7 @@ export const makeOAuthConnectedAccess = <const Id extends string>(
             if (decision._tag === "ReauthorizationRequired")
               return yield* M.OAuthConnectedReauthorizationRequired.make({});
             if (decision._tag !== "Claimed") return yield* OAuthRejected.make({});
-            const owned = snapshotOAuthConnectedRefreshClaim.sync(decision.claim);
+            const owned = yield* snapshotOAuthConnectedRefreshClaim.effect(decision.claim);
 
             if (
               owned.claimId !== claimId ||
@@ -346,9 +343,9 @@ export const makeOAuthConnectedAccess = <const Id extends string>(
               return yield* OAuthUnavailable.make({});
 
             const exchange = Effect.gen(function* () {
-              const material = yield* open(snapshotOAuthConnectedStoredGrant.sync(grant)).pipe(
-                Effect.flatMap((v) => snapshotOAuthConnectedTokenMaterial.effect(v)),
-              );
+              const material = yield* open(
+                yield* snapshotOAuthConnectedStoredGrant.effect(grant),
+              ).pipe(Effect.flatMap((v) => snapshotOAuthConnectedTokenMaterial.effect(v)));
 
               return yield* Effect.gen(function* () {
                 const start = DateTime.toEpochMillis(yield* DateTime.now);
@@ -363,8 +360,8 @@ export const makeOAuthConnectedAccess = <const Id extends string>(
                   return yield* M.OAuthConnectedReauthorizationRequired.make({});
 
                 const response = yield* refreshGrant({
-                  context: snapshotOAuthConnectedTokenContext.sync(grant.context),
-                  material: snapshotOAuthConnectedTokenMaterial.sync(material),
+                  context: yield* snapshotOAuthConnectedTokenContext.effect(grant.context),
+                  material: yield* snapshotOAuthConnectedTokenMaterial.effect(material),
                   verificationStartedAt: DateTime.makeUnsafe(start),
                 });
 
@@ -376,7 +373,7 @@ export const makeOAuthConnectedAccess = <const Id extends string>(
                 );
 
                 return yield* Effect.gen(function* () {
-                  const context = snapshotOAuthConnectedTokenContext.sync({
+                  const context = yield* snapshotOAuthConnectedTokenContext.effect({
                     ...grant.context,
                     tokenVersion: nextTokenVersion,
                     metadata: projected.metadata,
@@ -384,15 +381,15 @@ export const makeOAuthConnectedAccess = <const Id extends string>(
 
                   const sealed = yield* seal({
                     context,
-                    material: snapshotOAuthConnectedTokenMaterial.sync(projected.material),
+                    material: yield* snapshotOAuthConnectedTokenMaterial.effect(projected.material),
                   });
 
-                  const updated = snapshotOAuthConnectedStoredGrant.sync({
+                  const updated = yield* snapshotOAuthConnectedStoredGrant.effect({
                     context,
                     sealed,
                   });
 
-                  return snapshotOAuthConnectedRefreshOutcome.sync({
+                  return yield* snapshotOAuthConnectedRefreshOutcome.effect({
                     _tag: "Refreshed",
                     grant: updated,
                   });
@@ -440,7 +437,7 @@ export const makeOAuthConnectedAccess = <const Id extends string>(
             )
               return yield* OAuthUnavailable.make({});
 
-            return snapshotOAuthConnectedStoredGrant.sync(settled.grant);
+            return yield* snapshotOAuthConnectedStoredGrant.effect(settled.grant);
           }),
         );
       });
@@ -507,7 +504,7 @@ export const makeOAuthConnectedAccess = <const Id extends string>(
         }
         if (snapshot.state === "ReauthorizationRequired")
           return yield* M.OAuthConnectedReauthorizationRequired.make({});
-        let grant = snapshotOAuthConnectedStoredGrant.sync(snapshot);
+        let grant = yield* snapshotOAuthConnectedStoredGrant.effect(snapshot);
 
         const now = DateTime.toEpochMillis(yield* DateTime.now);
 
@@ -520,7 +517,7 @@ export const makeOAuthConnectedAccess = <const Id extends string>(
         )
           grant = yield* refresh(grant, authorization);
 
-        const material = yield* open(snapshotOAuthConnectedStoredGrant.sync(grant)).pipe(
+        const material = yield* open(yield* snapshotOAuthConnectedStoredGrant.effect(grant)).pipe(
           Effect.flatMap((v) => snapshotOAuthConnectedTokenMaterial.effect(v)),
         );
 

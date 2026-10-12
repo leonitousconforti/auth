@@ -1,9 +1,24 @@
-import { Cause, Context, Crypto, DateTime, Effect, Layer, Schema, type Types } from "effect";
+import {
+  Result,
+  Cause,
+  Context,
+  Crypto,
+  DateTime,
+  Effect,
+  Layer,
+  Schema,
+  type Types,
+} from "effect";
 import { Base64Url } from "effect/encoding";
 
-import { hasCommitScope, type PreparedCommit } from "../hooks/commit";
+import { prepareCommit, hasCommitScope, type PreparedCommit } from "../hooks/commit";
 import { LifecycleHooks } from "../hooks/LifecycleHooks";
-import { HookDenied, LifecycleEventId, lifecycleEvent, lifecycleSnapshot } from "../hooks/models";
+import {
+  HookDenied,
+  LifecycleEventId,
+  lifecycleEventEffect,
+  lifecycleSnapshotEffect,
+} from "../hooks/models";
 import { IdentityConflict } from "../identity/models";
 import {
   reportAuthDiagnostic,
@@ -214,7 +229,7 @@ export const makeOAuthRegistration = <
             yield* noAmbient();
             if (authenticate && authority.authentication !== "first-confirmed-registration")
               return yield* OAuthMethodUnsupported.make({});
-            const input = snapshotOAuthRegistrationPrivateInput.sync(raw);
+            const input = yield* snapshotOAuthRegistrationPrivateInput.effect(raw);
             const data = yield* snapshotData(raw.registration);
 
             const verified = yield* verify(input.flowId, input.requestBinding).pipe(
@@ -225,7 +240,7 @@ export const makeOAuthRegistration = <
               ),
             );
 
-            const access = snapshotOAuthRegistrationAccess.sync({
+            const access = yield* snapshotOAuthRegistrationAccess.effect({
               moduleId: id,
               reference: input.reference,
               flowId: input.flowId,
@@ -239,10 +254,10 @@ export const makeOAuthRegistration = <
               ),
             });
 
-            const found = yield* read(snapshotOAuthRegistrationAccess.sync(access));
+            const found = yield* read(yield* snapshotOAuthRegistrationAccess.effect(access));
 
             if (found === undefined) return yield* OAuthRejected.make({});
-            const current = snapshotOAuthRegistrationInspection.sync(found);
+            const current = yield* snapshotOAuthRegistrationInspection.effect(found);
             const intent = current.intent;
             const context = intent.context;
 
@@ -268,11 +283,11 @@ export const makeOAuthRegistration = <
               return yield* OAuthRejected.make({});
 
             const inspected = yield* inspect({
-              intent: snapshotOAuthRegistrationIntent.sync(intent),
+              intent: yield* snapshotOAuthRegistrationIntent.effect(intent),
               registration: yield* snapshotData(data),
             });
 
-            const checked = snapshotEligibility.sync(inspected);
+            const checked = yield* snapshotEligibility.effect(inspected);
 
             const payload = yield* Schema.encodeEffect(Schema.fromJsonString(RegistrationCodec))(
               data,
@@ -297,24 +312,24 @@ export const makeOAuthRegistration = <
             const event =
               application._tag === "Unbound"
                 ? yield* Effect.gen(function* () {
-                    const snapshot = lifecycleSnapshot({
+                    const snapshot = yield* lifecycleSnapshotEffect({
                       action: "registration",
                       operation: `${moduleId}/oauth-registration`,
                       method: context.protocol,
                       identifiers: [],
-                    });
+                    }).pipe(Effect.orDie);
 
-                    yield* before(lifecycleSnapshot(snapshot));
+                    yield* before(yield* lifecycleSnapshotEffect(snapshot).pipe(Effect.orDie));
 
                     const bytes = yield* randomBytes(32).pipe(
                       Effect.mapError(() => OAuthUnavailable.make({})),
                     );
 
-                    const value = lifecycleEvent({
+                    const value = yield* lifecycleEventEffect({
                       id: LifecycleEventId.make(Base64Url.encode(bytes)),
                       occurredAtMillis: DateTime.toEpochMillis(yield* DateTime.now),
                       snapshot,
-                    });
+                    }).pipe(Effect.orDie);
 
                     bytes.fill(0);
 
@@ -324,46 +339,46 @@ export const makeOAuthRegistration = <
 
             const ownerData = yield* snapshotData(data);
 
-            const prepare: PrepareOAuthCommit<OAuthRegistrationDecision, Result> = (
-              rawDecision,
-              journal,
-            ) => {
-              const decision = snapshotOAuthRegistrationDecision.sync(rawDecision);
+            const prepare: PrepareOAuthCommit<OAuthRegistrationDecision, Result> = prepareCommit(
+              (rawDecision, journal) =>
+                Result.gen(function* () {
+                  const decision = snapshotOAuthRegistrationDecision.sync(rawDecision);
 
-              const authentication =
-                decision._tag === "Registered" && !decision.replayed && authenticate
-                  ? decision.authentication
-                  : undefined;
+                  const authentication =
+                    decision._tag === "Registered" && !decision.replayed && authenticate
+                      ? decision.authentication
+                      : undefined;
 
-              if (decision._tag === "Registered" && !decision.replayed) {
-                if (event === undefined) throw OAuthUnavailable.make({});
-                if (
-                  authenticate &&
-                  (authentication === undefined ||
-                    Schema.encodeSync(intentCodec)(authentication.intent) !==
-                      Schema.encodeSync(intentCodec)(intent))
-                )
-                  throw OAuthUnavailable.make({});
-                journal.stage(event);
-              }
+                  if (decision._tag === "Registered" && !decision.replayed) {
+                    if (event === undefined) return yield* Result.fail(OAuthUnavailable.make({}));
+                    if (
+                      authenticate &&
+                      (authentication === undefined ||
+                        Schema.encodeSync(intentCodec)(authentication.intent) !==
+                          Schema.encodeSync(intentCodec)(intent))
+                    )
+                      return yield* Result.fail(OAuthUnavailable.make({}));
+                    journal.stage(event);
+                  }
 
-              const accepted = decision._tag === "Registered";
+                  const accepted = decision._tag === "Registered";
 
-              return journal.prepare({
-                value:
-                  decision._tag === "Registered"
-                    ? { _tag: "RegistrationAccepted" as const }
-                    : { _tag: decision._tag },
-                ...(authentication === undefined ? {} : { authentication }),
-                credentialCommands:
-                  accepted && !decision.replayed
-                    ? [
-                        { _tag: "Clear" as const, slot: "registration" as const },
-                        { _tag: "Clear" as const, slot: "request-binding" as const },
-                      ]
-                    : [],
-              });
-            };
+                  return journal.prepare({
+                    value:
+                      decision._tag === "Registered"
+                        ? { _tag: "RegistrationAccepted" as const }
+                        : { _tag: decision._tag },
+                    ...(authentication === undefined ? {} : { authentication }),
+                    credentialCommands:
+                      accepted && !decision.replayed
+                        ? [
+                            { _tag: "Clear" as const, slot: "registration" as const },
+                            { _tag: "Clear" as const, slot: "request-binding" as const },
+                          ]
+                        : [],
+                  });
+                }),
+            );
 
             let attempted = false;
 
@@ -377,8 +392,8 @@ export const makeOAuthRegistration = <
 
               return yield* owner.register(
                 {
-                  access: snapshotOAuthRegistrationAccess.sync(access),
-                  intent: snapshotOAuthRegistrationIntent.sync(intent),
+                  access: yield* snapshotOAuthRegistrationAccess.effect(access),
+                  intent: yield* snapshotOAuthRegistrationIntent.effect(intent),
                   commandId: input.commandId,
                   registration: ownerData,
                   payload,

@@ -84,16 +84,16 @@ export const coordinateNativeTarget = <Failure, Services, Transaction, A, E, R, 
           Effect.provideService(NativeDatabase, database),
         );
 
-        const transaction = yield* Effect.suspend(() =>
-          configuration.mode === "batch"
-            ? Effect.succeed(undefined)
-            : configuration.dialect === "mysql"
-              ? makeMysqlTransactionHandle(database)
-              : Effect.succeed(
-                  configuration.transactionFactory?.(database) ??
-                    makeDrizzleTransactionHandle(database, configuration.transactionConstructor),
-                ),
-        ).pipe(Effect.mapError(unavailable));
+        const transaction = yield* Effect.gen(function* () {
+          if (configuration.mode === "batch") return undefined;
+          if (configuration.dialect === "mysql") return yield* makeMysqlTransactionHandle(database);
+          const handle = configuration.transactionFactory?.(database);
+
+          return (
+            handle ??
+            (yield* makeDrizzleTransactionHandle(database, configuration.transactionConstructor))
+          );
+        }).pipe(Effect.mapError(unavailable));
 
         const collector = yield* captureSqlBatchStatements;
 

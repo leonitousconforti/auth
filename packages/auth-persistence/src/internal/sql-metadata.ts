@@ -3,7 +3,8 @@ import type { SqlClient } from "effect/sql/SqlClient";
 import type { Fragment } from "effect/sql/Statement";
 
 import { PersistenceMappingError } from "./mapping-error";
-import { identifier, Table } from "./sql-table";
+import type { Table } from "./sql-table";
+import { identifier } from "./sql-table";
 
 /** Physical names are components, so a literal dot in a mapped name stays quoted. */
 export const sqlName = (sql: SqlClient, name: string): Fragment => sql.literal(identifier(name));
@@ -80,13 +81,6 @@ export const decodeSqlRow = (table: Table, row: Readonly<Record<string, unknown>
       ),
     catch: (cause) => PersistenceMappingError.make({ operation: "decode", cause }),
   });
-
-export const requireSqlTable = (table: object): Table => {
-  if (!(table instanceof Table))
-    throw PersistenceMappingError.make({ operation: "mapping", cause: "Invalid SQL table" });
-
-  return table;
-};
 
 /** CTE names share a namespace with unqualified application tables. */
 export const sqlAlias = (tables: ReadonlyArray<Table | undefined>, name: string): string => {

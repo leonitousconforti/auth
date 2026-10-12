@@ -40,7 +40,7 @@ const checkReusableBuild = Effect.fn("packageConsumers.reusableBuild")(function*
 
       if ((yield* fs.stat(file)).type === "Directory") {
         if (name === "node_modules")
-          return yield* new PackageConsumerError({
+          return yield* PackageConsumerError.make({
             message: `${file} must not ship installed dependencies`,
           });
         pending.push(file);
@@ -84,7 +84,7 @@ const checkReusableBuild = Effect.fn("packageConsumers.reusableBuild")(function*
         });
 
         if (!facade)
-          return yield* new PackageConsumerError({
+          return yield* PackageConsumerError.make({
             message: `${file} needs a source map to audit build-time dependency bundling`,
           });
         continue;
@@ -103,7 +103,7 @@ const checkReusableBuild = Effect.fn("packageConsumers.reusableBuild")(function*
           path.isAbsolute(relative) ||
           relative.split(path.sep).includes("node_modules")
         )
-          return yield* new PackageConsumerError({
+          return yield* PackageConsumerError.make({
             message: `${file} bundles source outside its owned src directory: ${source}`,
           });
       }
@@ -231,7 +231,7 @@ console.log("Packaged portable/native Argon2id, XChaCha, JWS/JWT, JWE and native
     );
 
     if (code !== 0)
-      return yield* new PackageConsumerError({
+      return yield* PackageConsumerError.make({
         message: `${runtime} packaged operations exited ${code}: ${stdout}${stderr}`,
       });
     yield* Console.log(`${runtime}: ${stdout.trim()}`);
@@ -305,7 +305,7 @@ console.log("Published Auth verifies stored passwords, TOTP/recovery and all fou
     );
 
     if (code !== 0)
-      return yield* new PackageConsumerError({
+      return yield* PackageConsumerError.make({
         message: `${runtime} published Auth operations exited ${code}: ${stdout}${stderr}`,
       });
     yield* Console.log(`${runtime}: ${stdout.trim()}`);
@@ -341,7 +341,7 @@ const checkDeclarations = Effect.fn("packageConsumers.declarations")(function* (
   ];
 
   if (diagnostics.length > 0)
-    return yield* new PackageConsumerError({
+    return yield* PackageConsumerError.make({
       message: ts.formatDiagnostics(diagnostics, {
         getCanonicalFileName: (file) => file,
         getCurrentDirectory: () => stage,
@@ -400,7 +400,7 @@ const esbuildConsumer = Effect.fn("packageConsumers.esbuild")(function* (
         logLevel: "silent",
       }),
     catch: (cause) =>
-      new PackageConsumerError({ message: `Cannot bundle esbuild consumer ${probe}`, cause }),
+      PackageConsumerError.make({ message: `Cannot bundle esbuild consumer ${probe}`, cause }),
   });
 
   const chunks: Array<Chunk> = [];
@@ -409,7 +409,7 @@ const esbuildConsumer = Effect.fn("packageConsumers.esbuild")(function* (
     const output = result.metafile.outputs[path.relative(stage, file.path)];
 
     if (output === undefined || output.imports.some((item) => item.external))
-      return yield* new PackageConsumerError({
+      return yield* PackageConsumerError.make({
         message: `${probe} has missing metadata or external imports`,
       });
     chunks.push({
@@ -448,14 +448,14 @@ const viteConsumer = Effect.fn("packageConsumers.vite")(function* (stage: string
         },
       }),
     catch: (cause) =>
-      new PackageConsumerError({ message: `Cannot bundle Vite consumer ${probe}`, cause }),
+      PackageConsumerError.make({ message: `Cannot bundle Vite consumer ${probe}`, cause }),
   });
 
   const chunks: Array<Chunk> = [];
 
   for (const bundle of Array.isArray(result) ? result : [result]) {
     if (!("output" in bundle))
-      return yield* new PackageConsumerError({
+      return yield* PackageConsumerError.make({
         message: `Vite consumer ${probe} unexpectedly started a watcher`,
       });
     for (const file of bundle.output) {
@@ -465,7 +465,7 @@ const viteConsumer = Effect.fn("packageConsumers.vite")(function* (stage: string
           (name) => !bundle.output.some((output) => output.fileName === name),
         )
       )
-        return yield* new PackageConsumerError({
+        return yield* PackageConsumerError.make({
           message: `Vite consumer ${probe} retained external imports`,
         });
       chunks.push({
@@ -499,7 +499,7 @@ const bundleConsumer = Effect.fn("packageConsumers.bundle")(function* (
   const initial = new Set(chunks.filter((chunk) => chunk.entry).map((chunk) => chunk.fileName));
 
   if (initial.size !== 1)
-    return yield* new PackageConsumerError({ message: `${bundler}/${probe} must emit one entry` });
+    return yield* PackageConsumerError.make({ message: `${bundler}/${probe} must emit one entry` });
   // Count all statically reachable chunks, not just the entry file.
   for (const name of initial) {
     for (const imported of chunks.find((chunk) => chunk.fileName === name)?.imports ?? [])
@@ -540,12 +540,12 @@ const bundleConsumer = Effect.fn("packageConsumers.bundle")(function* (
       chunks.some((chunk) => initial.has(chunk.fileName) && chunk.modules.some(clientModule)) ||
       !chunks.some((chunk) => !initial.has(chunk.fileName) && chunk.modules.some(clientModule))
     )
-      return yield* new PackageConsumerError({
+      return yield* PackageConsumerError.make({
         message: `${bundler}/${probe} lost its deferred client boundary`,
       });
   }
   if (unwanted.length > 0)
-    return yield* new PackageConsumerError({
+    return yield* PackageConsumerError.make({
       message: `${bundler}/${probe} retained unexpected dependencies: ${unwanted.join(", ")}`,
     });
 
@@ -617,7 +617,7 @@ const checkReusableConsumers = Effect.fn("packageConsumers.reusable")(function* 
     jose.manifest.exports === undefined ||
     oauth.manifest.exports === undefined
   )
-    return yield* new PackageConsumerError({
+    return yield* PackageConsumerError.make({
       message: "Crypto, JOSE and OAuth exports are required",
     });
   const joseEntries = Object.keys(jose.manifest.exports);
@@ -643,7 +643,7 @@ const checkReusableConsumers = Effect.fn("packageConsumers.reusable")(function* 
         const problems = reusableDependencyProblems(published, {});
 
         if (problems.length > 0)
-          return yield* new PackageConsumerError({ message: problems.join("\n") });
+          return yield* PackageConsumerError.make({ message: problems.join("\n") });
         yield* checkReusableBuild(directory);
       }
       for (const [probe, entries, packageName, rootNamespaces] of [
@@ -688,7 +688,7 @@ const checkReusableConsumers = Effect.fn("packageConsumers.reusable")(function* 
           if (
             !allowedDirectories.some((directory) => resolved.startsWith(`${directory}${path.sep}`))
           )
-            return yield* new PackageConsumerError({
+            return yield* PackageConsumerError.make({
               message: `${probe} bundles a module outside Effect and the staged packages: ${module}`,
             });
         }
@@ -719,7 +719,7 @@ for (const name of ${JSON.stringify(names.filter((name) => name !== "@yielded/cr
         );
 
         if (code !== 0)
-          return yield* new PackageConsumerError({
+          return yield* PackageConsumerError.make({
             message: `${probe} consumer exited ${code}: ${stdout}${stderr}`,
           });
         yield* Console.log(
@@ -761,7 +761,7 @@ export const verifyPackageConsumers = Effect.fn("verifyPackageConsumers")(functi
   const exports = manifest.exports;
 
   if (exports === undefined)
-    return yield* new PackageConsumerError({ message: "Core exports are missing" });
+    return yield* PackageConsumerError.make({ message: "Core exports are missing" });
 
   // Load every core module with its complete first-party runtime graph and Effect.
   for (const directory of ["crypto", "jose", "oauth"])
@@ -784,7 +784,7 @@ export const verifyPackageConsumers = Effect.fn("verifyPackageConsumers")(functi
       const problems = reusableDependencyProblems(published, {});
 
       if (problems.length > 0)
-        return yield* new PackageConsumerError({ message: problems.join("\n") });
+        return yield* PackageConsumerError.make({ message: problems.join("\n") });
       yield* checkReusableBuild(destination);
 
       const coreExports = Object.keys(exports).map((key) =>
@@ -815,7 +815,7 @@ export const verifyPackageConsumers = Effect.fn("verifyPackageConsumers")(functi
       );
 
       if (code !== 0)
-        return yield* new PackageConsumerError({
+        return yield* PackageConsumerError.make({
           message: `Core consumer with only Effect and first-party packages exited ${code}: ${stderr}`,
         });
       yield* Console.log(
@@ -858,7 +858,7 @@ export const verifyPackageConsumers = Effect.fn("verifyPackageConsumers")(functi
       const problems = reusableDependencyProblems(published, {});
 
       if (problems.length > 0)
-        return yield* new PackageConsumerError({ message: problems.join("\n") });
+        return yield* PackageConsumerError.make({ message: problems.join("\n") });
       yield* checkReusableBuild(persistenceDestination);
       for (const bundler of bundlers) {
         const results = yield* Effect.forEach(
@@ -872,13 +872,13 @@ export const verifyPackageConsumers = Effect.fn("verifyPackageConsumers")(functi
           const root = results.find((result) => result.probe === namespace);
 
           if (direct === undefined || root === undefined)
-            return yield* new PackageConsumerError({
+            return yield* PackageConsumerError.make({
               message: `Missing ${bundler}/${namespace} comparison`,
             });
           const extra = root.modules.filter((module) => !direct.modules.includes(module));
 
           if (bundler === "vite" && name !== "lazy" && extra.length > 0)
-            return yield* new PackageConsumerError({
+            return yield* PackageConsumerError.make({
               message: `Vite ${namespace} import retained extra modules: ${extra.join(", ")}`,
             });
           yield* Console.log(
@@ -972,7 +972,7 @@ console.log("Published namespaces, codecs, deferred clients, and raw SQL persist
       );
 
       if (code !== 0)
-        return yield* new PackageConsumerError({
+        return yield* PackageConsumerError.make({
           message: `Published runtime consumer exited ${code}: ${stdout}${stderr}`,
         });
       yield* Console.log(stdout.trim());

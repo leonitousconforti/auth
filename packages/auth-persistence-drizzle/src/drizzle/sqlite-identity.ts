@@ -12,13 +12,14 @@ import { reportPersistenceFailure } from "@yielded/auth/Persistence";
 import type { SubjectId } from "@yielded/auth/Schema";
 /* oxlint-disable no-explicit-any -- Drizzle generic query types are narrowed at this technology boundary. */
 import { and, eq } from "drizzle-orm";
-import type { QueryEffectHKTBase } from "drizzle-orm/effect-core";
+import type { EffectDrizzleQueryError, QueryEffectHKTBase } from "drizzle-orm/effect-core";
 import type { AnySQLiteTable, SQLiteColumn } from "drizzle-orm/sqlite-core";
 import type { SQLiteEffectDatabase } from "drizzle-orm/sqlite-core/effect/db";
 import { Cause, Effect, Schema } from "effect";
 
 import {
   column,
+  SubjectProvisioningError,
   isMappedConstraintConflict,
   PersistenceMappingError,
   provisioningFingerprint,
@@ -29,7 +30,11 @@ import {
 import { NativeDatabase } from "./native-database";
 import { validateDrizzleStorage } from "./storage-validation";
 
-type ClosedQueryEffectHKT = QueryEffectHKTBase & { readonly context: never };
+// Every installed Effect SQLite driver declares this query error and has its context supplied.
+type ClosedQueryEffectHKT = QueryEffectHKTBase & {
+  readonly error: EffectDrizzleQueryError;
+  readonly context: never;
+};
 type RuntimeDatabase = SQLiteEffectDatabase<ClosedQueryEffectHKT, unknown, any>;
 const unavailable = () => IdentityUnavailable.make();
 const isIdentityFailure = Schema.is(Schema.Union([IdentityConflict, IdentityUnavailable]));
@@ -127,7 +132,9 @@ export const makeSqliteSubjectProvisioningServices = Effect.fnUntraced(function*
         if (nativeId === undefined)
           return yield* PersistenceMappingError.make({
             operation: "provisionSubject.generatedId",
-            cause: new Error("subject insert did not return its native id"),
+            cause: SubjectProvisioningError.make({
+              message: "subject insert did not return its native id",
+            }),
           });
         if (input.identifier !== undefined)
           yield* tx

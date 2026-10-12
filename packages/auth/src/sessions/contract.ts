@@ -23,6 +23,7 @@ export const makeSessionContract = <
   claims: Claims,
 ) => {
   if (!Schema.is(Schema.NonEmptyString)(moduleId))
+    // oxlint-disable-next-line effect/no-untyped-throw -- Public synchronous session contract construction requires claims.
     throw SessionConfigurationError.make({ reason: "claims" });
 
   const ClaimsCodec: Schema.Codec<

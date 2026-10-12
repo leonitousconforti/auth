@@ -42,6 +42,11 @@ const application = (strategy: typeof stateless) => {
     .pipe(Layer.provideMerge(Layer.mergeAll(capabilities, completion)));
 };
 
+class SessionExampleInvariant extends Schema.TaggedError<SessionExampleInvariant>()(
+  "SessionExampleInvariant",
+  { message: Schema.String },
+) {}
+
 const program = Effect.gen(function* () {
   for (const [mode, strategy] of [
     ["stateful", stateful],
@@ -98,14 +103,18 @@ const program = Effect.gen(function* () {
       );
 
       if (complete._tag !== "Authenticated")
-        return yield* Effect.die(new Error("Example unexpectedly required another factor"));
+        return yield* Effect.die(
+          SessionExampleInvariant.make({ message: "Example unexpectedly required another factor" }),
+        );
 
       const issued = captured.find(
         (command) => command._tag === "Issue" && command.slot === "session",
       );
 
       if (issued?._tag !== "Issue")
-        return yield* Effect.die(new Error("Example collector did not receive a session"));
+        return yield* Effect.die(
+          SessionExampleInvariant.make({ message: "Example collector did not receive a session" }),
+        );
       const token = Redacted.value(issued.credential);
 
       const verified = yield* staffSessions.operations.Verify.invoke(Operations.guest, {

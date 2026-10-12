@@ -12,9 +12,7 @@ import { exactSqlText } from "./sql-change";
 
 export const emailUnavailable = () => EmailUnavailable.make({});
 
-export const ensureEmail: (condition: unknown) => asserts condition = (condition) => {
-  if (!condition) throw emailUnavailable();
-};
+export const invalidEmailState = () => emailUnavailable();
 
 /** Every role binds the decoded native subject through its own physical column codec. */
 export const makeNativeEmailReader = Effect.fnUntraced(function* (
@@ -89,7 +87,7 @@ export const makeNativeEmailReader = Effect.fnUntraced(function* (
       if (rows.length !== 1) return undefined;
       const row = table.decode(rows[0]!, "email_source_lookup_");
 
-      ensureEmail(row[c.credentialId] === input.sourceCredentialId);
+      if (!(row[c.credentialId] === input.sourceCredentialId)) return yield* invalidEmailState();
       source = yield* Schema.decodeUnknownEffect(LoginIdentifier)({
         namespace: row[c.identifierNamespace],
         value: row[c.identifierValue],
@@ -107,13 +105,14 @@ export const makeNativeEmailReader = Effect.fnUntraced(function* (
       left join ${authority.name} on ${id(authority, a.subjectId, native)} and ${id(authority, a.status, a.activeStatusValue)}
       where ${id(subject, s.id, native)} and ${input.validity ?? sql`1 = 1`} limit 65`;
 
-    ensureEmail(rows.length <= 64);
+    if (!(rows.length <= 64)) return yield* invalidEmailState();
     const first = rows[0];
 
     if (first === undefined) return undefined;
     const subjectRow = subject.decode(first, "email_subject_");
 
-    ensureEmail((yield* mapping.subjectId.toSubject(subjectRow[s.id])) === input.subjectId);
+    if (!((yield* mapping.subjectId.toSubject(subjectRow[s.id])) === input.subjectId))
+      return yield* invalidEmailState();
     if (!s.isActiveStatus(subjectRow[s.status])) return undefined;
     const factors: { readonly credentialId: unknown; readonly revision: unknown }[] = [];
 
@@ -121,10 +120,14 @@ export const makeNativeEmailReader = Effect.fnUntraced(function* (
       const factor = selected(authority, row, "email_authority_", a.credentialId);
 
       if (factor === undefined) continue;
-      ensureEmail(
-        (yield* owned(factor, a.subjectId, input.subjectId)) && a.isActiveStatus(factor[a.status]),
-      );
-      ensureEmail(!factors.some((f) => f.credentialId === factor[a.credentialId]));
+      if (
+        !(
+          (yield* owned(factor, a.subjectId, input.subjectId)) && a.isActiveStatus(factor[a.status])
+        )
+      )
+        return yield* invalidEmailState();
+      if (!!factors.some((f) => f.credentialId === factor[a.credentialId]))
+        return yield* invalidEmailState();
       factors.push({ credentialId: factor[a.credentialId], revision: factor[a.revision] });
     }
 
@@ -158,13 +161,16 @@ export const makeNativeEmailReader = Effect.fnUntraced(function* (
         !(yield* owned(credentialRow, c.subjectId, input.subjectId))
       )
         return undefined;
-      ensureEmail(
-        identifierRow[i.namespace] === value.namespace &&
+      if (
+        !(
+          identifierRow[i.namespace] === value.namespace &&
           identifierRow[i.value] === value.value &&
           credentialRow[c.moduleId] === input.moduleId &&
           credentialRow[c.identifierNamespace] === value.namespace &&
-          credentialRow[c.identifierValue] === value.value,
-      );
+          credentialRow[c.identifierValue] === value.value
+        )
+      )
+        return yield* invalidEmailState();
       if (
         !revision.credentials.some(
           (f) =>
@@ -188,20 +194,26 @@ export const makeNativeEmailReader = Effect.fnUntraced(function* (
       });
     });
 
-    ensureEmail(
-      targetRow === undefined ||
+    if (
+      !(
+        targetRow === undefined ||
         (targetRow[i.namespace] === input.identifier.namespace &&
-          targetRow[i.value] === input.identifier.value),
-    );
-    ensureEmail(
-      targetFactor === undefined ||
+          targetRow[i.value] === input.identifier.value)
+      )
+    )
+      return yield* invalidEmailState();
+    if (
+      !(
+        targetFactor === undefined ||
         (targetFactor[c.moduleId] === input.moduleId &&
           targetFactor[c.identifierNamespace] === input.identifier.namespace &&
-          targetFactor[c.identifierValue] === input.identifier.value),
-    );
+          targetFactor[c.identifierValue] === input.identifier.value)
+      )
+    )
+      return yield* invalidEmailState();
     const now = Number(first.engine_now);
 
-    ensureEmail(Number.isSafeInteger(now));
+    if (!Number.isSafeInteger(now)) return yield* invalidEmailState();
 
     return {
       native,
@@ -229,12 +241,13 @@ export const makeNativeEmailReader = Effect.fnUntraced(function* (
       yield* sql`select ${table.fields("email_lookup_")} from ${table.name} where ${identifierKey(table, input.identifier)} limit 2`;
 
     if (rows.length === 0) return Option.none();
-    ensureEmail(rows.length === 1);
+    if (!(rows.length === 1)) return yield* invalidEmailState();
     const row = table.decode(rows[0]!, "email_lookup_");
 
-    ensureEmail(
-      row[i.namespace] === input.identifier.namespace && row[i.value] === input.identifier.value,
-    );
+    if (
+      !(row[i.namespace] === input.identifier.namespace && row[i.value] === input.identifier.value)
+    )
+      return yield* invalidEmailState();
     if (!i.isCurrent(row) || row[i.verifiedAt] === null || row[i.verifiedAt] === undefined)
       return Option.none();
     const subjectId = yield* mapping.subjectId.toSubject(row[i.subjectId]);

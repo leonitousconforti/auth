@@ -5,12 +5,13 @@ import { Crypto, Effect, Option, Schema } from "effect";
 import { SqlError } from "effect/sql/SqlError";
 
 import { sqlBatchAssertion } from "./d1-planning";
+import { PersistenceMappingError } from "./mapping-error";
 import type { NativeSqlTables } from "./native-sql-table";
 import { passkeyOperationInputs } from "./passkey-inputs";
 import {
   makePasskeyNativeReadState,
   makePasskeyNativeState,
-  passkeyNativeInvariant,
+  invalidPasskeyState,
   type PasskeyNativeMapping,
   type PasskeyNativeRead,
   type PasskeyNativeReadState,
@@ -42,7 +43,8 @@ export const preparePasskeyNative = <Value, A>(
 
     const receipt = prepare(value, journal);
 
-    passkeyNativeInvariant(receipt?._tag === "PreparedCommit" && Effect.isEffect(receipt.read));
+    if (!(receipt?._tag === "PreparedCommit" && Effect.isEffect(receipt.read)))
+      return yield* invalidPasskeyState();
     yield* registerSqlCommitReceipt(receipt);
 
     return receipt;
@@ -222,7 +224,11 @@ const services = Effect.fnUntraced(function* (
                 check: Effect.gen(function* () {
                   const rows = yield* sql`select 1 where ${condition}`;
 
-                  passkeyNativeInvariant(rows.length === 1);
+                  if (!(rows.length === 1))
+                    return yield* PersistenceMappingError.make({
+                      operation: "postcondition",
+                      cause: invalidPasskeyState(),
+                    });
                 }),
               });
             } else {
@@ -241,7 +247,7 @@ const services = Effect.fnUntraced(function* (
         Effect.gen(function* () {
           const input = M.snapshotPasskeySync(passkeyOperationInputs.cleanup, original);
 
-          passkeyNativeInvariant(flow.validModule(input.moduleId));
+          if (!flow.validModule(input.moduleId)) return yield* invalidPasskeyState();
 
           return yield* preparePasskeyNative(
             yield* flow.cleanup(input.moduleId, input.limit, batch !== undefined),
@@ -303,7 +309,7 @@ const makePasskeyNativeCredentialService = (
         Effect.gen(function* () {
           const input = M.snapshotPasskeySync(passkeyOperationInputs.listForSubject, original);
 
-          const nativeId = state.native(input.subjectId);
+          const nativeId = yield* state.native(input.subjectId);
 
           const rows =
             yield* sql`select ${subject.fields("s_")}, ${factor.fields("f_")}, ${credential.fields("c_")}
@@ -315,23 +321,24 @@ const makePasskeyNativeCredentialService = (
           if (rows.length === 0 || rows.length > 4096) return undefined;
           const subjectRow = subject.decode(rows[0]!, "s_");
 
-          passkeyNativeInvariant(
-            rows.every((selected) => {
+          if (
+            !rows.every((selected) => {
               const other = subject.decode(selected, "s_");
 
               return (
                 state.sameId(read.subject.decodeId(other), nativeId) &&
                 other[read.subject.securityRevision] === subjectRow[read.subject.securityRevision]
               );
-            }),
-          );
+            })
+          )
+            return yield* invalidPasskeyState();
 
-          const revision = state.revision(
+          const revision = yield* state.revision(
             subjectRow,
             rows.map((row) => factor.decode(row, "f_")),
           );
 
-          passkeyNativeInvariant(revision.subjectId === input.subjectId);
+          if (!(revision.subjectId === input.subjectId)) return yield* invalidPasskeyState();
           const values = new Map<string, M.PasskeyCredential>();
 
           for (const selected of rows) {

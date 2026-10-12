@@ -5,6 +5,7 @@ import {
   Duration,
   Effect,
   Redacted,
+  Result,
   Schema,
   SchemaAST,
   Scope,
@@ -91,6 +92,7 @@ export const oauthCallback = <R extends AnyRoute, ResponseR = never>(
       !Object.values(route.credentials).includes("request-binding")) ||
     route.operation.replay !== "single-use"
   )
+    // oxlint-disable-next-line effect/no-untyped-throw -- Public synchronous callback construction rejects an invalid route before mounting.
     throw OperationHttpConfigurationError.make({ reason: "callback" });
 
   return Object.freeze({
@@ -104,9 +106,9 @@ export const oauthCallback = <R extends AnyRoute, ResponseR = never>(
 };
 
 const boundedText = Effect.fnUntraced(function* (request: Request, maximum: number) {
-  return yield* Effect.tryPromise({
+  const result = yield* Effect.tryPromise({
     try: async (signal) => {
-      if (request.body === null) return "";
+      if (request.body === null) return { _tag: "Text" as const, text: "" };
       const reader = request.body.getReader();
       const chunks: Uint8Array[] = [];
       let bytes = 0;
@@ -124,7 +126,8 @@ const boundedText = Effect.fnUntraced(function* (request: Request, maximum: numb
           bytes += next.value.byteLength;
           if (bytes > maximum) {
             await reader.cancel();
-            throw OperationHttpError.make({ reason: "too-large" });
+
+            return { _tag: "TooLarge" as const };
           }
           chunks.push(next.value);
         }
@@ -136,7 +139,10 @@ const boundedText = Effect.fnUntraced(function* (request: Request, maximum: numb
           offset += chunk.byteLength;
         }
 
-        return new TextDecoder("utf-8", { fatal: true }).decode(output);
+        return {
+          _tag: "Text" as const,
+          text: new TextDecoder("utf-8", { fatal: true }).decode(output),
+        };
       } finally {
         signal.removeEventListener("abort", abort);
         reader.releaseLock();
@@ -145,6 +151,10 @@ const boundedText = Effect.fnUntraced(function* (request: Request, maximum: numb
     catch: (error) =>
       Schema.is(OperationHttpError)(error) ? error : OperationHttpError.make({ reason: "request" }),
   });
+
+  if (result._tag === "TooLarge") return yield* OperationHttpError.make({ reason: "too-large" });
+
+  return result.text;
 });
 
 const baseHeaders = () =>
@@ -265,29 +275,41 @@ const callbackPayload = Effect.fn("OperationHttp.callbackPayload")(function* (
 });
 
 const inject = (route: AnyRoute, input: unknown, credentials: HttpCredentials) =>
-  Effect.try({
-    try: () => {
-      const fields = Object.entries(route.credentials);
+  Effect.suspend(() =>
+    Effect.fromResult(
+      Result.try({
+        try: () =>
+          Result.gen(function* () {
+            const fields = Object.entries(route.credentials);
 
-      if (fields.length === 0) return input;
+            if (fields.length === 0) return input;
 
-      const output = {
-        // oxlint-disable-next-line no-restricted-properties -- untyped HTTP payload must be a record before injecting private fields.
-        ...Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown))(input),
-      };
+            const output = {
+              // oxlint-disable-next-line no-restricted-properties -- Capture the untyped HTTP payload and private fields together before yielding.
+              ...(yield* Schema.decodeUnknownResult(Schema.Record(Schema.String, Schema.Unknown))(
+                input,
+              )),
+            };
 
-      for (const [field, slot] of fields) {
-        if (Object.hasOwn(output, field)) throw new Error();
-        const credential = credentials[slot];
+            for (const [field, slot] of fields) {
+              if (Object.hasOwn(output, field))
+                return yield* Result.fail(OperationHttpError.make({ reason: "credentials" }));
+              const credential = credentials[slot];
 
-        if (credential === undefined) throw new Error();
-        output[field] = Redacted.value(credential);
-      }
+              if (credential === undefined)
+                return yield* Result.fail(OperationHttpError.make({ reason: "credentials" }));
+              output[field] = Redacted.value(credential);
+            }
 
-      return output;
-    },
-    catch: () => OperationHttpError.make({ reason: "credentials" }),
-  });
+            return output;
+          }),
+        catch: () => OperationHttpError.make({ reason: "credentials" }),
+      }).pipe(
+        Result.flatMap((result) => result),
+        Result.mapError(() => OperationHttpError.make({ reason: "credentials" })),
+      ),
+    ),
+  );
 
 const applyCommands = Effect.fnUntraced(function* (
   headers: Headers,

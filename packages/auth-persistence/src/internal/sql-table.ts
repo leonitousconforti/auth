@@ -39,12 +39,14 @@ export class Column {
     if (this.options.type === "boolean") {
       if (value === true || value === 1) return true;
       if (value === false || value === 0) return false;
+      // oxlint-disable-next-line effect/no-untyped-throw -- SQL column codecs expose a synchronous decode contract; workflow adapters capture these mapping failures.
       throw PersistenceMappingError.make({ operation: "decode", cause: "Invalid SQL boolean" });
     }
     if (this.options.type === "integer") {
       const number = decodeInteger(value);
 
       if (Option.isSome(number)) return number.value;
+      // oxlint-disable-next-line effect/no-untyped-throw -- SQL column codecs expose a synchronous decode contract; workflow adapters capture these mapping failures.
       throw PersistenceMappingError.make({
         operation: "decode",
         cause: "SQL integer is outside the safe range",

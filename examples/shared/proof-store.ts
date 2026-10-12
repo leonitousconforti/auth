@@ -1,5 +1,5 @@
 import { Proofs } from "@yielded/auth";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 
 /** Disposable example storage. The caller owns copy-on-write publication and
  * includes protected mutations in that same owner; this is not a SQL adapter. */
@@ -22,18 +22,18 @@ const series = (moduleId: string, purpose: string, value: Proofs.ProofBinding) =
     value._tag === "Identifier" ? "" : value.revision.subjectId,
   ]);
 
-export const restoreProofRows = (records: ReadonlyArray<ProofRow>): ProofRows => {
+export const restoreProofRows = Effect.fnUntraced(function* (records: ReadonlyArray<ProofRow>) {
   const rows: ProofRows = new Map();
 
   for (const row of records) {
     const key = series(row.record.moduleId, row.record.purpose, row.record.binding);
 
-    if (rows.has(key)) throw Proofs.ProofUnavailable.make({});
+    if (rows.has(key)) return yield* Proofs.ProofUnavailable.make({});
     rows.set(key, { ...row });
   }
 
   return rows;
-};
+});
 
 export const copyProofRows = (rows: ProofRows): ProofRows =>
   new Map([...rows].map(([key, row]) => [key, { ...row }]));

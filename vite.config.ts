@@ -112,12 +112,15 @@ export default defineConfig({
     extends: [recommendedOxlintConfig],
     ignorePatterns: generatedPaths,
     options: {
+      // Preserve semantic lint (e.g. exhaustive switches and unbound methods).
       typeAware: true,
-      typeCheck: true,
+      // The normally patched compiler owns TypeScript and Effect diagnostics.
+      typeCheck: false,
     },
     jsPlugins: [
       { name: "vite-plus", specifier: "vite-plus/oxlint-plugin" },
       { name: "exports", specifier: "./oxlint/plugin-exports.ts" },
+      { name: "effect", specifier: "./oxlint/plugin-effect.ts" },
     ],
     rules: {
       "import/no-duplicates": "warn",
@@ -133,6 +136,17 @@ export default defineConfig({
       "vite-plus/prefer-vite-plus-imports": "error",
     },
     overrides: [
+      {
+        files: [
+          "packages/*/src/**/*.{ts,tsx}",
+          "examples/*/src/**/*.{ts,tsx}",
+          "examples/shared/**/*.{ts,tsx}",
+          "examples/*/scripts/**/*.ts",
+          "scripts/*.ts",
+          "alchemy.run.ts",
+        ],
+        rules: { "effect/no-native-error": "error", "effect/no-untyped-throw": "error" },
+      },
       {
         files: ["packages/*/src/**/*.ts"],
         rules: {

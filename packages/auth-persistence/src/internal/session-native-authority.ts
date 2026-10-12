@@ -7,6 +7,7 @@ import {
   type AuthenticationEvidence,
   type PendingConsumption,
   type AuthenticationRequirement,
+  type SessionUnavailable,
 } from "@yielded/auth/Sessions";
 import { DateTime, Effect, Option } from "effect";
 import type { SqlClient } from "effect/sql/SqlClient";
@@ -79,12 +80,15 @@ export const makeNativeAuthenticationAuthorityServices = Effect.fnUntraced(funct
   mapping: NativeAuthenticationAuthorityMapping<Claims>,
 ): Effect.fn.Return<
   { readonly authenticationAuthority: AuthenticationAuthority["Service"] },
-  never,
+  SessionUnavailable,
   SqlClient | LifecycleHooks | SqlBatchCommit
 > {
   const batch = yield* SqlBatchCommit;
 
-  const state = yield* makeNativeSessionAuthorityState(tables, mapping, batch !== undefined);
+  const state = yield* normalizeSessionOperation(
+    makeNativeSessionAuthorityState(tables, mapping, batch !== undefined),
+  );
+
   const executor = yield* makeSqlCommitExecutor(sessionUnavailable);
   const external = yield* Effect.serviceOption(CurrentSqlCommit);
 

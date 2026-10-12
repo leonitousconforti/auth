@@ -129,7 +129,10 @@ export const makeEmailTarget = <DatabaseId, D extends NativeDriverDatabase>(
         database,
         options.mapping as unknown as AnyEmailAddressMapping,
         configuration,
-        (transaction: NativeDriverTransaction<Database>, services) => {
+        (
+          transaction: NativeDriverTransaction<Database>,
+          services,
+        ): Effect.Effect<A, E, Exclude<R, EmailAddressPersistence>> => {
           const work = Effect.provideService(
             body,
             EmailAddressPersistence,
@@ -252,7 +255,10 @@ export const makeEmailTarget = <DatabaseId, D extends NativeDriverDatabase>(
         options.mapping as unknown as AnyEmailRegistrationMapping<Registration>,
         configuration,
         options.proofMapping as unknown as AnyProofPersistenceMapping,
-        (transaction: NativeDriverTransaction<Database>, services) => {
+        (
+          transaction: NativeDriverTransaction<Database>,
+          services,
+        ): Effect.Effect<A, E, Exclude<R, TargetId>> => {
           const work = Effect.provideService(body, options.target, services.registrationAuthority);
 
           return options.transaction === undefined

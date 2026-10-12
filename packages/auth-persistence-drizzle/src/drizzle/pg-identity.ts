@@ -18,6 +18,7 @@ import { Cause, Effect, Schema } from "effect";
 
 import {
   column,
+  SubjectProvisioningError,
   PersistenceMappingError,
   isMappedConstraintConflict,
   provisioningFingerprint,
@@ -104,7 +105,9 @@ export const makePgSubjectProvisioningServices = Effect.fnUntraced(function* <
         if (nativeId === undefined) {
           return yield* PersistenceMappingError.make({
             operation: "provisionSubject.generatedId",
-            cause: new Error("subject insert did not return its native id"),
+            cause: SubjectProvisioningError.make({
+              message: "subject insert did not return its native id",
+            }),
           });
         }
         if (input.identifier !== undefined) {

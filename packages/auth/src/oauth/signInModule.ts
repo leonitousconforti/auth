@@ -15,7 +15,7 @@ import { Base64Url } from "effect/encoding";
 
 import { makeAuthStrategy } from "../auth/AuthStrategy";
 import { defaultLayer, hooksLayer } from "../auth/defaults";
-import { hasCommitScope, type PreparedCommit } from "../hooks/commit";
+import { prepareCommit, hasCommitScope, type PreparedCommit } from "../hooks/commit";
 import { HookDenied } from "../hooks/models";
 import { IdentityConflict } from "../identity/models";
 import { reportAuthDiagnostic, reportAuthFailure } from "../internal/diagnostics";
@@ -224,14 +224,14 @@ export const makeOAuthMethod = <
       // Validate the selected projection even for replacement protocol services.
       const claimsIdentity = yield* Schema.decodeEffect(ClaimsIdentity)({
         provider: identity.identity.provider,
-        identity: snapshotOAuthVerifiedExternalIdentity.sync(identity),
+        identity: yield* snapshotOAuthVerifiedExternalIdentity.effect(identity),
       }).pipe(Effect.mapError(() => OAuthUnavailable.make({})));
 
       freezeOAuth(claimsIdentity);
 
       const claims = yield* resolveClaims({
         subjectId: credential.revision.subjectId,
-        credential: snapshotOAuthCredentialSnapshot.sync(credential),
+        credential: yield* snapshotOAuthCredentialSnapshot.effect(credential),
         ...claimsIdentity,
       });
 
@@ -288,7 +288,7 @@ export const makeOAuthMethod = <
 
     if (now >= intent.expiresAtMillis) return yield* OAuthRejected.make({});
 
-    const identity = snapshotOAuthVerifiedExternalIdentity.sync({
+    const identity = yield* snapshotOAuthVerifiedExternalIdentity.effect({
       identity: intent.identity,
       ...(intent.profile === undefined ? {} : { profile: intent.profile }),
       ...(intent.upstreamAuthenticatedAt === undefined
@@ -327,7 +327,7 @@ export const makeOAuthMethod = <
     return yield* authenticate({
       context: intent.context,
       identity,
-      credential: snapshotOAuthCredentialSnapshot.sync({ ...current, revision }),
+      credential: yield* snapshotOAuthCredentialSnapshot.effect({ ...current, revision }),
       verifiedAtMillis: intent.verifiedAtMillis,
       completionExpiresAtMillis: intent.expiresAtMillis,
     });
@@ -361,13 +361,7 @@ export const makeOAuthMethod = <
       R
     >,
   ) => {
-    let captured: OAuthSignInPolicy | undefined;
-
-    try {
-      captured = snapshotOAuthSignInPolicy.sync(configuration);
-    } catch {
-      /* Layer reports configuration failure */
-    }
+    const captured = Result.getOrUndefined(snapshotOAuthSignInPolicy.result(configuration));
 
     return Layer.effect(
       SignIn,
@@ -519,11 +513,11 @@ export const makeOAuthMethod = <
             });
 
             const sealed = yield* seal({
-              context: snapshotOAuthSignInTransactionContext.sync(context),
-              secrets: snapshotOAuthTransactionSecrets.sync(prepared.secrets),
+              context: yield* snapshotOAuthSignInTransactionContext.effect(context),
+              secrets: yield* snapshotOAuthTransactionSecrets.effect(prepared.secrets),
             }).pipe(Effect.flatMap((value) => snapshotOAuthSealedTransaction.effect(value)));
 
-            const flow = snapshotOAuthSignInFlow.sync({
+            const flow = yield* snapshotOAuthSignInFlow.effect({
               context,
               sealed,
             });
@@ -538,29 +532,31 @@ export const makeOAuthMethod = <
                 };
 
             const receipt = yield* issue<Issuance>(
-              snapshotOAuthSignInFlow.sync(flow),
-              (decision, journal) => {
-                const checked = snapshotOAuthIssueDecision.sync(decision);
+              yield* snapshotOAuthSignInFlow.effect(flow),
+              prepareCommit<OAuthIssueDecision, Issuance, OAuthUnavailable>((decision, journal) =>
+                Result.gen(function* () {
+                  const checked = snapshotOAuthIssueDecision.sync(decision);
 
-                if (checked._tag === "Rejected")
-                  return journal.prepare({ _tag: "Rejected" as const });
-                if (Schema.encodeSync(flowJson)(checked.flow) !== expected)
-                  throw OAuthUnavailable.make({});
+                  if (checked._tag === "Rejected")
+                    return journal.prepare({ _tag: "Rejected" as const });
+                  if (Schema.encodeSync(flowJson)(checked.flow) !== expected)
+                    return yield* Result.fail(OAuthUnavailable.make({}));
 
-                return journal.prepare({
-                  _tag: "Issued" as const,
-                  result: Object.freeze({
-                    value: Object.freeze({
-                      flowId: request.flowId,
-                      authorizationUrl: prepared.authorizationUrl,
-                      expiresAtMillis,
+                  return journal.prepare({
+                    _tag: "Issued" as const,
+                    result: Object.freeze({
+                      value: Object.freeze({
+                        flowId: request.flowId,
+                        authorizationUrl: prepared.authorizationUrl,
+                        expiresAtMillis,
+                      }),
+                      credentialCommands: Object.freeze([
+                        formPostBinding(command, prepared.responseMode),
+                      ]),
                     }),
-                    credentialCommands: Object.freeze([
-                      formPostBinding(command, prepared.responseMode),
-                    ]),
-                  }),
-                });
-              },
+                  });
+                }),
+              ),
             );
 
             const committed = yield* read(receipt);
@@ -619,7 +615,7 @@ export const makeOAuthMethod = <
             ).pipe(Effect.flatMap(read));
 
             if (decision._tag !== "Consumed") return yield* OAuthRejected.make({});
-            const flow = snapshotOAuthSignInFlow.sync(decision.flow);
+            const flow = yield* snapshotOAuthSignInFlow.effect(decision.flow);
             const context = flow.context;
 
             if (
@@ -662,7 +658,7 @@ export const makeOAuthMethod = <
                   return yield* OAuthUnavailable.make({});
 
                 const exchangeInput = {
-                  configuration: snapshotOAuthProtocolConfiguration.sync(context),
+                  configuration: yield* snapshotOAuthProtocolConfiguration.effect(context),
                   response,
                   secrets,
                   verificationStartedAt: start,
@@ -726,17 +722,22 @@ export const makeOAuthMethod = <
               const expected = Schema.encodeSync(intentCodec)(prepared.intent);
 
               const issued = yield* registration
-                .issue({ intent: prepared.intent }, (value, journal) => {
-                  const checked = snapshotOAuthRegistrationIssueDecision.sync(value);
+                .issue(
+                  { intent: prepared.intent },
+                  prepareCommit((value, journal) =>
+                    Result.gen(function* () {
+                      const checked = snapshotOAuthRegistrationIssueDecision.sync(value);
 
-                  if (
-                    checked._tag === "RegistrationIssued" &&
-                    Schema.encodeSync(intentCodec)(checked.intent) !== expected
-                  )
-                    throw OAuthUnavailable.make({});
+                      if (
+                        checked._tag === "RegistrationIssued" &&
+                        Schema.encodeSync(intentCodec)(checked.intent) !== expected
+                      )
+                        return yield* Result.fail(OAuthUnavailable.make({}));
 
-                  return journal.prepare(checked);
-                })
+                      return journal.prepare(checked);
+                    }),
+                  ),
+                )
                 .pipe(Effect.flatMap(read));
 
               if (issued._tag !== "RegistrationIssued") return yield* OAuthRejected.make({});
@@ -867,13 +868,9 @@ export const makeOAuthMethod = <
       configuration: OAuthSignInPolicy,
       registrationConfiguration: OAuthRegistrationPolicy,
     ) => {
-      let captured: OAuthRegistrationPolicy | undefined;
-
-      try {
-        captured = snapshotOAuthRegistrationPolicy.sync(registrationConfiguration);
-      } catch {
-        /* Layer reports invalid policy. */
-      }
+      const captured = Result.getOrUndefined(
+        snapshotOAuthRegistrationPolicy.result(registrationConfiguration),
+      );
 
       return makeSignInLayer(
         configuration,

@@ -47,6 +47,7 @@ import {
   AuthCredentialCommandCollector,
   AuthRevealCommandCollectorService,
 } from "../operations/credentials";
+import { OperationOutputError } from "../operations/errors";
 import type { RequestBindingConfigurationError } from "../operations/requestBinding";
 import type { RequestBindingConfig } from "../operations/RequestBindingConfig";
 import { ProofUnavailable } from "../proofs/errors";
@@ -205,6 +206,8 @@ export const make = <
           auth.contract.actions,
         );
 
+  // OAuthConfigured mirrors the branch below; only configured OAuth providers contribute errors and supply OAuth services.
+  // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off
   const layer = (
     oauth === undefined ? auth.layer : auth.layer.pipe(Layer.provideMerge(oauth.layer))
   ) as Layer.Layer<
@@ -372,6 +375,7 @@ export const make = <
             // HttpApiBuilder treats middleware.requires as a construction dependency.
             // This exact Effect runs only inside the request security handler, so
             // expose its AuthRequest requirement through the router request marker.
+            // @effect-diagnostics-next-line anyUnknownInErrorContext:off
             const required = api
               .requireSession()
               .pipe(Effect.provide(services)) as unknown as Effect.Effect<
@@ -439,12 +443,10 @@ export const make = <
         ),
       );
 
-      const sink = (values: ReadonlyArray<AuthCredentialCommand>) =>
-        Effect.sync(() => {
-          if (!mutationAdmitted)
-            throw new Error("Credential delivery requires an admitted mutation");
-          commands.push(...values);
-        });
+      const sink = Effect.fnUntraced(function* (values: ReadonlyArray<AuthCredentialCommand>) {
+        if (!mutationAdmitted) return yield* Effect.die(OperationOutputError.make({}));
+        commands.push(...values);
+      });
 
       const resolveInvocation = yield* cacheSessionInvocation(
         resolve(api, security.credentials.session),
@@ -619,8 +621,7 @@ export const make = <
         Effect.provideService(AuthCredentialCommandCollector, request.credentialCommandSink),
         Effect.provideService(AuthRevealCommandCollectorService, {
           supportedKinds: [],
-          accept: () =>
-            Effect.die(new Error("Private reveals require an explicit operation route")),
+          accept: () => Effect.die(OperationOutputError.make({})),
         }),
       );
     });
@@ -714,6 +715,7 @@ export const make = <
     }).pipe(Effect.provide([configuration, requestInvocation]));
 
     // Binding configuration and signing are acquired only by the configured OAuth branch.
+    // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off
     return server as Effect.Effect<
       Effect.Success<typeof server>,
       | Exclude<Effect.Error<typeof server>, RequestBindingConfigurationError>
@@ -852,7 +854,9 @@ export const make = <
     callbackRoutes,
     oauth: {
       callbackUrl: (provider: string, callbackId?: string) => {
-        if (oauth === undefined) throw OperationHttpConfigurationError.make({ reason: "callback" });
+        if (oauth === undefined)
+          // oxlint-disable-next-line effect/no-untyped-throw -- Public synchronous callback URL lookup rejects missing OAuth configuration.
+          throw OperationHttpConfigurationError.make({ reason: "callback" });
 
         return oauth.callbackUrl(provider, callbackId);
       },

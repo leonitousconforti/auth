@@ -153,7 +153,10 @@ export const makeTotpTarget = <DatabaseId, D extends NativeDriverDatabase>(
         database,
         configuration,
         services(value),
-        (transaction: NativeDriverTransaction<DB>, bound) => {
+        (
+          transaction: NativeDriverTransaction<DB>,
+          bound,
+        ): Effect.Effect<A, E, Exclude<R, TotpPersistence>> => {
           const work = body.pipe(Effect.provideService(TotpPersistence, bound.totpPersistence));
 
           return options.transaction === undefined

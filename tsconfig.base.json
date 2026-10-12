@@ -55,13 +55,17 @@
           "catchIfTagToCatchTag": "warning",
           "catchRefailToTapError": "warning",
           "flatMapIgnoredParamToAndThen": "warning",
-          "anyUnknownInErrorContext": "suggestion",
+          "anyUnknownInErrorContext": "warning",
           "instanceOfSchema": "suggestion",
           "nestedEffectGenYield": "suggestion",
-          "newSchemaClass": "suggestion",
+          "newSchemaClass": "error",
           "preferSchemaTypeProperty": "suggestion",
           "preferTypedSchemaDecoder": "error",
-          "unsafeEffectTypeAssertion": "suggestion"
+          "unsafeEffectTypeAssertion": "warning",
+          "floatingEffect": "error",
+          "globalErrorInEffectCatch": "error",
+          "globalErrorInEffectFailure": "error",
+          "extendsNativeError": "error"
         },
         "overrides": [
           {

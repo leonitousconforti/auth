@@ -18,7 +18,10 @@ import { SqlClient } from "effect/sql/SqlClient";
 import type { Fragment } from "effect/sql/Statement";
 
 import { sqlBatchAssertion } from "./d1-planning";
-import { ensureEmail as ensure, emailUnavailable as unavailable } from "./email-native-state";
+import {
+  invalidEmailState as invalidState,
+  emailUnavailable as unavailable,
+} from "./email-native-state";
 import { allocateEmailValue } from "./email-policy";
 import { PersistenceMappingError } from "./mapping-error";
 import type { AnyEmailRegistrationMapping } from "./models/email-model";
@@ -106,8 +109,9 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
           .pipe(Effect.provideService(SqlBatchCommit, batch));
 
   const stage = Effect.fnUntraced(function* (statement: Fragment) {
-    if (batch === undefined) ensure((yield* executeSqlChange(sql, statement)) === 1);
-    else {
+    if (batch === undefined) {
+      if (!((yield* executeSqlChange(sql, statement)) === 1)) return yield* invalidState();
+    } else {
       yield* appendSqlBatchStatement(sql`${statement}`);
       yield* appendSqlBatchStatement(sqlBatchAssertion(sql, sql`changes() = 1`));
     }
@@ -168,7 +172,7 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
             const priorRows =
               yield* sql`select ${identifier.fields("email_registration_identifier_")} from ${identifier.name} where ${identifierKey(input.identifier)} limit 2`;
 
-            ensure(priorRows.length <= 1);
+            if (!(priorRows.length <= 1)) return yield* invalidState();
 
             const prior =
               priorRows[0] === undefined
@@ -184,10 +188,13 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
               | undefined;
 
             if (prior !== undefined) {
-              ensure(
-                prior[i.namespace] === input.identifier.namespace &&
-                  prior[i.value] === input.identifier.value,
-              );
+              if (
+                !(
+                  prior[i.namespace] === input.identifier.namespace &&
+                  prior[i.value] === input.identifier.value
+                )
+              )
+                return yield* invalidState();
               if (prior[i.verifiedAt] !== null || !i.isMutableTarget(prior))
                 return yield* prepare({ _tag: "Rejected" }, project);
 
@@ -200,7 +207,8 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
               if (rows.length !== 1) return yield* prepare({ _tag: "Rejected" }, project);
               const row = subject.decode(rows[0]!, "email_registration_old_subject_");
 
-              ensure((yield* mapping.subjectId.toSubject(row[s.id])) === previousSubject);
+              if (!((yield* mapping.subjectId.toSubject(row[s.id])) === previousSubject))
+                return yield* invalidState();
 
               const currentRows =
                 yield* sql`select ${identifier.fields("email_registration_current_identifier_")} from ${identifier.name} where ${identifierKey(input.identifier)} and ${id(identifier, i.subjectId, native)} and ${exact(identifier, i.bindingRevision, prior[i.bindingRevision])} and ${identifier.column(i.verifiedAt)} is null limit 2`;
@@ -213,7 +221,7 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
               )
                 return yield* prepare({ _tag: "Rejected" }, project);
               if (batch !== undefined) {
-                ensure(i.d1MutableTargetCondition !== undefined);
+                if (!(i.d1MutableTargetCondition !== undefined)) return yield* invalidState();
                 yield* appendSqlBatchStatement(
                   sqlBatchAssertion(
                     sql,
@@ -295,12 +303,12 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
 
               native = yield* provisioning.decodeGeneratedId(rows);
             } else yield* stage(insertion);
-            ensure(native !== undefined);
+            if (!(native !== undefined)) return yield* invalidState();
             const subjectId = yield* mapping.subjectId.toSubject(native);
             const clock = yield* sql`select ${now} as engine_now`;
             const verifiedAt = Number(clock[0]?.engine_now);
 
-            ensure(Number.isSafeInteger(verifiedAt));
+            if (!Number.isSafeInteger(verifiedAt)) return yield* invalidState();
 
             const values = i.encodeVerifiedInsert({
               identifier: input.identifier,
@@ -311,7 +319,7 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
 
             if (previous === undefined) yield* stage(identifier.insert(values));
             else {
-              ensure(displacedRevision !== previous.securityRevision);
+              if (!(displacedRevision !== previous.securityRevision)) return yield* invalidState();
               yield* stage(
                 sql`${identifier.update(values)} where ${identifierKey(input.identifier)} and ${id(identifier, i.subjectId, previous.native)} and ${exact(identifier, i.bindingRevision, previous.bindingRevision)} and ${identifier.column(i.verifiedAt)} is null`,
               );
@@ -349,7 +357,7 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
                 sql`exists(select 1 from ${subject.name} where ${id(subject, s.id, previous.native)} and ${exact(subject, s.securityRevision, displacedRevision)})`,
               );
             if (batch !== undefined) {
-              ensure(i.d1CurrentCondition !== undefined);
+              if (!(i.d1CurrentCondition !== undefined)) return yield* invalidState();
               conditions.push(
                 sql`exists(select 1 from ${identifier.name} where ${identifierKey(input.identifier)} and ${id(identifier, i.subjectId, native)} and ${tables.expression(i.d1CurrentCondition({ identifier: input.identifier, nativeSubjectId: native, bindingRevision: identifierRevision }))})`,
               );
@@ -364,17 +372,21 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
                   const rows =
                     yield* sql`select ${identifier.fields("email_registration_final_")} from ${identifier.name} where ${identifierKey(input.identifier)} and ${sql.and(conditions)} limit 2`;
 
-                  ensure(
-                    rows.length === 1 &&
-                      i.isCurrent(identifier.decode(rows[0]!, "email_registration_final_")),
-                  );
+                  if (
+                    !(
+                      rows.length === 1 &&
+                      i.isCurrent(identifier.decode(rows[0]!, "email_registration_final_"))
+                    )
+                  )
+                    return yield* invalidState();
                 }).pipe(
                   Effect.mapError((cause) =>
                     PersistenceMappingError.make({ operation: "decode", cause }),
                   ),
                 ),
               });
-            ensure((yield* mapping.subjectId.toSubject(native)) === subjectId);
+            if (!((yield* mapping.subjectId.toSubject(native)) === subjectId))
+              return yield* invalidState();
 
             return yield* prepare({ _tag: "Registered" }, project);
           }),

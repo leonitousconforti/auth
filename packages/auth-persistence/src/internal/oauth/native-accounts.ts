@@ -15,7 +15,7 @@ import { makeOAuthNativeFlow } from "./native-flow";
 import { makeOAuthNativeMutation } from "./native-mutation";
 import { prepareOAuthNative } from "./native-sign-in";
 import { decodeOAuthRequirement, makeOAuthNativeState } from "./native-state";
-import { invariant, oauthIdentityKey, sameRevision, satisfies, unavailable } from "./state";
+import { invalidState, oauthIdentityKey, sameRevision, satisfies, unavailable } from "./state";
 
 // Physical metadata is validated by the adapter; schema values remain typed.
 export type OAuthNativeAccountsMapping = OAuthAccountsMapping<
@@ -235,7 +235,7 @@ export const makeNativeOAuthAccountsServices = Effect.fnUntraced(function* (
               ? []
               : yield* sql`select ${credential.fields("login_")} from ${credential.name} where ${identityCondition} and ${before}`;
 
-          invariant(existing.length <= 1);
+          if (!(existing.length <= 1)) return yield* invalidState();
           let credentialId = yield* mapping.allocateCredentialId;
           let credentialRevision = yield* mapping.allocateRevision;
           let changed = false;
@@ -257,10 +257,10 @@ export const makeNativeOAuthAccountsServices = Effect.fnUntraced(function* (
               [c.credentialRevision]: credentialRevision,
             };
 
-            invariant(c.isActiveStatus(values[c.status]));
+            if (!c.isActiveStatus(values[c.status])) return yield* invalidState();
 
             const inserted = yield* mutation.insertUnique(
-              sql`${conditionalInsert(credential, values, before)} ${sql.onDialectOrElse({ mysql: () => sql``, orElse: () => sql`on conflict do nothing` })}`,
+              sql`${yield* conditionalInsert(credential, values, before)} ${sql.onDialectOrElse({ mysql: () => sql``, orElse: () => sql`on conflict do nothing` })}`,
             );
 
             changed = inserted === 1;
@@ -277,19 +277,22 @@ export const makeNativeOAuthAccountsServices = Effect.fnUntraced(function* (
               [a.revision]: credentialRevision,
             };
 
-            invariant(a.isActiveStatus(factor[a.status]));
-            invariant(
-              (yield* mutation.change(
-                conditionalInsert(
-                  authority,
-                  factor,
-                  sql.and([
-                    before,
-                    sql`exists(select 1 from ${credential.name} where ${credentialCondition(current.nativeId, identityKey, credentialId, credentialRevision)})`,
-                  ]),
-                ),
-              )) === 1,
-            );
+            if (!a.isActiveStatus(factor[a.status])) return yield* invalidState();
+            if (
+              !(
+                (yield* mutation.change(
+                  yield* conditionalInsert(
+                    authority,
+                    factor,
+                    sql.and([
+                      before,
+                      sql`exists(select 1 from ${credential.name} where ${credentialCondition(current.nativeId, identityKey, credentialId, credentialRevision)})`,
+                    ]),
+                  ),
+                )) === 1
+              )
+            )
+              return yield* invalidState();
             revision = {
               ...current.revision,
               credentials: [
@@ -303,26 +306,30 @@ export const makeNativeOAuthAccountsServices = Effect.fnUntraced(function* (
                 ? existing
                 : yield* sql`select ${credential.fields("login_")} from ${credential.name} where ${identityCondition} and ${before}`;
 
-            invariant(rows.length === 1);
+            if (!(rows.length === 1)) return yield* invalidState();
             const row = credential.decode(rows[0]!, "login_");
 
-            invariant(
-              mapping.subjectId.equals(row[c.subjectId], current.nativeId) &&
+            if (
+              !(
+                mapping.subjectId.equals(row[c.subjectId], current.nativeId) &&
                 row[c.moduleId] === context.moduleId &&
-                c.isActiveStatus(row[c.status]),
-            );
+                c.isActiveStatus(row[c.status])
+              )
+            )
+              return yield* invalidState();
             credentialId = yield* Schema.decodeUnknownEffect(
               M.OAuthCredentialSnapshot.fields.credentialId,
             )(row[c.credentialId]);
             credentialRevision = yield* Schema.decodeUnknownEffect(
               M.OAuthCredentialSnapshot.fields.credentialRevision,
             )(row[c.credentialRevision]);
-            invariant(
-              revision.credentials.some(
+            if (
+              !revision.credentials.some(
                 (entry) =>
                   entry.credentialId === credentialId && entry.revision === credentialRevision,
-              ),
-            );
+              )
+            )
+              return yield* invalidState();
           }
           if (Option.isSome(external))
             yield* mutation.finish(
@@ -371,16 +378,19 @@ export const makeNativeOAuthAccountsServices = Effect.fnUntraced(function* (
             original.invalidation,
           );
 
-          invariant(
-            invalidation.trigger === "credential-change" &&
+          if (
+            !(
+              invalidation.trigger === "credential-change" &&
               invalidation.oldAuthenticationEvidence === "rejected" &&
               (mapping.sessionInvalidation === "same-authority-immediate"
                 ? (invalidation.existingSessions === "immediate" &&
                     invalidation.maximumExposureMillis === 0) ||
                   (invalidation.existingSessions === "cache-expiry" &&
                     invalidation.maximumExposureMillis > 0)
-                : invalidation.existingSessions === "original-absolute-expiry"),
-          );
+                : invalidation.existingSessions === "original-absolute-expiry")
+            )
+          )
+            return yield* invalidState();
 
           const current = yield* mutation.capture(captured.revision.subjectId, batch === undefined);
           const rejected = () => prepareOAuthNative({ _tag: "Rejected" } as const, prepare);
@@ -402,7 +412,7 @@ export const makeNativeOAuthAccountsServices = Effect.fnUntraced(function* (
             { readonly fact: OAuthEligibilityFact; readonly conditions: Array<Fragment> }
           >();
 
-          invariant(mapping.eligibility.length <= 32);
+          if (!(mapping.eligibility.length <= 32)) return yield* invalidState();
 
           const sources = mapping.eligibility.map((source) => ({
             source,
@@ -411,7 +421,8 @@ export const makeNativeOAuthAccountsServices = Effect.fnUntraced(function* (
 
           // Each branch owns distinct projection columns. Empty scalar subqueries
           // retain each physical SQL type across derived SELECT and UNION coercion.
-          invariant(sources.reduce((count, entry) => count + entry.table.keys.length, 0) <= 1024);
+          if (!(sources.reduce((count, entry) => count + entry.table.keys.length, 0) <= 1024))
+            return yield* invalidState();
 
           const branches = sources.map(({ source, table }, branch) => {
             const fields = sources.flatMap((entry, index) =>
@@ -443,7 +454,7 @@ export const makeNativeOAuthAccountsServices = Effect.fnUntraced(function* (
           const candidates = yield* sql`${sql.join(" union all ", false)([sentinel, ...branches])}`;
           const presence = candidates.find((row) => Number(row.method_branch) === -1);
 
-          invariant(presence !== undefined);
+          if (!(presence !== undefined)) return yield* invalidState();
           if (Number(presence.target_present) !== 1) return yield* rejected();
 
           const counts = new Map<number, number>();
@@ -454,10 +465,10 @@ export const makeNativeOAuthAccountsServices = Effect.fnUntraced(function* (
             if (branch === -1) continue;
             const entry = sources[branch];
 
-            invariant(entry !== undefined);
+            if (!(entry !== undefined)) return yield* invalidState();
             const count = (counts.get(branch) ?? 0) + 1;
 
-            invariant(count <= 64);
+            if (!(count <= 64)) return yield* invalidState();
             counts.set(branch, count);
             const { source, table } = entry;
             const decoded = source.decode(table.decode(row, `method_${branch}_`));
@@ -488,7 +499,8 @@ export const makeNativeOAuthAccountsServices = Effect.fnUntraced(function* (
                   Schema.fromJsonString(Schema.toCodecJson(OAuthEligibilityFact)),
                 );
 
-                invariant((yield* encode(previous.fact)) === (yield* encode(fact)));
+                if (!((yield* encode(previous.fact)) === (yield* encode(fact))))
+                  return yield* invalidState();
                 previous.conditions.push(condition);
               }
             }
@@ -549,24 +561,32 @@ export const makeNativeOAuthAccountsServices = Effect.fnUntraced(function* (
             current.revision.securityRevision,
           );
 
-          invariant(nextSecurityRevision !== current.revision.securityRevision);
+          if (!(nextSecurityRevision !== current.revision.securityRevision))
+            return yield* invalidState();
           const subject = mutation.subject;
 
-          invariant(
-            (yield* mutation.change(sql`${subject.update({ [mapping.subject.securityRevision]: nextSecurityRevision })}
+          if (
+            !(
+              (yield* mutation.change(sql`${subject.update({ [mapping.subject.securityRevision]: nextSecurityRevision })}
         where ${subject.column(mapping.subject.id)} = ${subject.value(mapping.subject.id, current.nativeId)} and ${required}`)) ===
-              1,
-          );
-          invariant(
-            (yield* mutation.change(sql`delete from ${credential.name} where ${target}`)) === 1,
-          );
-          invariant(
-            (yield* mutation.change(sql`delete from ${authority.name}
+              1
+            )
+          )
+            return yield* invalidState();
+          if (
+            !((yield* mutation.change(sql`delete from ${credential.name} where ${target}`)) === 1)
+          )
+            return yield* invalidState();
+          if (
+            !(
+              (yield* mutation.change(sql`delete from ${authority.name}
         where ${authority.column(a.subjectId)} = ${authority.value(a.subjectId, current.nativeId)}
           and ${exactSqlText(sql, authority.column(a.credentialId), authority.value(a.credentialId, captured.credentialId))}
           and ${exactSqlText(sql, authority.column(a.revision), authority.value(a.revision, captured.credentialRevision))}`)) ===
-              1,
-          );
+              1
+            )
+          )
+            return yield* invalidState();
 
           const cleanup = {
             subjectId: current.nativeId,
@@ -574,7 +594,7 @@ export const makeNativeOAuthAccountsServices = Effect.fnUntraced(function* (
             removedCredentialId: captured.credentialId,
           };
 
-          invariant(mapping.cleanup.length <= 32);
+          if (!(mapping.cleanup.length <= 32)) return yield* invalidState();
           const absent = [];
 
           for (const source of mapping.cleanup) {

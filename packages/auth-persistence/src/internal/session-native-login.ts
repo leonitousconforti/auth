@@ -22,7 +22,7 @@ import {
   sessionUnavailable,
   sameSessionRevision,
   assessSessionAt,
-  sessionInvariant,
+  invalidSessionState,
 } from "./session-native-state";
 import { allocateSessionValue } from "./session-policy";
 import {
@@ -57,7 +57,9 @@ export const makeNativePendingAuthenticationServices = Effect.fnUntraced(functio
     state,
     pending,
     read: readPending,
-  } = yield* makeNativeSessionPendingReader(tables, mapping, batch !== undefined);
+  } = yield* normalizeSessionOperation(
+    makeNativeSessionPendingReader(tables, mapping, batch !== undefined),
+  );
 
   const executor = yield* makeSqlCommitExecutor(sessionUnavailable);
   const external = yield* Effect.serviceOption(CurrentSqlCommit);
@@ -81,15 +83,18 @@ export const makeNativePendingAuthenticationServices = Effect.fnUntraced(functio
   ) {
     const record = yield* mapping.login.decode(stored.snapshot);
 
-    sessionInvariant(
-      record.digest === stored.digest &&
+    if (
+      !(
+        record.digest === stored.digest &&
         record.version === stored.version &&
         record.evidence.flowId === stored.flowId &&
         record.evidence.bindingDigest === stored.bindingDigest &&
         record.evidence.revision.subjectId === stored.subjectId &&
         DateTime.toEpochMillis(record.expiresAt) === stored.expiresAtMillis &&
-        record.attemptLimit === stored.attemptLimit,
-    );
+        record.attemptLimit === stored.attemptLimit
+      )
+    )
+      return yield* invalidSessionState();
 
     return record;
   });
@@ -174,7 +179,7 @@ export const makeNativePendingAuthenticationServices = Effect.fnUntraced(functio
               check: Effect.gen(function* () {
                 const rows = yield* sql`select 1 where ${final}`;
 
-                sessionInvariant(rows.length === 1);
+                if (!(rows.length === 1)) return yield* invalidSessionState();
               }).pipe(
                 Effect.mapError((cause) =>
                   PersistenceMappingError.make({ operation: "decode", cause }),

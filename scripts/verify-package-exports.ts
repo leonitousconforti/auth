@@ -111,8 +111,8 @@ export const verifyPackageExports = Effect.fn("verifyPackageExports")(
       return yield* fs
         .readFileString(path.join(root, file))
         .pipe(
-          Effect.mapError(
-            (cause) => new PackageExportsError({ message: `Cannot read ${file}`, cause }),
+          Effect.mapError((cause) =>
+            PackageExportsError.make({ message: `Cannot read ${file}`, cause }),
           ),
         );
     });
@@ -144,8 +144,8 @@ export const verifyPackageExports = Effect.fn("verifyPackageExports")(
         const source = yield* read(file);
 
         const manifest = yield* Schema.decodeEffect(Schema.fromJsonString(Manifest))(source).pipe(
-          Effect.mapError(
-            (cause) => new PackageExportsError({ message: `Invalid ${file}`, cause }),
+          Effect.mapError((cause) =>
+            PackageExportsError.make({ message: `Invalid ${file}`, cause }),
           ),
         );
 
@@ -535,7 +535,7 @@ export const verifyPackageExports = Effect.fn("verifyPackageExports")(
       }
     }
     if (problems.length > 0)
-      return yield* new PackageExportsError({ message: problems.join("\n") });
+      return yield* PackageExportsError.make({ message: problems.join("\n") });
     yield* Console.log(
       `Package exports check passed: ${packages.filter((pkg) => !pkg.manifest.private).length} public packages, ${entries} entries.`,
     );
@@ -543,7 +543,7 @@ export const verifyPackageExports = Effect.fn("verifyPackageExports")(
   Effect.mapError((cause) =>
     cause._tag === "PackageExportsError"
       ? cause
-      : new PackageExportsError({
+      : PackageExportsError.make({
           message: `Could not inspect package exports: ${cause.message}`,
           cause,
         }),

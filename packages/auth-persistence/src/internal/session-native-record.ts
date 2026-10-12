@@ -15,7 +15,7 @@ import type { Fragment } from "effect/sql/Statement";
 import type { SubjectIdCodec } from "./models/common";
 import type { StatefulSessionTables, SessionExecution } from "./models/session-model";
 import type { NativeSqlTables, SqlTable } from "./native-sql-table";
-import { sessionInvariant } from "./session-native-state";
+import { invalidSessionState } from "./session-native-state";
 import { exactSqlText } from "./sql-change";
 import type { AnyTableModel } from "./table-model";
 
@@ -42,13 +42,17 @@ export const sameSessionRecord = <Claims>(
 export const makeConditionalSqlInsert = Effect.fnUntraced(function* () {
   const sql = (yield* SqlClient).withoutTransforms();
 
-  return (table: SqlTable, values: Readonly<Record<string, unknown>>, condition: Fragment) => {
+  return Effect.fnUntraced(function* (
+    table: SqlTable,
+    values: Readonly<Record<string, unknown>>,
+    condition: Fragment,
+  ) {
     const fields = Object.entries(values).filter(([, value]) => value !== undefined);
 
-    sessionInvariant(fields.length > 0);
+    if (fields.length === 0) return yield* invalidSessionState();
 
     return sql`insert into ${table.name} (${sql.join(", ", false)(fields.map(([key]) => table.columnName(key)))}) select ${sql.join(", ", false)(fields.map(([key, value]) => table.value(key, value)))} where ${condition}`;
-  };
+  });
 });
 
 /** Security columns own live time bounds and commit-time issuedAt adjustments,
@@ -88,14 +92,17 @@ export const makeNativeSessionRecords = Effect.fnUntraced(function* <Claims>(
     const expiresAt = mapping.clock.decodeInstant(row[s.expiresAt]);
     const absolute = mapping.clock.decodeInstant(row[s.absoluteExpiresAt]);
 
-    sessionInvariant(
-      decoded.subjectId === subjectId &&
+    if (
+      !(
+        decoded.subjectId === subjectId &&
         decoded.sessionId === sessionId &&
         decoded.digest === digest &&
         decoded.securityRevision === revision &&
         DateTime.toEpochMillis(decoded.expiresAt) === expiresAt &&
-        DateTime.toEpochMillis(decoded.absoluteExpiresAt) === absolute,
-    );
+        DateTime.toEpochMillis(decoded.absoluteExpiresAt) === absolute
+      )
+    )
+      return yield* invalidSessionState();
     yield* Schema.decodeEffect(SessionId)(sessionId);
     yield* Schema.decodeEffect(SessionCredentialVersion)(decoded.credentialVersion);
 
@@ -134,7 +141,7 @@ export const makeNativeSessionRecords = Effect.fnUntraced(function* <Claims>(
     const rows =
       yield* sql`select ${table.fields("session_")} from ${table.name} where ${exact(table, s.digest, digest)} and ${live(table)} limit 2`;
 
-    sessionInvariant(rows.length <= 1);
+    if (!(rows.length <= 1)) return yield* invalidSessionState();
 
     return rows[0] === undefined ? undefined : yield* decode(table.decode(rows[0], "session_"));
   });

@@ -38,7 +38,14 @@ export const layerHmacWeb: Layer.Layer<Hmac> = Layer.effect(Hmac)(
     const subtle = globalThis.crypto?.subtle;
 
     return subtle === undefined
-      ? Effect.die(new Error("WebCrypto is unavailable in this runtime"))
+      ? Effect.die(
+          PlatformError.systemError({
+            _tag: "NotFound",
+            module: "Crypto",
+            method: "layerHmacWeb",
+            description: "WebCrypto is unavailable in this runtime",
+          }),
+        )
       : Effect.succeed(makeHmac(subtle));
   }),
 );

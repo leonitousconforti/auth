@@ -8,7 +8,7 @@ import {
 } from "@yielded/auth/Password";
 import type { SubjectId } from "@yielded/auth/Schema";
 import type { SecurityRevision } from "@yielded/auth/Sessions";
-import { Effect, Redacted, Schema, Option, Data, Cause, type Crypto } from "effect";
+import { Effect, Redacted, Schema, Option, Cause, type Crypto } from "effect";
 import { SqlClient } from "effect/sql/SqlClient";
 import type { Fragment } from "effect/sql/Statement";
 
@@ -31,11 +31,12 @@ import {
 
 const unavailable = () => PasswordUnavailable.make({});
 
-const ensure: (condition: unknown) => asserts condition = (condition) => {
-  if (!condition) throw unavailable();
-};
+const invalidState = () => unavailable();
 
-export class PasswordIdentifierTaken extends Data.TaggedError("PasswordIdentifierTaken") {}
+export class PasswordIdentifierTaken extends Schema.TaggedError<PasswordIdentifierTaken>()(
+  "PasswordIdentifierTaken",
+  {},
+) {}
 
 type BindingMapping = Pick<
   AnyPasswordRegistrationMapping,
@@ -70,7 +71,9 @@ export const makeNativePasswordRegistrationStore = Effect.fnUntraced(function* (
     if (batch) {
       yield* appendSqlBatchStatement(sql`${statement}`);
       yield* appendSqlBatchStatement(sqlBatchAssertion(sql, sql`changes() = 1`));
-    } else ensure((yield* executeSqlChange(sql, statement)) === 1);
+    } else {
+      if (!((yield* executeSqlChange(sql, statement)) === 1)) return yield* invalidState();
+    }
   });
 
   const available = (value: LoginIdentifier) =>
@@ -100,13 +103,13 @@ export const makeNativePasswordRegistrationStore = Effect.fnUntraced(function* (
               (cause) =>
                 mapping.isIdentifierConflict !== undefined &&
                 isMappedConstraintConflict(mapping.isIdentifierConflict, cause),
-              () => Effect.fail(new PasswordIdentifierTaken()),
+              () => Effect.fail(PasswordIdentifierTaken.make({})),
             ),
           ),
         orElse: () =>
           sql`${initial} on conflict (${identifier.columnName(i.namespace)}, ${identifier.columnName(i.value)}) do nothing returning 1 as bound`.pipe(
             Effect.flatMap((rows) =>
-              rows.length === 1 ? Effect.void : Effect.fail(new PasswordIdentifierTaken()),
+              rows.length === 1 ? Effect.void : Effect.fail(PasswordIdentifierTaken.make({})),
             ),
           ),
       });
@@ -119,11 +122,14 @@ export const makeNativePasswordRegistrationStore = Effect.fnUntraced(function* (
     const authorityCondition = sql`exists(select 1 from ${authority.name} where ${owner(authority, a.subjectId, nativeId)} and ${exact(authority, a.credentialId, input.credentialId)} and ${exact(authority, a.revision, input.credentialRevision)} ${a.status === undefined ? sql`` : sql`and ${authority.column(a.status)} = ${authority.value(a.status, a.d1ActiveStatusValue)}`})`;
 
     if (batch) {
-      ensure(
-        i.d1CurrentCondition !== undefined &&
+      if (
+        !(
+          i.d1CurrentCondition !== undefined &&
           s.d1ActiveStatusValue !== undefined &&
-          (a.status === undefined || a.d1ActiveStatusValue !== undefined),
-      );
+          (a.status === undefined || a.d1ActiveStatusValue !== undefined)
+        )
+      )
+        return yield* invalidState();
       yield* registerSqlBatchPostcondition({
         name: "password-registration-authority",
         statement: sqlBatchAssertion(
@@ -144,15 +150,18 @@ export const makeNativePasswordRegistrationStore = Effect.fnUntraced(function* (
           const rows =
             yield* sql`select ${subject.fields("registration_subject_")}, ${authority.fields("registration_factor_")}, ${identifier.fields("registration_identifier_")} from ${subject.name} inner join ${identifier.name} on ${exact(identifier, i.namespace, input.identifier.namespace)} and ${exact(identifier, i.value, input.identifier.value)} and ${owner(identifier, i.subjectId, nativeId)} inner join ${authority.name} on ${owner(authority, a.subjectId, nativeId)} and ${exact(authority, a.credentialId, input.credentialId)} and ${exact(authority, a.revision, input.credentialRevision)} where ${owner(subject, s.id, nativeId)} and ${exact(subject, s.securityRevision, input.securityRevision)} and ${passwordCondition} and ${identifierCondition} limit 2`;
 
-          ensure(rows.length === 1);
+          if (!(rows.length === 1)) return yield* invalidState();
           const subjectRow = subject.decode(rows[0]!, "registration_subject_");
           const factorRow = authority.decode(rows[0]!, "registration_factor_");
 
-          ensure(
-            i.isCurrent(identifier.decode(rows[0]!, "registration_identifier_")) &&
+          if (
+            !(
+              i.isCurrent(identifier.decode(rows[0]!, "registration_identifier_")) &&
               s.isActiveStatus(subjectRow[s.status]) &&
-              (a.status === undefined || a.isActiveStatus?.(factorRow[a.status]) === true),
-          );
+              (a.status === undefined || a.isActiveStatus?.(factorRow[a.status]) === true)
+            )
+          )
+            return yield* invalidState();
         }).pipe(
           Effect.mapError((cause) => PersistenceMappingError.make({ operation: "decode", cause })),
         ),
@@ -169,7 +178,8 @@ export const makeNativePasswordRegistrationStore = Effect.fnUntraced(function* (
 
       if (current.mode === "batch" && current.statements.length === 0)
         yield* appendSqlBatchStatement(sql`select 1`);
-      ensure(receipt?._tag === "PreparedCommit" && Effect.isEffect(receipt.read));
+      if (!(receipt?._tag === "PreparedCommit" && Effect.isEffect(receipt.read)))
+        return yield* invalidState();
       yield* registerSqlCommitReceipt(receipt);
 
       return receipt;
@@ -297,7 +307,7 @@ export const makeNativePasswordRegistrationServices = Effect.fnUntraced(function
 
                     nativeId = yield* provisioning.decodeGeneratedId(generated);
                   } else yield* store.stage(insertion);
-                  ensure(nativeId !== undefined);
+                  if (!(nativeId !== undefined)) return yield* invalidState();
                   const subjectId = yield* mapping.subjectId.toSubject(nativeId);
 
                   yield* store.bind({

@@ -48,26 +48,33 @@ const mappings = Effect.fnUntraced(function* (
 ) {
   const sql = (yield* SqlClient.SqlClient).withoutTransforms();
 
-  const table = (role: StorageRole) => {
+  const table = Effect.fnUntraced(function* (role: StorageRole) {
     const value = storage.tables[role];
 
-    if (value === undefined) throw configurationError(`Missing ${role} mapping`);
+    if (value === undefined) return yield* configurationError(`Missing ${role} mapping`);
 
     return value;
-  };
-
-  const mapped = <Role extends StorageRole>(role: Role) => ({
-    table: table(role),
-    // Managed storage validation owns these physical column keys.
-    ...(Object.fromEntries(Object.keys(storageTables[role].columns).map((key) => [key, key])) as {
-      readonly [Key in keyof (typeof storageTables)[Role]["columns"]]: Key;
-    }),
   });
 
-  const t = (role: StorageRole) => tables(table(role));
+  const mapped = Effect.fnUntraced(function* <Role extends StorageRole>(role: Role) {
+    return {
+      table: yield* table(role),
+      // Managed storage validation owns these physical column keys.
+      ...(Object.fromEntries(Object.keys(storageTables[role].columns).map((key) => [key, key])) as {
+        readonly [Key in keyof (typeof storageTables)[Role]["columns"]]: Key;
+      }),
+    };
+  });
 
-  const eq = (role: StorageRole, key: string, value: unknown) =>
-    sql`${t(role).column(key)} = ${t(role).value(key, value)}`;
+  const t = Effect.fnUntraced(function* (role: StorageRole) {
+    return tables(yield* table(role));
+  });
+
+  const eq = Effect.fnUntraced(function* (role: StorageRole, key: string, value: unknown) {
+    const table = yield* t(role);
+
+    return sql`${table.column(key)} = ${table.value(key, value)}`;
+  });
 
   const s = storage.subjects;
   const subject = tables(s.table);
@@ -85,7 +92,7 @@ const mappings = Effect.fnUntraced(function* (
       activeCondition: sql`${subject.column(s.status)} = ${subject.value(s.status, s.activeValue)}`,
     },
     credential: {
-      ...mapped("passkeyCredentials"),
+      ...(yield* mapped("passkeyCredentials")),
       status: "active",
       decode: (row) =>
         Schema.decodeUnknownSync(credentialData)({
@@ -94,54 +101,60 @@ const mappings = Effect.fnUntraced(function* (
         }),
       decodeSubjectId: (row) => row.subjectId,
       isActiveStatus: active,
-      activeCondition: eq("passkeyCredentials", "active", true),
+      activeCondition: yield* eq("passkeyCredentials", "active", true),
     },
     authority: {
-      ...mapped("credentials"),
+      ...(yield* mapped("credentials")),
       status: "active",
       isActiveStatus: active,
-      activeCondition: eq("credentials", "active", true),
+      activeCondition: yield* eq("credentials", "active", true),
     },
     subjectIds: { toNative: s.toNativeSync, toSubject: s.toSubjectSync, equals: Object.is },
     constraints: requiredPasskeyCredentialConstraints,
   };
 
-  const base = (feature: PasskeyFeature): PasskeyNativeMapping => ({
-    moduleId: feature.moduleId,
-    read,
-    flow: { ...mapped("passkeyFlows"), encodeInsert: () => ({}) },
-    clock: {
-      encodeInstant: storage.encodeInstant,
-      decodeInstant: storage.decodeInstantSync,
-      engineNowMillis: sql.onDialectOrElse({
-        pg: () => sql`cast(extract(epoch from clock_timestamp()) * 1000 as bigint)`,
-        orElse: () => sql`cast(round((julianday('now') - 2440587.5) * 86400000) as integer)`,
-      }),
-      toMillis: (expression: Fragment) => expression,
-      fromMillis: (expression: Fragment) => expression,
-    },
-    telemetry: {
-      lastUsedAt: "lastUsedAt",
-      encodeBackupEligible: (value) => value,
-      encodeBackupState: (value) => value,
-    },
-    constraints: requiredPasskeyPersistenceConstraints,
+  const base = Effect.fnUntraced(function* (
+    feature: PasskeyFeature,
+  ): Effect.fn.Return<PasskeyNativeMapping, PersistenceConfigurationError> {
+    return {
+      moduleId: feature.moduleId,
+      read,
+      flow: { ...(yield* mapped("passkeyFlows")), encodeInsert: () => ({}) },
+      clock: {
+        encodeInstant: storage.encodeInstant,
+        decodeInstant: storage.decodeInstantSync,
+        engineNowMillis: sql.onDialectOrElse({
+          pg: () => sql`cast(extract(epoch from clock_timestamp()) * 1000 as bigint)`,
+          orElse: () => sql`cast(round((julianday('now') - 2440587.5) * 86400000) as integer)`,
+        }),
+        toMillis: (expression: Fragment) => expression,
+        fromMillis: (expression: Fragment) => expression,
+      },
+      telemetry: {
+        lastUsedAt: "lastUsedAt",
+        encodeBackupEligible: (value) => value,
+        encodeBackupState: (value) => value,
+      },
+      constraints: requiredPasskeyPersistenceConstraints,
+    };
   });
 
   const metadata = (nativeId: unknown) =>
     sql`exists(select 1 from ${subject.name} where ${subject.column(s.id)} = ${subject.value(s.id, nativeId)} and ${subject.column(s.status)} = ${subject.value(s.status, s.activeValue)})`;
 
-  const management = (feature: PasskeyFeature): NativePasskeyManagementMapping => {
+  const management = Effect.fnUntraced(function* (
+    feature: PasskeyFeature,
+  ): Effect.fn.Return<NativePasskeyManagementMapping, PersistenceConfigurationError> {
     const policy = feature.managementPolicy;
 
     if (policy === undefined)
-      throw configurationError(`Missing passkey management policy for ${feature.moduleId}`);
+      return yield* configurationError(`Missing passkey management policy for ${feature.moduleId}`);
 
-    const c = t("passkeyCredentials"),
-      f = t("credentials");
+    const c = yield* t("passkeyCredentials"),
+      f = yield* t("credentials");
 
     return {
-      ...base(feature),
+      ...(yield* base(feature)),
       write: {
         credential: {
           name: "name",
@@ -203,9 +216,11 @@ const mappings = Effect.fnUntraced(function* (
                     alternative.factors.every((factor) => factor === "possession"),
                 )
               ) {
-                alternatives.push(sql`exists(select 1 from ${c.name} join ${f.name} on ${f.column("credentialId")} = ${c.column("credentialId")} and ${f.column("subjectId")} = ${f.value("subjectId", nativeId)} and ${f.column("revision")} = ${c.column("credentialRevision")} and ${eq("credentials", "active", true)}
-                where ${eq("passkeyCredentials", "subjectId", nativeId)} and ${c.column("credentialId")} <> ${c.value("credentialId", excluded)} and ${eq("passkeyCredentials", "active", true)} and ${eq("passkeyCredentials", "primarySignIn", true)} and ${eq("passkeyCredentials", "enrollmentUserVerified", true)} and ${anySqlCondition(
-                  signInProfiles.map((profile) => eq("passkeyCredentials", "rpId", profile.rpId)),
+                alternatives.push(sql`exists(select 1 from ${c.name} join ${f.name} on ${f.column("credentialId")} = ${c.column("credentialId")} and ${f.column("subjectId")} = ${f.value("subjectId", nativeId)} and ${f.column("revision")} = ${c.column("credentialRevision")} and ${yield* eq("credentials", "active", true)}
+                where ${yield* eq("passkeyCredentials", "subjectId", nativeId)} and ${c.column("credentialId")} <> ${c.value("credentialId", excluded)} and ${yield* eq("passkeyCredentials", "active", true)} and ${yield* eq("passkeyCredentials", "primarySignIn", true)} and ${yield* eq("passkeyCredentials", "enrollmentUserVerified", true)} and ${anySqlCondition(
+                  yield* Effect.forEach(signInProfiles, (profile) =>
+                    eq("passkeyCredentials", "rpId", profile.rpId),
+                  ),
                 )})`);
               }
               if (
@@ -218,13 +233,15 @@ const mappings = Effect.fnUntraced(function* (
                     alternative.factors.every((factor) => factor === "knowledge"),
                 )
               ) {
-                const p = t("passwords"),
-                  i = t("identifiers");
+                const p = yield* t("passwords"),
+                  i = yield* t("identifiers");
 
-                alternatives.push(sql`exists(select 1 from ${p.name} join ${f.name} on ${f.column("credentialId")} = ${p.column("credentialId")} and ${f.column("subjectId")} = ${f.value("subjectId", nativeId)} and ${f.column("revision")} = ${p.column("credentialRevision")} and ${eq("credentials", "active", true)}
-                join ${i.name} on ${eq("identifiers", "subjectId", nativeId)} and ${eq("identifiers", "active", true)} and ${eq("identifiers", "namespace", "email")}
-                where ${eq("passwords", "subjectId", nativeId)} and ${p.column("credentialId")} <> ${p.value("credentialId", excluded)} and ${anySqlCondition(
-                  passwordModules.map((module) => eq("passwords", "moduleId", module)),
+                alternatives.push(sql`exists(select 1 from ${p.name} join ${f.name} on ${f.column("credentialId")} = ${p.column("credentialId")} and ${f.column("subjectId")} = ${f.value("subjectId", nativeId)} and ${f.column("revision")} = ${p.column("credentialRevision")} and ${yield* eq("credentials", "active", true)}
+                join ${i.name} on ${yield* eq("identifiers", "subjectId", nativeId)} and ${yield* eq("identifiers", "active", true)} and ${yield* eq("identifiers", "namespace", "email")}
+                where ${yield* eq("passwords", "subjectId", nativeId)} and ${p.column("credentialId")} <> ${p.value("credentialId", excluded)} and ${anySqlCondition(
+                  yield* Effect.forEach(passwordModules, (module) =>
+                    eq("passwords", "moduleId", module),
+                  ),
                 )})`);
               }
 
@@ -248,7 +265,7 @@ const mappings = Effect.fnUntraced(function* (
           sql`exists(select 1 from ${subject.name} where ${subject.column(s.id)} = ${subject.value(s.id, subjectId)} and ${subject.column(s.securityRevision)} = ${subject.value(s.securityRevision, securityRevision)})`,
       },
     };
-  };
+  });
 
   return { base, management };
 });
@@ -277,7 +294,9 @@ export const makeManagedPasskeys = Effect.fnUntraced(
     const managers = new Map<string, M.PasskeyManagementPersistence["Service"]>();
 
     for (const feature of input.features) {
-      const selected = feature.management ? mapping.management(feature) : mapping.base(feature);
+      const selected = feature.management
+        ? yield* mapping.management(feature)
+        : yield* mapping.base(feature);
 
       const base = yield* batch === undefined
         ? makeNativePasskeyServices(tables, selected)
@@ -287,7 +306,7 @@ export const makeManagedPasskeys = Effect.fnUntraced(
       if (feature.management)
         managers.set(
           feature.moduleId,
-          makePasskeyNativeManagement(base, mapping.management(feature))
+          makePasskeyNativeManagement(base, yield* mapping.management(feature))
             .passkeyManagementPersistence,
         );
     }

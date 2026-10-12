@@ -32,7 +32,7 @@ import {
   makeNativeSessionAuthorityState,
   sameSessionRevision,
   normalizeSessionOperation,
-  sessionInvariant,
+  invalidSessionState,
   sessionUnavailable,
 } from "./session-native-state";
 import { allocateSessionValue, preservesRevision } from "./session-policy";
@@ -71,7 +71,10 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
 > {
   const batch = yield* SqlBatchCommit;
 
-  const state = yield* makeNativeSessionAuthorityState(tables, mapping, batch !== undefined);
+  const state = yield* normalizeSessionOperation(
+    makeNativeSessionAuthorityState(tables, mapping, batch !== undefined),
+  );
+
   const conditionalInsert = yield* makeConditionalSqlInsert();
   const records = yield* makeNativeSessionRecords(tables, mapping);
   const executor = yield* makeSqlCommitExecutor(sessionUnavailable);
@@ -120,7 +123,7 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
         check: Effect.gen(function* () {
           const rows = yield* sql`select 1 where ${condition}`;
 
-          sessionInvariant(rows.length === 1);
+          if (!(rows.length === 1)) return yield* invalidSessionState();
         }).pipe(
           Effect.provideService(AuthenticationClock, state.clockPolicy),
           Effect.mapError((cause) => PersistenceMappingError.make({ operation: "decode", cause })),
@@ -197,16 +200,19 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
     const rows =
       yield* sql`select ${verifiedSessionFields}, ${verifiedSubjectFields} from ${session.name} join ${subject.name} on ${owns} and ${state.activeSubject(subject)} and ${revision} where ${exact(session, s.digest, digest)} and ${live(session)} limit 2`;
 
-    sessionInvariant(rows.length <= 1);
+    if (!(rows.length <= 1)) return yield* invalidSessionState();
     if (rows[0] === undefined) return undefined;
     const record = yield* records.decode(session.decode(rows[0], "session_"));
     const decoded = subject.decode(rows[0], "subject_", subjectKeys);
 
-    sessionInvariant(
-      (joinedIds || record.subjectId === discoveredSubjectId) &&
+    if (
+      !(
+        (joinedIds || record.subjectId === discoveredSubjectId) &&
         (yield* mapping.subjectId.toSubject(decoded[owner.id])) === record.subjectId &&
-        owner.isActiveStatus(decoded[owner.status]),
-    );
+        owner.isActiveStatus(decoded[owner.status])
+      )
+    )
+      return yield* invalidSessionState();
 
     return decoded[owner.securityRevision] === record.securityRevision ? record : undefined;
   });
@@ -312,7 +318,7 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
               [s.absoluteExpiresAt]: s.encodeInstant(record.absoluteExpiresAt),
             };
 
-            const changed = yield* stage(conditionalInsert(table, values, condition), 1);
+            const changed = yield* stage(yield* conditionalInsert(table, values, condition), 1);
 
             if (changed !== 1) return yield* StaleAuthentication.make({});
             const final = sql`${condition} and ${yield* recordCondition(record, values)}${input.pending === undefined || pending === undefined ? sql`` : sql` and ${pending.consumedCondition("Login", input.pending, current.native)}`}`;
@@ -324,15 +330,17 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
                 check: Effect.gen(function* () {
                   const finalRecord = yield* records.read(record.digest);
 
-                  sessionInvariant(
-                    finalRecord !== undefined && sameSessionRecord(finalRecord, record),
-                  );
+                  if (!(finalRecord !== undefined && sameSessionRecord(finalRecord, record)))
+                    return yield* invalidSessionState();
                   const authority = yield* state.read(record.subjectId);
 
-                  sessionInvariant(
-                    authority !== undefined &&
-                      sameSessionRevision(authority.revision, input.evidence.revision),
-                  );
+                  if (
+                    !(
+                      authority !== undefined &&
+                      sameSessionRevision(authority.revision, input.evidence.revision)
+                    )
+                  )
+                    return yield* invalidSessionState();
                   yield* sessionEvidenceDeadline(
                     input.evidence,
                     authority.requirement,
@@ -385,7 +393,7 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
               ? Number((yield* sql`select ${now} as engine_now`)[0]?.engine_now)
               : DateTime.toEpochMillis(input.record.issuedAt);
 
-            sessionInvariant(Number.isSafeInteger(sampled));
+            if (!Number.isSafeInteger(sampled)) return yield* invalidSessionState();
 
             const prepared = {
               ...input.record,
@@ -451,7 +459,7 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
             expected,
           );
 
-          sessionInvariant(changed !== undefined && changed <= 1);
+          if (!(changed !== undefined && changed <= 1)) return yield* invalidSessionState();
           yield* finalCondition(
             "stateful-session-digest-revocation",
             sql`not exists(select 1 from ${table.name} where ${exact(table, s.digest, digest)})`,
@@ -493,7 +501,7 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
               : () => owner.nextSecurityRevisionSync!(input.expectedSecurityRevision),
           );
 
-          sessionInvariant(next !== input.expectedSecurityRevision);
+          if (!(next !== input.expectedSecurityRevision)) return yield* invalidSessionState();
 
           const changed = yield* stage(
             sql`${state.subject.update({ [owner.securityRevision]: next })} where ${state.id(state.subject, owner.id, nativeSubject)} and ${state.activeSubject(state.subject)} and ${state.exact(state.subject, owner.securityRevision, input.expectedSecurityRevision)}`,
@@ -516,9 +524,8 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
     list: (input) =>
       executor.read(
         Effect.gen(function* () {
-          sessionInvariant(
-            Number.isSafeInteger(input.limit) && input.limit > 0 && input.limit <= 1000,
-          );
+          if (!(Number.isSafeInteger(input.limit) && input.limit > 0 && input.limit <= 1000))
+            return yield* invalidSessionState();
 
           const nativeSubject = yield* mapping.subjectId.toNative(input.subjectId);
 
@@ -536,13 +543,12 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
             const subjects =
               yield* sql`select ${listedSubjectFields} from ${st.name} where ${state.id(st, owner.id, nativeSubject)} and ${state.activeSubject(st)} limit 2`;
 
-            sessionInvariant(subjects.length <= 1);
+            if (!(subjects.length <= 1)) return yield* invalidSessionState();
             if (subjects[0] === undefined) return { sessions: [] };
             const subject = st.decode(subjects[0], "subject_", subjectKeys);
 
-            sessionInvariant(
-              (yield* mapping.subjectId.toSubject(subject[owner.id])) === input.subjectId,
-            );
+            if (!((yield* mapping.subjectId.toSubject(subject[owner.id])) === input.subjectId))
+              return yield* invalidSessionState();
             revision = yield* Schema.decodeUnknownEffect(SessionMetadata.fields.securityRevision)(
               subject[owner.securityRevision],
             );
@@ -568,9 +574,8 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
             if (!joinedRevisions) {
               const subject = st.decode(first, "subject_", subjectKeys);
 
-              sessionInvariant(
-                (yield* mapping.subjectId.toSubject(subject[owner.id])) === input.subjectId,
-              );
+              if (!((yield* mapping.subjectId.toSubject(subject[owner.id])) === input.subjectId))
+                return yield* invalidSessionState();
 
               const current = yield* Schema.decodeUnknownEffect(
                 SessionMetadata.fields.securityRevision,
@@ -588,11 +593,14 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
                 const record = yield* records.decode(list.decode(row, "session_"));
                 const subject = st.decode(row, "subject_", subjectKeys);
 
-                sessionInvariant(
-                  record.subjectId === input.subjectId &&
+                if (
+                  !(
+                    record.subjectId === input.subjectId &&
                     (yield* mapping.subjectId.toSubject(subject[owner.id])) === input.subjectId &&
-                    subject[owner.securityRevision] === record.securityRevision,
-                );
+                    subject[owner.securityRevision] === record.securityRevision
+                  )
+                )
+                  return yield* invalidSessionState();
 
                 return yield* Schema.decodeEffect(Schema.toType(SessionMetadata))(record);
               }),

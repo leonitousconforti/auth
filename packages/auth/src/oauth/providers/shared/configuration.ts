@@ -294,15 +294,13 @@ export const validateIdentitySource = Effect.fnUntraced(function* <R>(
     return yield* configError("identity-source");
   const body = source.body;
 
-  if (body !== undefined)
-    yield* Effect.try({
-      try: () => {
-        const parsed: unknown = JSON.parse(body);
+  if (body !== undefined) {
+    const parsed = yield* Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))(body).pipe(
+      Effect.mapError(() => configError("identity-source")),
+    );
 
-        if (parsed === null || typeof parsed !== "object") throw new Error();
-      },
-      catch: () => configError("identity-source"),
-    });
+    if (parsed === null || typeof parsed !== "object") return yield* configError("identity-source");
+  }
   for (const key of Object.keys(source.headers ?? {})) {
     if (forbiddenHeaders.has(key.toLowerCase())) return yield* configError("identity-source");
   }

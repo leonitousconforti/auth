@@ -5,6 +5,7 @@ import {
   Effect,
   Layer,
   Predicate,
+  Result,
   Schema,
   SchemaGetter,
   Scope,
@@ -25,6 +26,7 @@ import {
 import {
   InvalidOperationInput,
   OperationBoundaryError,
+  OperationOutputError,
   OperationForbidden,
   AuthenticationRequired,
   OperationConfigurationError,
@@ -39,15 +41,18 @@ import {
 
 const operationDefect = Schema.Json.pipe(
   Schema.decodeTo(Schema.Unknown, {
-    decode: SchemaGetter.transform(() => new globalThis.Error("Auth operation failed")),
+    decode: SchemaGetter.transform(() => OperationOutputError.make({})),
     encode: SchemaGetter.transform(() => ({ message: "Auth operation failed" })),
   }),
 );
 
 /** Identifies an already reported defect without retaining its private cause. */
-class ReportedOperationDefect extends globalThis.Error {
-  constructor() {
-    super("Auth operation failed");
+class ReportedOperationDefect extends Schema.TaggedError<ReportedOperationDefect>()(
+  "ReportedOperationDefect",
+  {},
+) {
+  override get message() {
+    return "Auth operation failed";
   }
 }
 
@@ -69,7 +74,7 @@ const operationFailure = Effect.fn("AuthOperation.failure")(function* <E>(
 
   yield* reportAuthFailure(stage, unreported);
 
-  return yield* Effect.die(new ReportedOperationDefect());
+  return yield* Effect.die(ReportedOperationDefect.make({}));
 });
 
 const sanitizeOperationDefects =
@@ -254,16 +259,15 @@ const buildOperation = <
   const options = Object.freeze({ ...input });
 
   const reveals = (() => {
-    try {
-      if (options.reveals === undefined) return Object.freeze([] as AuthRevealKind[]);
-      const captured = snapshotRevealKinds(options.reveals);
+    if (options.reveals === undefined) return Object.freeze([] as AuthRevealKind[]);
+    const captured = snapshotRevealKinds(options.reveals);
 
-      if (captured.length === 0) throw new globalThis.Error();
-
-      return captured;
-    } catch {
+    if (Result.isFailure(captured) || captured.success.length === 0) {
+      // oxlint-disable-next-line effect/no-untyped-throw -- Public synchronous contract construction rejects invalid static reveal declarations.
       throw OperationConfigurationError.make({ reason: "reveal-configuration", operation: tag });
     }
+
+    return captured.success;
   })();
 
   const hasReveals = reveals.length > 0;
@@ -311,25 +315,34 @@ const buildOperation = <
       }
 
       const collectors = hasReveals
-        ? yield* Effect.try({
-            try: () => {
-              const collector = reveal;
-              const accept = collector?.accept;
+        ? yield* Effect.suspend(() =>
+            Effect.fromResult(
+              Result.try({
+                try: () =>
+                  Result.gen(function* () {
+                    const collector = reveal;
+                    const accept = collector?.accept;
 
-              if (
-                collector === undefined ||
-                !Predicate.isFunction(accept) ||
-                (options.credentials === true && !Predicate.isFunction(sink))
-              )
-                throw new globalThis.Error();
-              const supported = snapshotRevealKinds(collector.supportedKinds);
+                    if (
+                      collector === undefined ||
+                      !Predicate.isFunction(accept) ||
+                      (options.credentials === true && !Predicate.isFunction(sink))
+                    )
+                      return yield* Result.fail(OperationPrivateOutputUnsupported.make({}));
+                    const supported = yield* snapshotRevealKinds(collector.supportedKinds);
 
-              if (!reveals.every((kind) => supported.includes(kind))) throw new globalThis.Error();
+                    if (!reveals.every((kind) => supported.includes(kind)))
+                      return yield* Result.fail(OperationPrivateOutputUnsupported.make({}));
 
-              return { sink, accept };
-            },
-            catch: () => OperationPrivateOutputUnsupported.make({}),
-          })
+                    return { sink, accept };
+                  }),
+                catch: () => OperationPrivateOutputUnsupported.make({}),
+              }).pipe(
+                Result.flatMap((result) => result),
+                Result.mapError(() => OperationPrivateOutputUnsupported.make({})),
+              ),
+            ),
+          )
         : undefined;
 
       if (options.authorize !== undefined) {
@@ -341,22 +354,26 @@ const buildOperation = <
       }
 
       if (options.credentials === true && !Predicate.isFunction(sink)) {
-        return yield* Effect.die(new globalThis.Error("Auth credential collector required"));
+        return yield* Effect.die(OperationOutputError.make({}));
       }
       const handler = yield* HandlerService;
       const result = yield* handler.run(payload, context);
 
       if (collectors !== undefined) {
-        const staged = yield* Effect.sync(() => {
-          const value = result.value;
-          const commands = snapshotCredentialCommands(result.credentialCommands);
-          const privateCommands = snapshotRevealCommands(result.revealCommands, reveals);
+        const staged = yield* Effect.suspend(() =>
+          Effect.fromResult(
+            Result.gen(function* () {
+              const value = result.value;
+              const commands = yield* snapshotCredentialCommands(result.credentialCommands);
+              const privateCommands = yield* snapshotRevealCommands(result.revealCommands, reveals);
 
-          if (commands.length > 0 && options.credentials !== true)
-            throw new globalThis.Error("Auth operation failed");
+              if (commands.length > 0 && options.credentials !== true)
+                return yield* Result.fail(OperationOutputError.make({}));
 
-          return { value, commands, privateCommands };
-        });
+              return { value, commands, privateCommands };
+            }),
+          ),
+        ).pipe(Effect.orDie);
 
         const value = yield* projectSuccess(staged.value);
         const now = DateTime.toEpochMillis(yield* DateTime.now);
@@ -366,11 +383,10 @@ const buildOperation = <
             (command) => command.expiresAtMillis <= now || command.expiresAtMillis > now + 300_000,
           )
         )
-          return yield* Effect.die(new globalThis.Error("Auth operation failed"));
+          return yield* Effect.die(OperationOutputError.make({}));
         // These are two memory acceptances, not an atomic physical delivery.
         if (staged.commands.length > 0) {
-          if (!Predicate.isFunction(sink))
-            return yield* Effect.die(new globalThis.Error("Auth operation failed"));
+          if (!Predicate.isFunction(sink)) return yield* Effect.die(OperationOutputError.make({}));
           yield* sink(staged.commands);
         }
         if (staged.privateCommands.length > 0) {
@@ -386,11 +402,12 @@ const buildOperation = <
       const value = yield* projectSuccess(result.value);
       const commands = yield* validateCredentialCommands(result.credentialCommands);
 
-      yield* Effect.sync(() => snapshotRevealCommands(result.revealCommands, reveals));
+      yield* Effect.suspend(() =>
+        Effect.fromResult(snapshotRevealCommands(result.revealCommands, reveals)),
+      ).pipe(Effect.orDie);
 
       if (commands.length > 0) {
-        if (!Predicate.isFunction(sink))
-          return yield* Effect.die(new globalThis.Error("Auth credential collector required"));
+        if (!Predicate.isFunction(sink)) return yield* Effect.die(OperationOutputError.make({}));
         yield* sink(commands);
       }
 
@@ -454,6 +471,7 @@ const buildOperation = <
 
   const credentialHandlerLayer = <R>(handler: CredentialHandler<R>) => {
     if (options.credentials !== true)
+      // oxlint-disable-next-line effect/no-untyped-throw -- Public synchronous operation construction rejects incompatible handlers or exposure.
       throw OperationConfigurationError.make({ reason: "credential-handler", operation: tag });
 
     return installHandler(handler);
@@ -461,6 +479,7 @@ const buildOperation = <
 
   const privateHandlerLayer = <R>(handler: CredentialHandler<R>) => {
     if (options.credentials !== true && !hasReveals)
+      // oxlint-disable-next-line effect/no-untyped-throw -- Public synchronous operation construction rejects incompatible handlers or exposure.
       throw OperationConfigurationError.make({ reason: "private-handler", operation: tag });
 
     return installHandler(handler);
@@ -744,6 +763,7 @@ export const operationGroup = <const Operations extends ReadonlyArray<AnyOperati
 
   for (const operation of operations) {
     if (tags.has(operation.rpc._tag)) {
+      // oxlint-disable-next-line effect/no-untyped-throw -- Public synchronous operation construction rejects incompatible handlers or exposure.
       throw OperationConfigurationError.make({
         reason: "duplicate-operation",
         operation: operation.rpc._tag,
@@ -762,6 +782,7 @@ export const remoteGroup = <const Operations extends ReadonlyArray<AnyOperation>
 ): RpcGroup.RpcGroup<Operations[number]["rpc"]> => {
   for (const operation of operations) {
     if (operation.exposure === "internal" && options?.allowInternal !== true) {
+      // oxlint-disable-next-line effect/no-untyped-throw -- Public synchronous operation construction rejects incompatible handlers or exposure.
       throw OperationConfigurationError.make({
         reason: "internal-exposure",
         operation: operation.rpc._tag,

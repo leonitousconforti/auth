@@ -1,5 +1,5 @@
 import * as M from "@yielded/auth/Passkey";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 
 import { digest } from "./crypto";
 
@@ -19,10 +19,10 @@ export const passkeyDigest = <S extends Schema.Codec<unknown, unknown, never, ne
   value: S["Type"],
 ) => digest(passkeyCanonicalJson(schema).encode(value));
 
-export const passkeyEnrollmentDigest = (ceremony: M.PasskeyCeremony) => {
-  if (ceremony.context._tag !== "Enrollment") throw M.PasskeyUnavailable.make({});
+export const passkeyEnrollmentDigest = Effect.fnUntraced(function* (ceremony: M.PasskeyCeremony) {
+  if (ceremony.context._tag !== "Enrollment") return yield* M.PasskeyUnavailable.make({});
 
-  return passkeyDigest(
+  return yield* passkeyDigest(
     Schema.Tuple([
       M.PasskeyModuleId,
       Schema.Literal("enrollment"),
@@ -47,7 +47,7 @@ export const passkeyEnrollmentDigest = (ceremony: M.PasskeyCeremony) => {
       ceremony.allowedCredentials,
     ],
   );
-};
+});
 
 export const passkeyRemoveDigest = (
   moduleId: string,

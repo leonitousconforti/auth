@@ -3,7 +3,12 @@ import { Base64Url } from "effect/encoding";
 
 import { hasCommitScope, type PreparedCommit } from "../hooks/commit";
 import { LifecycleHooks } from "../hooks/LifecycleHooks";
-import { HookDenied, LifecycleEventId, lifecycleEvent, lifecycleSnapshot } from "../hooks/models";
+import {
+  HookDenied,
+  LifecycleEventId,
+  lifecycleEventEffect,
+  lifecycleSnapshotEffect,
+} from "../hooks/models";
 import { LoginIdentifier } from "../identity/models";
 import type { AuthOperationResult } from "../operations/credentials";
 import { makeOperation, operationGroup } from "../operations/operation";
@@ -244,12 +249,12 @@ export const makeEmailRegistration = <
             })
             .pipe(Effect.mapError(emailCompletionFailure));
 
-          const snapshot = lifecycleSnapshot({
+          const snapshot = yield* lifecycleSnapshotEffect({
             action: "registration",
             operation: `${moduleId}/email-registration`,
             method: "email-code",
             identifiers: [current.identifier],
-          });
+          }).pipe(Effect.orDie);
 
           yield* hooks.before(snapshot);
 
@@ -257,11 +262,11 @@ export const makeEmailRegistration = <
             .randomBytes(32)
             .pipe(Effect.mapError(() => EmailUnavailable.make({})));
 
-          const event = lifecycleEvent({
+          const event = yield* lifecycleEventEffect({
             id: LifecycleEventId.make(Base64Url.encode(bytes)),
             occurredAtMillis: DateTime.toEpochMillis(yield* DateTime.now),
             snapshot,
-          });
+          }).pipe(Effect.orDie);
 
           const commandId = input.commandId;
 

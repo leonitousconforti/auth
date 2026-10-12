@@ -1,5 +1,5 @@
 import { reportAuthDiagnostic } from "@yielded/auth/Persistence";
-import { Effect } from "effect";
+import { Effect, Result } from "effect";
 import { SqlClient } from "effect/sql";
 
 import { PersistenceMappingError } from "./mapping-error";
@@ -7,22 +7,27 @@ import { Table } from "./sql-table";
 import { storageKeyPlans } from "./storage-plans";
 import { validateStorageBatch, type StorageValidation } from "./storage-validation";
 
+const invalidMapping = () =>
+  PersistenceMappingError.make({ operation: "mapping", cause: "Invalid storage key mapping" });
+
 /** Check declared mappings against physical keys before executing OAuth operations. */
 export const validateSqlStorage = Effect.fnUntraced(
   function* (mapping: unknown) {
     const plans = yield* Effect.try({
       try: () =>
         storageKeyPlans(mapping, (table) => {
-          if (!(table instanceof Table)) throw new Error("Expected a SQL table");
+          if (!(table instanceof Table))
+            return Result.fail(
+              PersistenceMappingError.make({
+                operation: "mapping",
+                cause: "Expected a SQL table",
+              }),
+            );
 
-          return table.columns;
+          return Result.succeed(table.columns);
         }),
-      catch: () =>
-        PersistenceMappingError.make({
-          operation: "mapping",
-          cause: "Invalid storage key mapping",
-        }),
-    });
+      catch: invalidMapping,
+    }).pipe(Effect.flatMap(Effect.fromResult), Effect.mapError(invalidMapping));
 
     const client = yield* SqlClient.SqlClient;
 

@@ -36,9 +36,7 @@ import {
 
 const unavailable = () => P.PhoneOtpUnavailable.make({});
 
-const ensure: (condition: unknown) => asserts condition = (condition) => {
-  if (!condition) throw unavailable();
-};
+const invalidState = () => unavailable();
 
 const resolve = <A>(
   value: A | Effect.Effect<A, PersistenceMappingError>,
@@ -106,8 +104,9 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
           .pipe(Effect.provideService(SqlBatchCommit, batch));
 
   const stage = Effect.fnUntraced(function* (statement: Fragment) {
-    if (batch === undefined) ensure((yield* executeSqlChange(sql, statement)) === 1);
-    else {
+    if (batch === undefined) {
+      if (!((yield* executeSqlChange(sql, statement)) === 1)) return yield* invalidState();
+    } else {
       yield* appendSqlBatchStatement(sql`${statement}`);
       yield* appendSqlBatchStatement(sqlBatchAssertion(sql, sql`changes() = 1`));
     }
@@ -128,7 +127,7 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
   const capture = Effect.fnUntraced(function* (
     input: Parameters<P.PhonePersistence["Service"]["target"]>[0],
   ) {
-    ensure(input.moduleId === mapping.moduleId);
+    if (!(input.moduleId === mapping.moduleId)) return yield* invalidState();
 
     const numbers =
       input.sourcePhoneNumber === undefined || input.sourcePhoneNumber === input.phoneNumber
@@ -138,18 +137,19 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
     const rows =
       yield* sql`select ${identifier.fields("phone_identifier_")}, case when ${activeIdentifier} then 1 else 0 end as identifier_active from ${identifier.name} where ${sql.or(numbers.map(numberKey))} limit 3`;
 
-    ensure(rows.length <= numbers.length);
+    if (!(rows.length <= numbers.length)) return yield* invalidState();
 
     const identifiers = rows.map((row) => ({
       row: identifier.decode(row, "phone_identifier_"),
       active: Number(row.identifier_active) === 1,
     }));
 
-    ensure(
-      identifiers.every(
+    if (
+      !identifiers.every(
         ({ row }) => row[i.namespace] === "phone" && numbers.includes(String(row[i.value])),
-      ),
-    );
+      )
+    )
+      return yield* invalidState();
     const destination = identifiers.find(({ row }) => row[i.value] === input.phoneNumber);
     const source = identifiers.find(({ row }) => row[i.value] === input.sourcePhoneNumber);
 
@@ -171,27 +171,30 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
     } else {
       const native = yield* resolve(mapping.subjectIds.toNative(subjectId));
 
-      ensure((yield* resolve(mapping.subjectIds.toSubject(native))) === subjectId);
+      if (!((yield* resolve(mapping.subjectIds.toSubject(native))) === subjectId))
+        return yield* invalidState();
 
       const joined =
         yield* sql`select ${subject.fields("phone_subject_")}, ${credential.fields("phone_factor_")}, case when ${activeSubject} then 1 else 0 end as subject_active, case when ${activeCredential} then 1 else 0 end as credential_active, ${now} as engine_now from ${subject.name} left join ${credential.name} on ${id(credential, c.subjectId, native)} and (${activeCredential} ${identifiers.length === 0 ? sql`` : sql`or ${sql.or(identifiers.map((value) => exact(credential, c.id, value.row[i.credentialId])))}`}) where ${id(subject, s.id, native)} limit 67`;
 
-      ensure(joined.length <= 66);
+      if (!(joined.length <= 66)) return yield* invalidState();
       const first = joined[0];
 
       instant = Number(first?.engine_now);
       if (first !== undefined) {
         subjectRow = subject.decode(first, "phone_subject_");
-        ensure((yield* resolve(mapping.subjectIds.toSubject(subjectRow[s.id]))) === subjectId);
+        if (!((yield* resolve(mapping.subjectIds.toSubject(subjectRow[s.id]))) === subjectId))
+          return yield* invalidState();
         for (const joinedRow of joined) {
           const row = credential.decode(joinedRow, "phone_factor_");
 
           if (row[c.id] === null || row[c.id] === undefined) continue;
-          ensure((yield* resolve(mapping.subjectIds.toSubject(row[c.subjectId]))) === subjectId);
-          ensure(!factors.some((f) => f.row[c.id] === row[c.id]));
+          if (!((yield* resolve(mapping.subjectIds.toSubject(row[c.subjectId]))) === subjectId))
+            return yield* invalidState();
+          if (!!factors.some((f) => f.row[c.id] === row[c.id])) return yield* invalidState();
           factors.push({ row, active: Number(joinedRow.credential_active) === 1 });
         }
-        ensure(factors.filter((f) => f.active).length <= 64);
+        if (!(factors.filter((f) => f.active).length <= 64)) return yield* invalidState();
         if (Number(first.subject_active) === 1)
           revision = yield* Schema.decodeUnknownEffect(AuthenticationRevision)({
             subjectId,
@@ -203,7 +206,7 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
           });
       }
     }
-    ensure(Number.isSafeInteger(instant));
+    if (!Number.isSafeInteger(instant)) return yield* invalidState();
 
     const custody = Effect.fnUntraced(function* (value: typeof destination) {
       if (value === undefined || value.row[i.moduleId] !== mapping.moduleId) return null;
@@ -322,7 +325,7 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
 
           const rejected = () => prepare({ _tag: "Rejected" }, project);
 
-          ensure(input.moduleId === mapping.moduleId);
+          if (!(input.moduleId === mapping.moduleId)) return yield* invalidState();
           if (
             input.action === "register" &&
             (mapping.subjectIds.allocate === undefined || s.encodeInsert === undefined)
@@ -471,7 +474,8 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
 
           const native = yield* resolve(mapping.subjectIds.toNative(subjectId));
 
-          ensure((yield* resolve(mapping.subjectIds.toSubject(native))) === subjectId);
+          if (!((yield* resolve(mapping.subjectIds.toSubject(native))) === subjectId))
+            return yield* invalidState();
 
           const securityRevision = SecurityRevision.make(yield* randomId),
             credentialRevision = SecurityRevision.make(yield* randomId),
@@ -513,7 +517,7 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
             // read; fixed batches require complete encoder values.
             subjectRow = inserted;
           }
-          ensure(subjectRow !== undefined);
+          if (!(subjectRow !== undefined)) return yield* invalidState();
           const finalConditions: Fragment[] = [...freshness];
 
           if (target.source !== null) {
@@ -598,7 +602,7 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
           const resultingState = sql.and(finalConditions);
 
           if (input.action !== "register") {
-            ensure(target.revision !== null);
+            if (!(target.revision !== null)) return yield* invalidState();
             yield* stage(
               sql`${subject.update({ [s.securityRevision]: securityRevision })} where ${id(subject, s.id, native)} and ${exact(subject, s.securityRevision, target.revision.securityRevision)} and ${activeSubject} and ${resultingState}`,
             );
@@ -611,7 +615,7 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
             const rows =
               yield* sql`select ${subject.fields("provisioned_")} from ${subject.name} where ${id(subject, s.id, native)} and ${exact(subject, s.securityRevision, securityRevision)} and ${activeSubject} and ${resultingState} limit 2`;
 
-            ensure(rows.length === 1);
+            if (!(rows.length === 1)) return yield* invalidState();
             subjectRow = subject.decode(rows[0]!, "provisioned_");
           }
           const final = sql.and(finalConditions);
@@ -627,7 +631,7 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
               check: Effect.gen(function* () {
                 const rows = yield* sql`select 1 as valid where ${final}`;
 
-                ensure(rows.length === 1);
+                if (!(rows.length === 1)) return yield* invalidState();
               }).pipe(
                 Effect.mapError((cause) =>
                   PersistenceMappingError.make({ operation: "decode", cause }),

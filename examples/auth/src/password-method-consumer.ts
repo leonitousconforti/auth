@@ -168,7 +168,9 @@ export const makePasswordConsumer = Effect.gen(function* () {
       : { identifierVerifiedAtMillis: row.password.identifierVerifiedAtMillis }),
   });
 
-  const own = <A>(body: (next: State, journal: Hooks.CommitJournal, now: number) => A) =>
+  const own = <A, E>(
+    body: (s: State, journal: Hooks.CommitJournal, now: number) => Effect.fn.Return<A, E>,
+  ) =>
     Effect.gen(function* () {
       if (yield* Hooks.hasCommitScope) return yield* Password.PasswordUnavailable.make({});
 
@@ -176,17 +178,18 @@ export const makePasswordConsumer = Effect.gen(function* () {
         Effect.gen(function* () {
           const now = DateTime.toEpochMillis(yield* DateTime.now);
 
-          return yield* Effect.try({
-            try: () => {
-              const next = clone(state);
-              const value = body(next, journal, now);
-
-              state = next;
-
-              return value;
-            },
+          const next = yield* Effect.try({
+            try: () => clone(state),
             catch: () => Password.PasswordUnavailable.make({}),
           });
+
+          const value = yield* Effect.gen(() => body(next, journal, now)).pipe(
+            Effect.catchDefect(() => Effect.fail(Password.PasswordUnavailable.make({}))),
+          );
+
+          state = next;
+
+          return value;
         }),
       ).pipe(
         Effect.map((result) => result.value),
@@ -219,13 +222,13 @@ export const makePasswordConsumer = Effect.gen(function* () {
     );
   };
 
-  const replace = (s: State, input: Password.PasswordMutationInput) => {
+  const replace = Effect.fnUntraced(function* (s: State, input: Password.PasswordMutationInput) {
     const row = find(s, input.expectedRevision.subjectId);
 
-    if (!row) throw Password.PasswordUnavailable.make({});
+    if (!row) return yield* Password.PasswordUnavailable.make({});
     row.security = String(Number(row.security) + 1);
     row.password = snapshot(row, input.replacement);
-  };
+  });
 
   const store = Password.PasswordPersistence.of({
     findCredential: (input) =>
@@ -246,7 +249,7 @@ export const makePasswordConsumer = Effect.gen(function* () {
           : Option.some(yield* Password.snapshotPasswordCredential(candidate));
       }),
     rehashIfCurrent: (input) =>
-      own((s, journal) => {
+      own(function* (s, journal) {
         const row = find(s, input.credential.revision.subjectId);
 
         if (
@@ -275,18 +278,18 @@ export const makePasswordConsumer = Effect.gen(function* () {
         );
       }),
     addIfAbsent: (input, prepare) =>
-      own((s, journal, now) => {
+      own(function* (s, journal, now) {
         const valid =
           !find(s, input.expectedRevision.subjectId)?.password && mutationAllowed(s, input, now);
 
         const result = prepare(valid ? "changed" : "rejected", journal);
 
-        if (valid) replace(s, input);
+        if (valid) yield* replace(s, input);
 
         return result;
       }),
     replaceIfCurrent: (input, prepare) =>
-      own((s, journal, now) => {
+      own(function* (s, journal, now) {
         const valid =
           input.credential !== undefined &&
           find(s, input.expectedRevision.subjectId)?.password?.credentialRevision ===
@@ -295,12 +298,12 @@ export const makePasswordConsumer = Effect.gen(function* () {
 
         const result = prepare(valid ? "changed" : "rejected", journal);
 
-        if (valid) replace(s, input);
+        if (valid) yield* replace(s, input);
 
         return result;
       }),
     resetWithProof: (input, prepare) =>
-      own((s, journal, now) => {
+      own(function* (s, journal, now) {
         const valid =
           mutationAllowed(s, input, now) &&
           input.redemption.input.binding._tag !== "Identifier" &&
@@ -312,7 +315,7 @@ export const makePasswordConsumer = Effect.gen(function* () {
         const result = prepare(valid ? "changed" : "rejected", journal);
 
         if (valid) {
-          replace(s, input);
+          yield* replace(s, input);
         }
 
         return result;
@@ -321,23 +324,23 @@ export const makePasswordConsumer = Effect.gen(function* () {
 
   const proofStore = Proofs.ProofPersistence.of({
     issue: (input, prepare) =>
-      own((s, journal, now) => prepare(issueProof(s.proofs, input, now), journal)).pipe(
-        Effect.mapError(() => Proofs.ProofUnavailable.make({})),
-      ),
+      own(function* (s, journal, now) {
+        return prepare(issueProof(s.proofs, input, now), journal);
+      }).pipe(Effect.mapError(() => Proofs.ProofUnavailable.make({}))),
     redeem: (input, prepare) =>
-      own((s, journal, now) => prepare(redeemProof(s.proofs, input, now), journal)).pipe(
-        Effect.mapError(() => Proofs.ProofUnavailable.make({})),
-      ),
+      own(function* (s, journal, now) {
+        return prepare(redeemProof(s.proofs, input, now), journal);
+      }).pipe(Effect.mapError(() => Proofs.ProofUnavailable.make({}))),
     cancel: (input, prepare) =>
-      own((s, journal) => {
+      own(function* (s, journal) {
         cancelProof(s.proofs, input);
 
         return prepare(undefined, journal);
       }).pipe(Effect.mapError(() => Proofs.ProofUnavailable.make({}))),
     cleanup: (input, prepare) =>
-      own((s, journal, now) => prepare(cleanupProofs(s.proofs, input, now), journal)).pipe(
-        Effect.mapError(() => Proofs.ProofUnavailable.make({})),
-      ),
+      own(function* (s, journal, now) {
+        return prepare(cleanupProofs(s.proofs, input, now), journal);
+      }).pipe(Effect.mapError(() => Proofs.ProofUnavailable.make({}))),
   });
 
   const checkEvidence = (evidence: Sessions.AuthenticationEvidence) =>
@@ -409,12 +412,12 @@ export const makePasswordConsumer = Effect.gen(function* () {
           assessed.satisfied ? Effect.void : Effect.fail(Sessions.StaleAuthentication.make({})),
         ),
         Effect.flatMap(() =>
-          own((s, journal, now) => {
+          own(function* (s, journal, now) {
             if (
               !current(s, input.evidence.revision) ||
               now >= DateTime.toEpochMillis(input.expiresAt)
             )
-              throw Sessions.StaleAuthentication.make({});
+              return yield* Sessions.StaleAuthentication.make({});
 
             return prepare(undefined, journal);
           }),
@@ -479,7 +482,7 @@ export const makePasswordConsumer = Effect.gen(function* () {
 
   const registration = passwords.RegistrationAuthority.of({
     register: (input, prepare) =>
-      own((s, journal) => {
+      own(function* (s, journal) {
         if (s.subjects.has(input.identifier.value)) return prepare({ _tag: "Suppressed" }, journal);
 
         const row: Subject = {
@@ -518,18 +521,18 @@ export const makePasswordConsumer = Effect.gen(function* () {
       }),
     ),
     verifyEmailFixture: (email: string) =>
-      Effect.sync(() => {
+      Effect.gen(function* () {
         const row = state.subjects.get(email);
 
-        if (!row?.password) throw new Error("fixture subject missing");
+        if (!row?.password) return yield* Password.PasswordUnavailable.make({});
         row.security = String(Number(row.security) + 1);
         row.password = { ...snapshot(row, row.password), identifierVerifiedAtMillis: 1 };
       }),
     requireMfaFixture: (email: string) =>
-      Effect.sync(() => {
+      Effect.gen(function* () {
         const row = state.subjects.get(email);
 
-        if (!row) throw new Error("fixture subject missing");
+        if (!row) return yield* Password.PasswordUnavailable.make({});
         row.mfa = true;
         row.security = String(Number(row.security) + 1);
         if (row.password) row.password = snapshot(row, row.password);

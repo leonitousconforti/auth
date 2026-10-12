@@ -51,25 +51,22 @@ export const capturePasskeyMapping = <M, R>(
   Effect.flatMap(Effect.isEffect(source) ? source : Effect.succeed(source), (mapping) =>
     validateDrizzleStorage(mapping).pipe(
       Effect.andThen(
-        Effect.try({
-          try: () => {
-            if (
-              configuration.mode === "batch" &&
-              !(
-                typeof mapping === "object" &&
-                mapping !== null &&
-                "d1" in mapping &&
-                typeof mapping.d1 === "object" &&
-                mapping.d1 !== null &&
-                "primary" in mapping.d1 &&
-                mapping.d1.primary === true
-              )
+        Effect.gen(function* () {
+          if (
+            configuration.mode === "batch" &&
+            !(
+              typeof mapping === "object" &&
+              mapping !== null &&
+              "d1" in mapping &&
+              typeof mapping.d1 === "object" &&
+              mapping.d1 !== null &&
+              "primary" in mapping.d1 &&
+              mapping.d1.primary === true
             )
-              throw PasskeyConfigurationError.make({});
+          )
+            return yield* PasskeyConfigurationError.make({});
 
-            return mapping;
-          },
-          catch: () => PasskeyConfigurationError.make({}),
+          return mapping;
         }),
       ),
     ),

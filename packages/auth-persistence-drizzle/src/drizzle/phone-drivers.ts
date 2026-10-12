@@ -110,7 +110,10 @@ export const makePhoneTarget = <DatabaseId, D extends NativeDriverDatabase>(
         database,
         options.mapping as unknown as AnyPhoneMapping,
         configuration,
-        (transaction: NativeDriverTransaction<Database>, services) => {
+        (
+          transaction: NativeDriverTransaction<Database>,
+          services,
+        ): Effect.Effect<A, E, Exclude<Exclude<R, PhonePersistence>, PhoneSignInTargets>> => {
           const work = body.pipe(
             Effect.provideService(PhonePersistence, services.phonePersistence),
             Effect.provideService(PhoneSignInTargets, services.phoneSignInTargets),

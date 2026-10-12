@@ -12,9 +12,7 @@ import {
 } from "@yielded/auth/Passkey";
 import { Crypto, DateTime, Effect, Schema } from "effect";
 
-const invariant: (value: unknown) => asserts value = (value) => {
-  if (!value) throw PasskeyUnavailable.make({});
-};
+const invalidState = () => PasskeyUnavailable.make({});
 
 const encoder = new TextEncoder();
 
@@ -25,13 +23,15 @@ export const passkeyKey = Effect.fnUntraced(function* (
   kind: string,
   fields: ReadonlyArray<string>,
 ) {
-  const values = ["effect-auth/passkey/" + kind + "/v1", ...fields].map((field) => {
+  const values: Uint8Array[] = [];
+
+  for (const field of ["effect-auth/passkey/" + kind + "/v1", ...fields]) {
     const bytes = encoder.encode(field);
 
-    invariant(decoder.decode(bytes) === field);
+    if (!(decoder.decode(bytes) === field)) return yield* invalidState();
 
-    return bytes;
-  });
+    values.push(bytes);
+  }
 
   const packed = new Uint8Array(values.reduce((size, bytes) => size + 4 + bytes.length, 0));
   const view = new DataView(packed.buffer);
@@ -59,32 +59,37 @@ export const passkeyStorage = <S extends Schema.Codec<unknown, unknown, never, n
 ) => {
   const codec = Schema.fromJsonString(Schema.toCodecJson(Schema.toType(schema)));
 
-  const encode = (value: S["Type"]) => {
-    const text = "v1:" + Schema.encodeSync(codec)(snapshotPasskeySync(schema, value));
+  const encode = Effect.fnUntraced(function* (value: S["Type"]) {
+    const text = "v1:" + (yield* Schema.encodeEffect(codec)(snapshotPasskeySync(schema, value)));
 
-    invariant(encoder.encode(text).length <= maximumBytes);
+    if (!(encoder.encode(text).length <= maximumBytes)) return yield* invalidState();
 
     return text;
-  };
+  });
 
   return {
     encode,
-    decode: (text: unknown): S["Type"] => {
-      invariant(typeof text === "string" && text.startsWith("v1:"));
-      invariant(encoder.encode(text).length <= maximumBytes);
-      const value = snapshotPasskeySync(schema, Schema.decodeSync(codec)(text.slice(3)));
+    decode: Effect.fnUntraced(function* (
+      text: unknown,
+    ): Effect.fn.Return<S["Type"], PasskeyUnavailable | Schema.SchemaError> {
+      if (!(typeof text === "string" && text.startsWith("v1:"))) return yield* invalidState();
+      if (!(encoder.encode(text).length <= maximumBytes)) return yield* invalidState();
+      const value = snapshotPasskeySync(schema, yield* Schema.decodeEffect(codec)(text.slice(3)));
 
-      invariant(encode(value) === text);
+      if (!((yield* encode(value)) === text)) return yield* invalidState();
 
       return value;
-    },
+    }),
   };
 };
 
 // Legal 32 x 16 x 2048 origins require more than one MiB before JSON escaping.
 export const passkeyCredentialStorage = passkeyStorage(PasskeyCredential, 512 * 1024);
 
-export const samePasskeyCredential = (left: PasskeyCredential, right: PasskeyCredential) => {
+export const samePasskeyCredential = Effect.fnUntraced(function* (
+  left: PasskeyCredential,
+  right: PasskeyCredential,
+) {
   const semantic = (value: PasskeyCredential) => ({
     ...value,
     counter: 0,
@@ -93,10 +98,10 @@ export const samePasskeyCredential = (left: PasskeyCredential, right: PasskeyCre
   });
 
   return (
-    passkeyCredentialStorage.encode(semantic(left)) ===
-    passkeyCredentialStorage.encode(semantic(right))
+    (yield* passkeyCredentialStorage.encode(semantic(left))) ===
+    (yield* passkeyCredentialStorage.encode(semantic(right)))
   );
-};
+});
 
 export const samePasskeyRevision = (
   left: typeof PasskeyRevision.Type,

@@ -19,7 +19,7 @@ import { hooksLayer } from "../auth/defaults";
 import { type PreparedCommit, hasCommitScope } from "../hooks/commit";
 import { LifecycleHooks } from "../hooks/LifecycleHooks";
 import type { HookDenied } from "../hooks/models";
-import { LifecycleEventId, lifecycleEvent, lifecycleSnapshot } from "../hooks/models";
+import { LifecycleEventId, lifecycleEventEffect, lifecycleSnapshotEffect } from "../hooks/models";
 import {
   reportAuthDiagnostic,
   reportAuthFailure,
@@ -310,23 +310,23 @@ export const makeSessionModule = <
     const hooks = yield* LifecycleHooks;
     const secrets = yield* makeSessionSecrets(moduleId);
 
-    const snapshot = lifecycleSnapshot({
+    const snapshot = yield* lifecycleSnapshotEffect({
       action,
       operation: `${moduleId}/session`,
       ...(session === undefined
         ? {}
         : { subjectId: session.subjectId, method: session.assurance.method }),
       identifiers: [],
-    });
+    }).pipe(Effect.orDie);
 
     yield* hooks.before(snapshot);
     const id = yield* secrets.generate();
 
-    return lifecycleEvent({
+    return yield* lifecycleEventEffect({
       id: LifecycleEventId.make(Redacted.value(id)),
       occurredAtMillis: DateTime.toEpochMillis(yield* DateTime.now),
       snapshot,
-    });
+    }).pipe(Effect.orDie);
   });
 
   // Detach mutable date/collection declarations as well as projecting declared fields.

@@ -1,6 +1,7 @@
-import { Context, Effect, Redacted, Schema } from "effect";
+import { Context, Effect, Redacted, Result, Schema } from "effect";
 
 import type { AuthInvocation } from "./context";
+import { OperationOutputError } from "./errors";
 import type { AuthRevealCommand, AuthRevealCommandCollector } from "./reveals";
 
 export type CredentialSlot =
@@ -72,7 +73,7 @@ const slot = Schema.Literals([
   "session-step-up",
 ]);
 
-const decodeCommand = Schema.decodeSync(
+const decodeCommand = Schema.decodeResult(
   Schema.Union([
     Schema.Struct({
       _tag: Schema.Literal("Issue"),
@@ -85,55 +86,58 @@ const decodeCommand = Schema.decodeSync(
   ]),
 );
 
-/** Package-private synchronous capture shared with the reveal operation boundary. */
-export const snapshotCredentialCommands = (
-  commands: ReadonlyArray<AuthCredentialCommand>,
-): ReadonlyArray<AuthCredentialCommand> => {
-  try {
-    if (!Array.isArray(commands)) throw new globalThis.Error();
-    const length = commands.length;
+/** Capture the entire private array synchronously before projecting public success. */
+export const snapshotCredentialCommands = (commands: ReadonlyArray<AuthCredentialCommand>) =>
+  Result.try({
+    try: () =>
+      Result.gen(function* () {
+        if (!Array.isArray(commands)) return yield* Result.fail(OperationOutputError.make({}));
+        const length = commands.length;
 
-    if (!Number.isInteger(length) || length < 0 || length > 9) throw new globalThis.Error();
-    const slots = new Set<CredentialSlot>();
-    const captured: AuthCredentialCommand[] = [];
+        if (!Number.isInteger(length) || length < 0 || length > 9)
+          return yield* Result.fail(OperationOutputError.make({}));
+        const slots = new Set<CredentialSlot>();
+        const captured: AuthCredentialCommand[] = [];
 
-    for (let index = 0; index < length; index++) {
-      const input = commands[index];
-      const tag = input._tag;
-      const slot = input.slot;
+        for (let index = 0; index < length; index++) {
+          const input = commands[index];
+          const tag = input._tag;
+          const slot = input.slot;
 
-      const value =
-        tag === "Issue"
-          ? {
-              _tag: tag,
-              slot,
-              credential: Redacted.make(Redacted.value(input.credential)),
-              expiresAtMillis: input.expiresAtMillis,
-              ...(input.sameSite === undefined ? {} : { sameSite: input.sameSite }),
-            }
-          : { _tag: tag, slot };
+          const value =
+            tag === "Issue"
+              ? {
+                  _tag: tag,
+                  slot,
+                  credential: Redacted.make(Redacted.value(input.credential)),
+                  expiresAtMillis: input.expiresAtMillis,
+                  ...(input.sameSite === undefined ? {} : { sameSite: input.sameSite }),
+                }
+              : { _tag: tag, slot };
 
-      const command = decodeCommand(value);
+          const command = yield* decodeCommand(value);
 
-      if (
-        command._tag === "Issue" &&
-        command.sameSite === "none" &&
-        command.slot !== "request-binding"
-      )
-        throw new globalThis.Error();
+          if (
+            command._tag === "Issue" &&
+            command.sameSite === "none" &&
+            command.slot !== "request-binding"
+          )
+            return yield* Result.fail(OperationOutputError.make({}));
 
-      if (slots.has(command.slot)) {
-        throw new globalThis.Error();
-      }
-      slots.add(command.slot);
-      captured.push(Object.freeze(command));
-    }
+          if (slots.has(command.slot)) {
+            return yield* Result.fail(OperationOutputError.make({}));
+          }
+          slots.add(command.slot);
+          captured.push(Object.freeze(command));
+        }
 
-    return Object.freeze(captured);
-  } catch {
-    throw new globalThis.Error("Invalid auth credential commands");
-  }
-};
+        return Object.freeze(captured);
+      }),
+    catch: () => OperationOutputError.make({}),
+  }).pipe(
+    Result.flatMap((result) => result),
+    Result.mapError(() => OperationOutputError.make({})),
+  );
 
 export const validateCredentialCommands = (commands: ReadonlyArray<AuthCredentialCommand>) =>
-  Effect.sync(() => snapshotCredentialCommands(commands));
+  Effect.suspend(() => Effect.fromResult(snapshotCredentialCommands(commands))).pipe(Effect.orDie);

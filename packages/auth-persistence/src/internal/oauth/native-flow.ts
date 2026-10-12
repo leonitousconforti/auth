@@ -9,6 +9,7 @@ import { SqlClient } from "effect/sql";
 import { SqlError } from "effect/sql/SqlError";
 
 import { sqlBatchAssertion } from "../d1-planning";
+import { PersistenceMappingError } from "../mapping-error";
 import type { SubjectIdCodec } from "../models/common";
 import type { OAuthClock, OAuthFlowTable } from "../models/oauth-model";
 import type { NativeSqlTables } from "../native-sql-table";
@@ -21,7 +22,7 @@ import {
   registerSqlPostcondition,
 } from "../sql-commit";
 import type { SqlExpression, TableModel } from "../table-model";
-import { invariant, storage } from "./state";
+import { invalidState, storage } from "./state";
 
 type FlowContext = Omit<OAuthSignInTransactionContext, "namespace" | "returnTarget" | "access">;
 
@@ -149,7 +150,7 @@ export const makeOAuthNativeFlow = Effect.fnUntraced(function* <Flow extends OAu
         : yield* sql`${statement} returning ${now} as engine_now`;
 
       if (rows.length === 0) return false;
-      invariant(rows.length === 1);
+      if (!(rows.length === 1)) return yield* invalidState();
       const engineNow = yield* Schema.decodeEffect(Schema.Int)(Number(rows[0]!.engine_now));
 
       return context.issuedAtMillis <= engineNow && context.expiresAtMillis > engineNow;
@@ -176,16 +177,17 @@ export const makeOAuthNativeFlow = Effect.fnUntraced(function* <Flow extends OAu
         : yield* sql`${deletion} returning ${flow.fields("oauth_flow_")}`;
 
     if (rows.length === 0) return undefined;
-    invariant(rows.length === 1);
+    if (!(rows.length === 1)) return yield* invalidState();
     const row = flow.decode(rows[0]!, "oauth_flow_");
     const encoded = row[f.snapshot];
 
-    invariant(typeof encoded === "string");
+    if (!(typeof encoded === "string")) return yield* invalidState();
     const value = persisted.decode(encoded);
     const context = value.context;
 
-    invariant(
-      context.moduleId === input.moduleId &&
+    if (
+      !(
+        context.moduleId === input.moduleId &&
         context.flowId === input.flowId &&
         context.generation === input.generation &&
         context.provider === input.provider &&
@@ -198,10 +200,14 @@ export const makeOAuthNativeFlow = Effect.fnUntraced(function* <Flow extends OAu
         subjectId(value) === input.subjectId &&
         (input.responseIssuer === undefined
           ? context.responseIssuerMode === "unsupported"
-          : context.responseIssuerMode === "required" && context.issuer === input.responseIssuer),
-    );
+          : context.responseIssuerMode === "required" && context.issuer === input.responseIssuer)
+      )
+    )
+      return yield* invalidState();
 
-    if (mysql) invariant((yield* executeSqlChange(sql, deletion)) === 1);
+    if (mysql) {
+      if (!((yield* executeSqlChange(sql, deletion)) === 1)) return yield* invalidState();
+    }
 
     if (batch) {
       // Planning reads convey no authority. The same access and exact immutable
@@ -219,7 +225,11 @@ export const makeOAuthNativeFlow = Effect.fnUntraced(function* <Flow extends OAu
           const restored = yield* sql`select 1 from ${flow.name}
             where ${exact(f.moduleId, input.moduleId)} and ${exact(f.flowId, input.flowId)} limit 1`;
 
-          invariant(restored.length === 0);
+          if (!(restored.length === 0))
+            return yield* PersistenceMappingError.make({
+              operation: "postcondition",
+              cause: invalidState(),
+            });
         }),
       });
     }
@@ -251,11 +261,11 @@ export const makeOAuthNativeFlow = Effect.fnUntraced(function* <Flow extends OAu
       : yield* sql`select ${flow.fields("oauth_flow_")} from ${flow.name} where ${predicate}`;
 
     if (rows.length === 0) return undefined;
-    invariant(rows.length === 1);
+    if (!(rows.length === 1)) return yield* invalidState();
     const row = flow.decode(rows[0]!, "oauth_flow_");
     const encoded = row[f.snapshot];
 
-    invariant(typeof encoded === "string");
+    if (!(typeof encoded === "string")) return yield* invalidState();
     const value = persisted.decode(encoded);
     const owner = subjectId(value);
 

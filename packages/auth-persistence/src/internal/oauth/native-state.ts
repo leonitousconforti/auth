@@ -16,7 +16,7 @@ import type { NativeSqlTables } from "../native-sql-table";
 import { exactSqlText } from "../sql-change";
 import { canJoinTextColumns, withStorageValidation } from "../storage-validation";
 import type { SqlExpression, TableModel } from "../table-model";
-import { invariant, oauthIdentityKey, unavailable } from "./state";
+import { invalidState, oauthIdentityKey, unavailable } from "./state";
 
 // Expression handles are checked by the physical compiler, not domain codecs.
 export type OAuthNativeReadMapping = OAuthSignInMapping<
@@ -71,23 +71,27 @@ export const makeOAuthNativeAuthority = Effect.fnUntraced(function* (
     factors: ReadonlyArray<Row>,
     nativeId: unknown,
   ) {
-    invariant(mapping.subject.isActiveStatus(subjectRow[mapping.subject.status]));
-    invariant(mapping.subjectId.equals(subjectRow[mapping.subject.id], nativeId));
-    invariant(factors.length > 0 && factors.length <= 64);
-    invariant(
-      factors.every(
+    if (!mapping.subject.isActiveStatus(subjectRow[mapping.subject.status]))
+      return yield* invalidState();
+    if (!mapping.subjectId.equals(subjectRow[mapping.subject.id], nativeId))
+      return yield* invalidState();
+    if (!(factors.length > 0 && factors.length <= 64)) return yield* invalidState();
+    if (
+      !factors.every(
         (row) =>
           mapping.subjectId.equals(row[mapping.authority.subjectId], nativeId) &&
           mapping.authority.isActiveStatus(row[mapping.authority.status]),
-      ),
-    );
+      )
+    )
+      return yield* invalidState();
 
     const credentials = factors.map((row) => ({
       credentialId: row[mapping.authority.credentialId],
       revision: row[mapping.authority.revision],
     }));
 
-    invariant(new Set(credentials.map((item) => item.credentialId)).size === credentials.length);
+    if (!(new Set(credentials.map((item) => item.credentialId)).size === credentials.length))
+      return yield* invalidState();
 
     const value = yield* Schema.decodeUnknownEffect(Schema.toType(OAuthAccountRevision))({
       subjectId: yield* mapping.subjectId.toSubject(nativeId),
@@ -109,11 +113,11 @@ export const makeOAuthNativeAuthority = Effect.fnUntraced(function* (
     const rows =
       yield* sql`select ${subject.fields("s_")}, ${now} as engine_now from ${subject.name} where ${subject.column(mapping.subject.id)} = ${subject.value(mapping.subject.id, nativeId)} and ${tables.expression(mapping.subject.activeCondition)} limit 2 ${locking ? lock : sql``}`;
 
-    invariant(rows.length <= 1);
+    if (!(rows.length <= 1)) return yield* invalidState();
     if (rows[0] === undefined) return undefined;
     const row = subject.decode(rows[0], "s_");
 
-    invariant(mapping.subjectId.equals(row[mapping.subject.id], nativeId));
+    if (!mapping.subjectId.equals(row[mapping.subject.id], nativeId)) return yield* invalidState();
 
     return {
       nativeId,
@@ -136,7 +140,7 @@ export const makeOAuthNativeAuthority = Effect.fnUntraced(function* (
           and ${tables.expression(mapping.subject.activeCondition)} ${lock}`;
 
       if (subjects.length === 0) return undefined;
-      invariant(subjects.length === 1);
+      if (!(subjects.length === 1)) return yield* invalidState();
       const subjectRow = subject.decode(subjects[0]!, "s_");
 
       const factors = yield* sql`select ${authority.fields("a_")} from ${authority.name}
@@ -243,15 +247,19 @@ export const makeOAuthNativeState = Effect.fnUntraced(function* (
 
     const identityKey = yield* oauthIdentityKey(identity);
 
-    invariant(owned[mapping.ownership.identityKey] === identityKey);
+    if (!(owned[mapping.ownership.identityKey] === identityKey)) return yield* invalidState();
     const ownerId = mapping.ownership.decodeSubjectId(owned);
 
-    if (nativeId !== undefined) invariant(mapping.subjectId.equals(ownerId, nativeId));
+    if (nativeId !== undefined) {
+      if (!mapping.subjectId.equals(ownerId, nativeId)) return yield* invalidState();
+    }
     const login = c.decode(first, "c_");
 
-    invariant(mapping.subjectId.equals(login[mapping.credential.subjectId], ownerId));
-    invariant(login[mapping.credential.identityKey] === identityKey);
-    invariant(mapping.credential.isActiveStatus(login[mapping.credential.status]));
+    if (!mapping.subjectId.equals(login[mapping.credential.subjectId], ownerId))
+      return yield* invalidState();
+    if (!(login[mapping.credential.identityKey] === identityKey)) return yield* invalidState();
+    if (!mapping.credential.isActiveStatus(login[mapping.credential.status]))
+      return yield* invalidState();
 
     const current = yield* revision(
       s.decode(first, "s_"),
@@ -291,14 +299,17 @@ export const makeOAuthNativeState = Effect.fnUntraced(function* (
         where ${exact(ownership.column(mapping.ownership.identityKey), ownership.value(mapping.ownership.identityKey, identityKey))}`;
 
       if (found.length === 0) return undefined;
-      invariant(found.length === 1);
+      if (!(found.length === 1)) return yield* invalidState();
       const row = ownership.decode(found[0]!, "o_");
 
-      invariant(
-        row[mapping.ownership.provider] === identity.provider &&
+      if (
+        !(
+          row[mapping.ownership.provider] === identity.provider &&
           row[mapping.ownership.issuer] === identity.issuer &&
-          row[mapping.ownership.externalSubject] === identity.subject,
-      );
+          row[mapping.ownership.externalSubject] === identity.subject
+        )
+      )
+        return yield* invalidState();
       nativeId = mapping.ownership.decodeSubjectId(row);
     }
 
@@ -320,12 +331,16 @@ export const makeOAuthNativeState = Effect.fnUntraced(function* (
 
     const result = yield* decodeSnapshot(rows, moduleId, joinedIds ? undefined : nativeId);
 
-    if (result !== undefined)
-      invariant(
-        result.identity.provider === identity.provider &&
+    if (result !== undefined) {
+      if (
+        !(
+          result.identity.provider === identity.provider &&
           result.identity.issuer === identity.issuer &&
-          result.identity.subject === identity.subject,
-      );
+          result.identity.subject === identity.subject
+        )
+      )
+        return yield* invalidState();
+    }
 
     return result;
   });
@@ -344,7 +359,7 @@ export const makeOAuthNativeState = Effect.fnUntraced(function* (
           and ${credential.column(mapping.credential.subjectId)} = ${credential.value(mapping.credential.subjectId, nativeId)}`;
 
       if (selected.length === 0) return undefined;
-      invariant(selected.length === 1);
+      if (!(selected.length === 1)) return yield* invalidState();
       identityKey = credential.decode(selected[0]!, "c_")[mapping.credential.identityKey];
     }
 

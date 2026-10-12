@@ -87,6 +87,11 @@ type FailureStage =
   | "passkey-react-native"
   | "passkey-protocol";
 
+/** Fixed diagnostic text only; never includes the reported cause or caller data. */
+class AuthReportedFailure extends Schema.TaggedError<AuthReportedFailure>()("AuthReportedFailure", {
+  message: Schema.String,
+}) {}
+
 /** Keep Effect's content-free frames, never failure values or arbitrary annotations. */
 export const reportAuthFailure = Effect.fn("AuthDiagnostics.reportFailure")(function* <E>(
   stage: FailureStage,
@@ -96,7 +101,7 @@ export const reportAuthFailure = Effect.fn("AuthDiagnostics.reportFailure")(func
 
   const diagnostic = Cause.fromReasons(
     cause.reasons.map((reason) => {
-      const error = new globalThis.Error(`Auth ${stage} failed`);
+      const error = AuthReportedFailure.make({ message: `Auth ${stage} failed` });
 
       const safe = Cause.isDieReason(reason)
         ? Cause.makeDieReason(error)

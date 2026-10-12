@@ -5,6 +5,7 @@ import { SqlClient } from "effect/sql";
 import type { Fragment } from "effect/sql/Statement";
 
 import { sqlBatchAssertion } from "../d1-planning";
+import { PersistenceMappingError } from "../mapping-error";
 import type {
   OAuthRegistrationAuthority,
   OAuthRegistrationIntentMapping,
@@ -25,7 +26,7 @@ import {
 import type { SqlExpression, TableModel } from "../table-model";
 import { makeOAuthNativeMutation } from "./native-mutation";
 import { prepareOAuthNative } from "./native-sign-in";
-import { invariant, oauthIdentityKey, storage, unavailable } from "./state";
+import { invalidState, oauthIdentityKey, storage, unavailable } from "./state";
 
 // Physical metadata is validated at the driver boundary.
 export type OAuthNativeRegistrationIntentMapping = OAuthRegistrationIntentMapping<
@@ -76,25 +77,28 @@ const makeIntent = Effect.fnUntraced(function* (
     const rows =
       yield* sql`select ${intent.fields("intent_")}, ${now} as engine_now from ${intent.name} where ${key(access.moduleId, access.reference)}`;
 
-    invariant(rows.length <= 1);
+    if (!(rows.length <= 1)) return yield* invalidState();
     if (rows[0] === undefined) return undefined;
     const row = intent.decode(rows[0], "intent_");
     const encoded = row[i.snapshot];
 
-    invariant(typeof encoded === "string");
+    if (!(typeof encoded === "string")) return yield* invalidState();
     const inspection = stored.decode(encoded);
     const value = inspection.intent;
     const context = value.context;
     const identityKey = yield* oauthIdentityKey(value.identity);
 
-    invariant(
-      row[i.moduleId] === context.moduleId &&
+    if (
+      !(
+        row[i.moduleId] === context.moduleId &&
         row[i.reference] === value.reference &&
         row[i.flowId] === context.flowId &&
         row[i.identityKey] === identityKey &&
         mapping.clock.decodeInstant(row[i.expiresAt]) === value.expiresAtMillis &&
-        mapping.clock.decodeInstant(row[i.retentionUntil]) === value.retentionUntilMillis,
-    );
+        mapping.clock.decodeInstant(row[i.retentionUntil]) === value.retentionUntilMillis
+      )
+    )
+      return yield* invalidState();
     const engineNow = yield* Schema.decodeEffect(Schema.Int)(Number(rows[0].engine_now));
 
     if (
@@ -122,7 +126,11 @@ const makeIntent = Effect.fnUntraced(function* (
       : registerSqlPostcondition({
           name,
           check: Effect.gen(function* () {
-            invariant((yield* sql`select 1 where ${condition}`).length === 1);
+            if (!((yield* sql`select 1 where ${condition}`).length === 1))
+              return yield* PersistenceMappingError.make({
+                operation: "postcondition",
+                cause: invalidState(),
+              });
           }),
         });
 
@@ -130,7 +138,9 @@ const makeIntent = Effect.fnUntraced(function* (
     if (batch) {
       yield* appendSqlBatchStatement(sql`${statement}`);
       yield* appendSqlBatchStatement(sqlBatchAssertion(sql, sql`changes() = 1`));
-    } else invariant((yield* executeSqlChange(sql, statement)) === 1);
+    } else {
+      if (!((yield* executeSqlChange(sql, statement)) === 1)) return yield* invalidState();
+    }
   });
 
   const cleanup = (moduleId: string, limit: number) =>
@@ -228,7 +238,7 @@ export const makeNativeOAuthRegistrationIntentServices = Effect.fnUntraced(funct
             [i.retentionUntil]: mapping.clock.encodeInstant(value.retentionUntilMillis),
           };
 
-          const statement = conditionalInsert(intent, values, eligible);
+          const statement = yield* conditionalInsert(intent, values, eligible);
 
           if (batch !== undefined) {
             // D1 classifies eligibility before staging, as the row count does for
@@ -306,7 +316,7 @@ export const makeNativeOAuthRegistrationServices = Effect.fnUntraced(function* <
         Effect.gen(function* () {
           const payload = yield* Schema.encodeEffect(application)(input.registration);
 
-          invariant(new TextEncoder().encode(payload).length <= 1048576);
+          if (!(new TextEncoder().encode(payload).length <= 1048576)) return yield* invalidState();
           const registration = yield* Schema.decodeEffect(application)(payload);
 
           const result = yield* mapping.inspect({
@@ -352,7 +362,7 @@ export const makeNativeOAuthRegistrationServices = Effect.fnUntraced(function* <
             },
           }).application;
 
-          invariant(binding._tag === "Registered");
+          if (!(binding._tag === "Registered")) return yield* invalidState();
           // Replay comparison precedes application callbacks, allocation and writes.
           const previous = found.inspection.application;
 
@@ -374,12 +384,12 @@ export const makeNativeOAuthRegistrationServices = Effect.fnUntraced(function* <
 
           return run(
             Effect.gen(function* () {
-              invariant(new TextEncoder().encode(binding.payload).length <= 1048576);
+              if (!(new TextEncoder().encode(binding.payload).length <= 1048576))
+                return yield* invalidState();
               const registration = yield* Schema.decodeEffect(application)(binding.payload);
 
-              invariant(
-                (yield* Schema.encodeEffect(application)(registration)) === binding.payload,
-              );
+              if (!((yield* Schema.encodeEffect(application)(registration)) === binding.payload))
+                return yield* invalidState();
               if (
                 (yield* Schema.encodeEffect(application)(original.registration)) !== binding.payload
               )
@@ -406,9 +416,10 @@ export const makeNativeOAuthRegistrationServices = Effect.fnUntraced(function* <
                 const nativeId = yield* mapping.allocateSubjectId;
                 const subjectId = yield* mapping.subjectId.toSubject(nativeId);
 
-                invariant(
-                  mapping.subjectId.equals(nativeId, yield* mapping.subjectId.toNative(subjectId)),
-                );
+                if (
+                  !mapping.subjectId.equals(nativeId, yield* mapping.subjectId.toNative(subjectId))
+                )
+                  return yield* invalidState();
 
                 const credentialId = yield* Schema.decodeEffect(
                   M.OAuthCredentialSnapshot.fields.credentialId,
@@ -427,31 +438,35 @@ export const makeNativeOAuthRegistrationServices = Effect.fnUntraced(function* <
                   [s.securityRevision]: revision,
                 };
 
-                invariant(s.isActiveStatus(subjectValues[s.status]));
+                if (!s.isActiveStatus(subjectValues[s.status])) return yield* invalidState();
                 // A newly inserted subject is the first lock. The exact unbound intent
                 // CAS below arbitrates concurrent registration; a loser rolls back all
                 // local rows and never repeats provisioning automatically.
-                const creation = conditionalInsert(subject, subjectValues, eligible);
+                const creation = yield* conditionalInsert(subject, subjectValues, eligible);
 
                 if (batch !== undefined) yield* state.change(creation);
                 else admitted = (yield* executeSqlChange(sql, creation)) === 1;
                 if (admitted) {
                   const policy = { ...policyInput, nativeSubjectId: nativeId };
 
-                  invariant((mapping.eligibility.guards?.length ?? 0) <= 32);
+                  if (!((mapping.eligibility.guards?.length ?? 0) <= 32))
+                    return yield* invalidState();
                   for (const guard of mapping.eligibility.guards ?? []) {
                     const table = tables(guard.table);
 
                     const rows =
                       yield* sql`select ${table.column(guard.orderBy)} from ${table.name} where ${tables.expression(guard.condition(policy))} order by ${table.column(guard.orderBy)} limit 65 ${batch === undefined ? sql.onDialectOrElse({ sqlite: () => sql``, orElse: () => sql`for update` }) : sql``}`;
 
-                    invariant(rows.length > 0 && rows.length <= 64);
+                    if (!(rows.length > 0 && rows.length <= 64)) return yield* invalidState();
                   }
 
-                  invariant(
-                    (yield* mutation.ensureOwnership(expected.identity, nativeId)) ===
-                      found.identityKey,
-                  );
+                  if (
+                    !(
+                      (yield* mutation.ensureOwnership(expected.identity, nativeId)) ===
+                      found.identityKey
+                    )
+                  )
+                    return yield* invalidState();
 
                   const values = {
                     ...c.encodeInsert({
@@ -468,9 +483,9 @@ export const makeNativeOAuthRegistrationServices = Effect.fnUntraced(function* <
                     [c.credentialRevision]: revision,
                   };
 
-                  invariant(c.isActiveStatus(values[c.status]));
+                  if (!c.isActiveStatus(values[c.status])) return yield* invalidState();
                   yield* state.change(
-                    conditionalInsert(
+                    yield* conditionalInsert(
                       credential,
                       values,
                       sql.and([
@@ -488,7 +503,7 @@ export const makeNativeOAuthRegistrationServices = Effect.fnUntraced(function* <
                     [a.revision]: revision,
                   };
 
-                  invariant(a.isActiveStatus(factor[a.status]));
+                  if (!a.isActiveStatus(factor[a.status])) return yield* invalidState();
                   yield* state.change(authority.insert(factor));
                   authentication = M.snapshotOAuthSync(M.OAuthRegistrationAuthentication, {
                     intent: expected,
@@ -529,7 +544,7 @@ export const makeNativeOAuthRegistrationServices = Effect.fnUntraced(function* <
                 );
 
               if (!admitted) return yield* rejected();
-              invariant(authentication !== undefined);
+              if (!(authentication !== undefined)) return yield* invalidState();
 
               return yield* prepareOAuthNative(
                 { _tag: "Registered", replayed: false, authentication },

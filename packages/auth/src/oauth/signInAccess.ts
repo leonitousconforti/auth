@@ -102,7 +102,7 @@ const make = Effect.fnUntraced(function* (
       return yield* OAuthRejected.make({});
 
     return yield* snapshotOAuthConnectedConfiguration.effect({
-      ...snapshotOAuthProtocolConfiguration.sync(flow.context),
+      ...(yield* snapshotOAuthProtocolConfiguration.effect(flow.context)),
       profile: flow.context.access,
     });
   });
@@ -151,7 +151,7 @@ const make = Effect.fnUntraced(function* (
     const previous =
       found.grant === undefined
         ? undefined
-        : snapshotOAuthConnectedTarget.sync(found.grant.context);
+        : yield* snapshotOAuthConnectedTarget.effect(found.grant.context);
 
     if (
       previous !== undefined &&
@@ -221,6 +221,8 @@ export const signInAccess = <Access extends OAuthConnectedProfile | undefined>(
   OAuthConfigurationError,
   Access extends OAuthConnectedProfile ? AccessServices : never
 > =>
+  // AccessServices is acquired only when the profile is present, matching the conditional public requirement.
+  // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off
   (profile === undefined
     ? Effect.succeed(undefined)
     : make(moduleId, policy, profile)) as Effect.Effect<

@@ -261,6 +261,7 @@ export const make = <
   });
 
   // The options tuple requires a fully provided Layer whenever the client needs services.
+  // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off
   const clientLayer = (options.layer ?? client.layerFetch) as Layer.Layer<
     ClientService<Id, Actions>,
     E | OperationHttpError

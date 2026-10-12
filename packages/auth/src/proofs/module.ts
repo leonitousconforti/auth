@@ -1,14 +1,29 @@
-import { Cause, Context, DateTime, Effect, Layer, Redacted, Schema, type Types } from "effect";
+import {
+  Result,
+  Cause,
+  Context,
+  DateTime,
+  Effect,
+  Layer,
+  Redacted,
+  Schema,
+  type Types,
+} from "effect";
 
 import { defaultLayer } from "../auth/defaults";
-import { hasCommitScope, type CommitJournal, type PreparedCommit } from "../hooks/commit";
+import {
+  prepareCommit,
+  hasCommitScope,
+  type CommitJournal,
+  type PreparedCommit,
+} from "../hooks/commit";
 import { LifecycleHooks } from "../hooks/LifecycleHooks";
 import {
   HookDenied,
   LifecycleEventId,
   type LifecycleAction,
-  lifecycleEvent,
-  lifecycleSnapshot,
+  lifecycleEventEffect,
+  lifecycleSnapshotEffect,
 } from "../hooks/models";
 import { reportAuthFailure } from "../internal/diagnostics";
 import { makeOperation, operationGroup } from "../operations/operation";
@@ -204,20 +219,20 @@ export const makeProofModule = <
           action: LifecycleAction,
           binding: ProofBinding,
         ) {
-          const snapshot = lifecycleSnapshot({
+          const snapshot = yield* lifecycleSnapshotEffect({
             action,
             operation: `${moduleId}/${action}`,
             identifiers: [binding.identifier],
             ...(binding._tag === "Identifier" ? {} : { subjectId: binding.revision.subjectId }),
-          });
+          }).pipe(Effect.orDie);
 
           yield* hooks.before(snapshot);
 
-          return lifecycleEvent({
+          return yield* lifecycleEventEffect({
             id: LifecycleEventId.make(Redacted.value(yield* crypto.generateOpaque())),
             occurredAtMillis: DateTime.toEpochMillis(yield* DateTime.now),
             snapshot,
-          });
+          }).pipe(Effect.orDie);
         });
 
         const planIssue = Effect.fn("Proofs.planIssue")(function* (
@@ -305,44 +320,46 @@ export const makeProofModule = <
                 resendCooldownMillis: policy.abuse.resendCooldownMillis,
                 eligible: eligible && admitted && before._tag === "Success",
               },
-              (decision, journal) => {
-                if (decision._tag === "Issued") {
-                  if (
-                    before._tag !== "Success" ||
-                    !admitted ||
-                    !eligible ||
-                    decision.record.proofId !== proofId ||
-                    decision.record.moduleId !== moduleId ||
-                    decision.record.purpose !== options.purpose ||
-                    decision.record.verifier.digest !== verifier.digest ||
-                    decision.record.verifier.keyId !== verifier.keyId ||
-                    decision.record.expiresAtMillis - decision.record.issuedAtMillis !==
-                      policy.lifetimeMillis ||
-                    JSON.stringify(decision.record.binding) !== JSON.stringify(binding)
-                  )
-                    throw ProofUnavailable.make({});
-                  journal.stage(before.success);
-                  message = Object.freeze({
-                    deliveryId: ProofDeliveryId.make(proofId),
-                    purpose: options.purpose,
-                    reference,
-                    recipient: Object.freeze(binding.identifier),
-                    secret,
-                    format: crypto.format,
-                    expiresAtMillis: decision.record.expiresAtMillis,
-                    template: options.template,
-                    locale,
-                  });
-                }
+              prepareCommit((decision, journal) =>
+                Result.gen(function* () {
+                  if (decision._tag === "Issued") {
+                    if (
+                      before._tag !== "Success" ||
+                      !admitted ||
+                      !eligible ||
+                      decision.record.proofId !== proofId ||
+                      decision.record.moduleId !== moduleId ||
+                      decision.record.purpose !== options.purpose ||
+                      decision.record.verifier.digest !== verifier.digest ||
+                      decision.record.verifier.keyId !== verifier.keyId ||
+                      decision.record.expiresAtMillis - decision.record.issuedAtMillis !==
+                        policy.lifetimeMillis ||
+                      JSON.stringify(decision.record.binding) !== JSON.stringify(binding)
+                    )
+                      return yield* Result.fail(ProofUnavailable.make({}));
+                    journal.stage(before.success);
+                    message = Object.freeze({
+                      deliveryId: ProofDeliveryId.make(proofId),
+                      purpose: options.purpose,
+                      reference,
+                      recipient: Object.freeze(binding.identifier),
+                      secret,
+                      format: crypto.format,
+                      expiresAtMillis: decision.record.expiresAtMillis,
+                      template: options.template,
+                      locale,
+                    });
+                  }
 
-                return journal.prepare(
-                  Object.freeze({
-                    receipt: Object.freeze({ requestId, reference }),
-                    // Suppression uses the same scheduler boundary with a no-op task.
-                    schedule: noAmbient().pipe(Effect.andThen(schedule)),
-                  }),
-                );
-              },
+                  return journal.prepare(
+                    Object.freeze({
+                      receipt: Object.freeze({ requestId, reference }),
+                      // Suppression uses the same scheduler boundary with a no-op task.
+                      schedule: noAmbient().pipe(Effect.andThen(schedule)),
+                    }),
+                  );
+                }),
+              ),
             ),
           );
 

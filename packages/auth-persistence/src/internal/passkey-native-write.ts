@@ -16,7 +16,7 @@ import type { SqlTable } from "./native-sql-table";
 import { passkeyEnrollmentDigest, passkeyRemoveDigest } from "./passkey-actions";
 import { passkeyManagementInputs } from "./passkey-inputs";
 import { preparePasskeyNative, type NativePasskeyServices } from "./passkey-native";
-import { passkeyNativeInvariant, type PasskeyNativeRow } from "./passkey-native-state";
+import { invalidPasskeyState, type PasskeyNativeRow } from "./passkey-native-state";
 import {
   assessPasskeyAction,
   passkeyCredentialKey,
@@ -54,7 +54,7 @@ export const makePasskeyNativeWrites = (
   const { state } = base;
   const { sql, tables, subject, credential, factor, ceremony: flow } = state;
   const read = mapping.read;
-  const invariant: typeof passkeyNativeInvariant = passkeyNativeInvariant;
+  const invalidState = invalidPasskeyState;
   const expression = tables.expression;
 
   const eq = (table: SqlTable, key: string, value: unknown) =>
@@ -125,11 +125,11 @@ export const makePasskeyNativeWrites = (
       state.active("credential"),
     ]);
 
-  const subjectCondition = (current: M.PasskeyCredential["revision"]) => {
-    const id = state.native(current.subjectId);
+  const subjectCondition = Effect.fnUntraced(function* (current: M.PasskeyCredential["revision"]) {
+    const id = yield* state.native(current.subjectId);
 
     return sql`exists(select 1 from ${subject.name} where ${subject.column(read.subject.id)} = ${subject.value(read.subject.id, id)} and ${eq(subject, read.subject.securityRevision, current.securityRevision)} and ${state.active("subject")}) and ${sql.and(current.credentials.map((entry) => sql`exists(select 1 from ${factor.name} where ${factor.column(read.authority.subjectId)} = ${factor.value(read.authority.subjectId, id)} and ${eq(factor, read.authority.credentialId, entry.credentialId)} and ${eq(factor, read.authority.revision, entry.revision)} and ${state.active("authority")})`))}`;
-  };
+  });
 
   const insertCredential = Effect.fnUntraced(function* (
     nativeId: unknown,
@@ -140,7 +140,8 @@ export const makePasskeyNativeWrites = (
     nowMillis: number,
     subjectRow: Readonly<Record<string, unknown>>,
   ) {
-    invariant(ceremony.context._tag === "Enrollment" || ceremony.context._tag === "Registration");
+    if (!(ceremony.context._tag === "Enrollment" || ceremony.context._tag === "Registration"))
+      return yield* invalidState();
     const credentialId = yield* randomId;
     const marker = yield* randomId;
     const credentialRevision = SecurityRevision.make(marker);
@@ -250,7 +251,7 @@ export const makePasskeyNativeManagement = (
   const { state, run, advisory } = base;
   const { sql, tables, subject, credential, factor, ceremony: flow } = state;
   const read = mapping.read;
-  const invariant: typeof passkeyNativeInvariant = passkeyNativeInvariant;
+  const invalidState = invalidPasskeyState;
 
   const {
     summary,
@@ -270,8 +271,8 @@ export const makePasskeyNativeManagement = (
         Effect.gen(function* () {
           const input = M.snapshotPasskeySync(passkeyManagementInputs.list, original);
 
-          invariant(flow.validModule(input.moduleId));
-          const nativeId = state.native(input.subjectId);
+          if (!flow.validModule(input.moduleId)) return yield* invalidState();
+          const nativeId = yield* state.native(input.subjectId);
 
           const rows =
             yield* sql`select ${credential.fields("c_")} from ${credential.name} where ${owned(nativeId)} and ${expression(mapping.write.policy.metadata(nativeId))}
@@ -293,7 +294,7 @@ export const makePasskeyNativeManagement = (
           const input = M.snapshotPasskeySync(passkeyManagementInputs.inspectRemove, original);
 
           if (!flow.validModule(input.moduleId)) return { _tag: "Rejected" } as const;
-          const nativeId = state.native(input.subjectId);
+          const nativeId = yield* state.native(input.subjectId);
           const current = yield* state.readAuthority(nativeId, false, input.credentialId);
 
           if (current === undefined) return { _tag: "Rejected" } as const;
@@ -321,7 +322,7 @@ export const makePasskeyNativeManagement = (
           )
             return yield* preparePasskeyNative({ _tag: "Rejected" }, prepare);
           const context = ceremony.context;
-          const nativeId = state.native(context.revision.subjectId);
+          const nativeId = yield* state.native(context.revision.subjectId);
           const current = yield* state.readAuthority(nativeId, !base.batch);
 
           if (current === undefined)
@@ -368,7 +369,7 @@ export const makePasskeyNativeManagement = (
 
           const policyUnchanged = sql`exists(select 1 from ${subject.name} where ${subject.column(read.subject.id)} = ${subject.value(read.subject.id, nativeId)} and ${match(subject, policyValues)})`;
 
-          const condition = sql`${subjectCondition(current.revision)} and ${policyUnchanged} and ${expression(mapping.write.policy.action(nativeId, context.authorization))} and ${expression(mapping.write.policy.metadata(nativeId))}
+          const condition = sql`${yield* subjectCondition(current.revision)} and ${policyUnchanged} and ${expression(mapping.write.policy.action(nativeId, context.authorization))} and ${expression(mapping.write.policy.metadata(nativeId))}
         and ${state.now} < ${authority.expiresBeforeMillis} and (select count(*) from ${credential.name} where ${owned(nativeId)}) < ${cap}`;
 
           const statement = flow.consume(input.access, ceremony, condition);
@@ -389,7 +390,7 @@ export const makePasskeyNativeManagement = (
 
           yield* postcondition(
             "passkey-enrollment-authority",
-            sql`${enrolled.condition} and ${flow.absent(input.access)} and ${subjectCondition(current.revision)} and ${policyUnchanged} and (select count(*) from ${credential.name} where ${owned(nativeId)}) <= ${cap} and ${expression(mapping.write.policy.action(nativeId, context.authorization))} and ${state.now} < ${authority.expiresBeforeMillis}`,
+            sql`${enrolled.condition} and ${flow.absent(input.access)} and ${yield* subjectCondition(current.revision)} and ${policyUnchanged} and (select count(*) from ${credential.name} where ${owned(nativeId)}) <= ${cap} and ${expression(mapping.write.policy.action(nativeId, context.authorization))} and ${state.now} < ${authority.expiresBeforeMillis}`,
           );
 
           return yield* preparePasskeyNative(
@@ -405,7 +406,7 @@ export const makePasskeyNativeManagement = (
 
           if (!flow.validModule(input.moduleId))
             return yield* preparePasskeyNative({ _tag: "Rejected" }, prepare);
-          const nativeId = state.native(input.subjectId);
+          const nativeId = yield* state.native(input.subjectId);
           const statement = sql`${credential.update({ [mapping.write.credential.name]: input.name })} where ${owned(nativeId, input.credentialId)} and ${expression(mapping.write.policy.metadata(nativeId))}`;
           let rows: ReadonlyArray<PasskeyNativeRow>;
 
@@ -449,7 +450,7 @@ export const makePasskeyNativeManagement = (
 
           if (!flow.validModule(input.moduleId))
             return yield* preparePasskeyNative({ _tag: "Rejected" }, prepare);
-          const nativeId = state.native(input.credential.revision.subjectId);
+          const nativeId = yield* state.native(input.credential.revision.subjectId);
 
           const current = yield* state.readAuthority(
             nativeId,
@@ -472,7 +473,7 @@ export const makePasskeyNativeManagement = (
 
           if (
             captured === undefined ||
-            !samePasskeyCredential(captured, input.credential) ||
+            !(yield* samePasskeyCredential(captured, input.credential)) ||
             !samePasskeyRevision(captured.revision, input.credential.revision) ||
             ((policy.requireImmediateInvalidation ||
               input.management.requireImmediateInvalidation) &&
@@ -530,7 +531,7 @@ export const makePasskeyNativeManagement = (
 
           const classify = Effect.gen(function* () {
             const rows =
-              yield* sql`select case when ${remaining} then 1 else 0 end as remaining, case when ${allowed} and ${state.now} < ${authority.expiresBeforeMillis} and ${subjectCondition(current.revision)} then 1 else 0 end as allowed`;
+              yield* sql`select case when ${remaining} then 1 else 0 end as remaining, case when ${allowed} and ${state.now} < ${authority.expiresBeforeMillis} and ${yield* subjectCondition(current.revision)} then 1 else 0 end as allowed`;
 
             return Number(rows[0]?.allowed) !== 1
               ? ("Rejected" as const)

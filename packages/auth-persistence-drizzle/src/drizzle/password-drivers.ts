@@ -126,7 +126,10 @@ export const makePasswordTarget = <DatabaseId, D extends NativeDriverDatabase>(
         database,
         options.mapping as unknown as AnyPasswordPersistenceMapping,
         configuration,
-        (transaction: NativeDriverTransaction<Database>, services) => {
+        (
+          transaction: NativeDriverTransaction<Database>,
+          services,
+        ): Effect.Effect<A, E, Exclude<R, PasswordPersistence>> => {
           const work = Effect.provideService(
             body,
             PasswordPersistence,
@@ -236,7 +239,10 @@ export const makePasswordTarget = <DatabaseId, D extends NativeDriverDatabase>(
         database,
         options.mapping as unknown as AnyPasswordRegistrationMapping<Registration>,
         configuration,
-        (transaction: NativeDriverTransaction<Database>, services) => {
+        (
+          transaction: NativeDriverTransaction<Database>,
+          services,
+        ): Effect.Effect<A, E, Exclude<R, TargetId>> => {
           const work = Effect.provideService(body, options.target, services.registrationAuthority);
 
           return options.transaction === undefined

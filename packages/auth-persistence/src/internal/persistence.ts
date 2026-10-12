@@ -186,6 +186,7 @@ export const createPersistence = <T extends object, R, Database extends object =
       const subject = options.subjects;
 
       if (passkeys.length > 0 && options.timestamps !== undefined)
+        // oxlint-disable-next-line effect/no-untyped-throw -- The schema declaration API must return tables synchronously for consumers and Drizzle Kit.
         throw configError(
           "Composed passkey storage uses integer milliseconds; use an explicit passkey adapter for a custom timestamp representation",
         );
@@ -194,17 +195,21 @@ export const createPersistence = <T extends object, R, Database extends object =
 
       for (const key of [subject.id, subject.status, subject.securityRevision]) {
         if (description.columns[key] === undefined)
+          // oxlint-disable-next-line effect/no-untyped-throw -- The schema declaration API must return tables synchronously for consumers and Drizzle Kit.
           throw configError(`Missing subject column ${key}`);
       }
       if (subject.activeValue === undefined)
+        // oxlint-disable-next-line effect/no-untyped-throw -- The schema declaration API must return tables synchronously for consumers and Drizzle Kit.
         throw configError("An explicit active subject value is required");
 
       if (idColumn === undefined || idColumn.type === "boolean")
+        // oxlint-disable-next-line effect/no-untyped-throw -- The schema declaration API must return tables synchronously for consumers and Drizzle Kit.
         throw configError("Subject ID must map a text or integer column");
 
       const prefix = options.prefix;
 
       if (managed && (prefix === undefined || !/^[A-Za-z_][A-Za-z0-9_]{0,100}$/.test(prefix)))
+        // oxlint-disable-next-line effect/no-untyped-throw -- The schema declaration API must return tables synchronously for consumers and Drizzle Kit.
         throw configError("Managed persistence requires an explicit SQL table prefix");
 
       const schema: Partial<Record<StorageRole, T>> = { ...options.tables };
@@ -236,7 +241,9 @@ export const createPersistence = <T extends object, R, Database extends object =
         }
       }
       for (const role of roles) {
-        if (schema[role] === undefined) throw configError(`Missing ${role} table`);
+        if (schema[role] === undefined)
+          // oxlint-disable-next-line effect/no-untyped-throw -- The schema declaration API must return tables synchronously for consumers and Drizzle Kit.
+          throw configError(`Missing ${role} table`);
       }
       const instantCodec = options.timestamps?.codec;
 
@@ -334,10 +341,10 @@ export const createPersistence = <T extends object, R, Database extends object =
           const mappings = yield* makeMappings(storage, nativeTables);
 
           const sessionMapping = stateful
-            ? mappings.sessions(auth.claims, auth.sessions.moduleId)
+            ? yield* mappings.sessions(auth.claims, auth.sessions.moduleId)
             : undefined;
 
-          const pendingMapping = mappings.pending(auth.claims, auth.sessions.moduleId);
+          const pendingMapping = yield* mappings.pending(auth.claims, auth.sessions.moduleId);
 
           const { authenticationAuthority } = yield* makeNativeAuthenticationAuthorityServices(
             nativeTables,
@@ -409,7 +416,7 @@ export const createPersistence = <T extends object, R, Database extends object =
             );
           }
 
-          const proofMapping = proofs ? mappings.proofs() : undefined;
+          const proofMapping = proofs ? yield* mappings.proofs() : undefined;
 
           if (proofMapping !== undefined) {
             const services = yield* makeNativeProofServices(
@@ -421,7 +428,7 @@ export const createPersistence = <T extends object, R, Database extends object =
           }
 
           if (password) {
-            const mapping = mappings.passwords();
+            const mapping = yield* mappings.passwords();
 
             const services = yield* makeNativePasswordServices(
               backend.nativeTables(database),
@@ -441,7 +448,7 @@ export const createPersistence = <T extends object, R, Database extends object =
 
             const registration = yield* makeRegistrationAuthority(
               backend.nativeTables(database),
-              mappings.passwords(),
+              yield* mappings.passwords(),
               ProvisioningKey,
               name,
             );
@@ -454,7 +461,7 @@ export const createPersistence = <T extends object, R, Database extends object =
               EmailAddressPersistence,
               (yield* makeNativeEmailAddressServices(
                 backend.nativeTables(database),
-                mappings.emails(),
+                yield* mappings.emails(),
                 proofMapping,
               )).emailAddressPersistence,
             );
@@ -466,13 +473,15 @@ export const createPersistence = <T extends object, R, Database extends object =
               yield* makeComposedPhoneTargets(
                 backend.nativeTables(database),
                 storage,
-                mappings.proofs(),
+                yield* mappings.proofs(),
                 features.flatMap((feature) => (feature.kind === "phone" ? [feature.moduleId] : [])),
               ),
             );
 
           if (passkeys.length > 0) {
-            // Auth capability metadata determines whether PasskeyConfig is required.
+            // This existential definition has lost its strategy types. The checked passkey
+            // metadata matches PasskeyRequirement<A>; keep the public conditional requirement.
+            // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off
             const services = makeManagedPasskeys(
               {
                 storage,

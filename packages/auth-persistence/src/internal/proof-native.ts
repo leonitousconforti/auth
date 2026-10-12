@@ -27,10 +27,8 @@ const bindingJson = Schema.encodeSync(Schema.fromJsonString(P.ProofBinding));
 const decodeBinding = Schema.decodeUnknownSync(Schema.fromJsonString(P.ProofBinding));
 const unavailable = () => P.ProofUnavailable.make({});
 
-const invariant: (condition: unknown) => asserts condition = (condition) => {
-  if (!condition)
-    throw PersistenceMappingError.make({ operation: "decode", cause: "Invalid proof state" });
-};
+const invalidState = () =>
+  PersistenceMappingError.make({ operation: "decode", cause: "Invalid proof state" });
 
 /** Flow/context changes do not allocate new durable series. The hash bounds the
  * indexed key; the complete canonical binding is still checked independently. */
@@ -118,11 +116,11 @@ export const makeNativeProofStore = Effect.fnUntraced(function* (
       yield* sql`select ${subject.fields("proof_subject_")} from ${subject.name} where ${condition} ${batch ? sql`` : locking}`;
 
     if (rows.length === 0) return false;
-    invariant(rows.length === 1);
+    if (!(rows.length === 1)) return yield* invalidState();
     const value = subject.decode(rows[0]!, "proof_subject_");
     const decoded = yield* mapping.subjectId.toSubject(value[mapping.subject.id]);
 
-    invariant(decoded === binding.revision.subjectId);
+    if (!(decoded === binding.revision.subjectId)) return yield* invalidState();
     if (batch)
       yield* appendSqlBatchStatement(
         sqlBatchAssertion(sql, sql`exists(select 1 from ${subject.name} where ${condition})`),
@@ -145,12 +143,15 @@ export const makeNativeProofStore = Effect.fnUntraced(function* (
     if (!input.eligible) return { _tag: "Suppressed" };
     const record = yield* Schema.decodeEffect(P.ProofIssueRecord)(input.record);
 
-    invariant(
-      Number.isSafeInteger(input.lifetimeMillis) &&
+    if (
+      !(
+        Number.isSafeInteger(input.lifetimeMillis) &&
         input.lifetimeMillis > 0 &&
         Number.isSafeInteger(input.resendCooldownMillis) &&
-        input.resendCooldownMillis >= 0,
-    );
+        input.resendCooldownMillis >= 0
+      )
+    )
+      return yield* invalidState();
     const key = yield* series(record);
     const binding = bindingJson(record.binding);
     // PostgreSQL's clock_timestamp is volatile. One materialized sample owns
@@ -169,7 +170,7 @@ export const makeNativeProofStore = Effect.fnUntraced(function* (
         yield* sql`select ${proof.fields("proof_")} from ${proof.name} where ${key.predicate} ${mysql ? locking : sql``}`;
 
       sampled = yield* clock;
-      invariant(rows.length <= 1);
+      if (!(rows.length <= 1)) return yield* invalidState();
       if (rows[0] !== undefined) {
         const old = decode(rows[0]);
 
@@ -210,7 +211,7 @@ export const makeNativeProofStore = Effect.fnUntraced(function* (
       );
 
       if (changed === 0) yield* sql`${proof.insert(values)}`;
-      invariant(sampled !== undefined);
+      if (!(sampled !== undefined)) return yield* invalidState();
 
       return {
         _tag: "Issued",
@@ -236,7 +237,7 @@ export const makeNativeProofStore = Effect.fnUntraced(function* (
     const upsert = sql`${proof.insert(values)} on conflict (${sql.join(", ", false)([p.moduleId, p.purpose, p.seriesKey].map(proof.columnName))}) do update set ${sql.join(", ", false)(replaced.map((key) => sql`${proof.columnName(key)} = ${excluded.column(key)}`))} where ${allowed}`;
 
     if (batch) {
-      invariant(sampled !== undefined);
+      if (!(sampled !== undefined)) return yield* invalidState();
       yield* appendSqlBatchStatement(
         sqlBatchAssertion(
           sql,
@@ -259,7 +260,7 @@ export const makeNativeProofStore = Effect.fnUntraced(function* (
     const rows =
       yield* sql`with effect_auth_proof_clock as materialized (select ${now} as instant) ${upsert} returning ${proof.fields("proof_")}`;
 
-    invariant(rows.length <= 1);
+    if (!(rows.length <= 1)) return yield* invalidState();
 
     return rows[0] === undefined
       ? { _tag: "Suppressed" }
@@ -302,7 +303,7 @@ export const makeNativeProofStore = Effect.fnUntraced(function* (
         ? yield* sql`select ${proof.fields("proof_")} from ${proof.name} where ${valid} ${mysql ? locking : sql``}`
         : yield* sql`${deletion} returning ${proof.fields("proof_")}`;
 
-    invariant(rows.length <= 1);
+    if (!(rows.length <= 1)) return yield* invalidState();
     if (rows[0] === undefined) {
       const failure = sql`${proof.update({ [p.failedAttempts]: sql`${proof.column(p.failedAttempts)} + 1` })} where ${current}`;
 
@@ -318,7 +319,9 @@ export const makeNativeProofStore = Effect.fnUntraced(function* (
     }
     const consumed = decode(rows[0]);
 
-    if (mysql) invariant((yield* executeSqlChange(sql, deletion)) === 1);
+    if (mysql) {
+      if (!((yield* executeSqlChange(sql, deletion)) === 1)) return yield* invalidState();
+    }
     if (batch) {
       yield* appendSqlBatchStatement(deletion);
       yield* appendSqlBatchStatement(sqlBatchAssertion(sql, sql`changes() = 1`));
@@ -340,7 +343,7 @@ export const makeNativeProofStore = Effect.fnUntraced(function* (
           check: Effect.gen(function* () {
             const rows = yield* sql`select 1 as valid where ${condition}`;
 
-            invariant(rows.length === 1);
+            if (!(rows.length === 1)) return yield* invalidState();
           }),
         });
     }
@@ -401,7 +404,8 @@ export const makeNativeProofServices = Effect.fnUntraced(function* (
 
       const receipt = project(value, journal);
 
-      invariant(receipt?._tag === "PreparedCommit" && Effect.isEffect(receipt.read));
+      if (!(receipt?._tag === "PreparedCommit" && Effect.isEffect(receipt.read)))
+        return yield* invalidState();
       yield* registerSqlCommitReceipt(receipt);
 
       return receipt;

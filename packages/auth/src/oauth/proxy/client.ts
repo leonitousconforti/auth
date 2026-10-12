@@ -37,10 +37,9 @@ export type Options = typeof Options.Type;
 export const provider = (
   options: Options,
 ): ProviderDefinition<ConfigurationError, Crypto.Crypto | HttpClient.HttpClient | Scope.Scope> => {
-  const saved = Result.try({
-    try: () => snapshotOptions.sync(options),
-    catch: () => ConfigurationError.make({}),
-  });
+  const saved = snapshotOptions
+    .result(options)
+    .pipe(Result.mapError(() => ConfigurationError.make({})));
 
   return {
     configure: Effect.fnUntraced(function* (binding) {

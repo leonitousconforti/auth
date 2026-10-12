@@ -16,7 +16,7 @@ import type { NativeSqlTables, SqlTable } from "./native-sql-table";
 import { prepareNativeSession } from "./session-native-pending";
 import {
   normalizeSessionOperation,
-  sessionInvariant,
+  invalidSessionState,
   sessionUnavailable,
 } from "./session-native-state";
 import { allocateSessionValue } from "./session-policy";
@@ -99,7 +99,8 @@ export const makeNativeSignedSessionValidityServices = Effect.fnUntraced(functio
       yield* registerSqlPostcondition({
         name,
         check: Effect.gen(function* () {
-          sessionInvariant((yield* sql`select 1 where ${condition}`).length === 1);
+          if (!((yield* sql`select 1 where ${condition}`).length === 1))
+            return yield* invalidSessionState();
         }).pipe(
           Effect.mapError((cause) => PersistenceMappingError.make({ operation: "decode", cause })),
         ),
@@ -117,14 +118,17 @@ export const makeNativeSignedSessionValidityServices = Effect.fnUntraced(functio
             const rows =
               yield* sql`select ${subject.fields("subject_")} from ${subject.name} where ${id(subject, s.id, nativeSubject)} and ${id(subject, s.status, s.activeStatusValue)} and ${exact(subject, s.securityRevision, record.securityRevision)} and ${DateTime.toEpochMillis(record.issuedAt)} <= ${now} + ${futureToleranceMillis} and ${DateTime.toEpochMillis(record.issuedAt)} < ${DateTime.toEpochMillis(record.expiresAt)} and ${now} < ${DateTime.toEpochMillis(record.expiresAt)} and ${DateTime.toEpochMillis(record.expiresAt)} <= ${DateTime.toEpochMillis(record.absoluteExpiresAt)} and not exists(select 1 from ${tombstone.name} where ${key(nativeSubject, nativeSession)}) limit 2`;
 
-            sessionInvariant(rows.length <= 1);
+            if (!(rows.length <= 1)) return yield* invalidSessionState();
             if (rows[0] === undefined) return false;
             const decoded = subject.decode(rows[0], "subject_");
 
-            sessionInvariant(
-              (yield* mapping.subjectId.toSubject(decoded[s.id])) === record.subjectId &&
-                s.isActiveStatus(decoded[s.status]),
-            );
+            if (
+              !(
+                (yield* mapping.subjectId.toSubject(decoded[s.id])) === record.subjectId &&
+                s.isActiveStatus(decoded[s.status])
+              )
+            )
+              return yield* invalidSessionState();
 
             return true;
           }),
@@ -188,7 +192,7 @@ export const makeNativeSignedSessionValidityServices = Effect.fnUntraced(functio
               : () => s.nextSecurityRevisionSync!(input.expectedSecurityRevision),
           );
 
-          sessionInvariant(next !== input.expectedSecurityRevision);
+          if (!(next !== input.expectedSecurityRevision)) return yield* invalidSessionState();
 
           const changed = yield* stage(
             sql`${subject.update({ [s.securityRevision]: next })} where ${id(subject, s.id, nativeSubject)} and ${id(subject, s.status, s.activeStatusValue)} and ${exact(subject, s.securityRevision, input.expectedSecurityRevision)}`,

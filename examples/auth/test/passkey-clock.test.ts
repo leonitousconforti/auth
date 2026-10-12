@@ -168,7 +168,7 @@ const start = Effect.gen(function* () {
   const caller = {
     _tag: "Authenticated" as const,
     subjectId: SubjectId.make("account"),
-    assurance: new AuthenticationAssurance({
+    assurance: AuthenticationAssurance.make({
       method: "existing-factor",
       factors: ["possession"],
       authenticatedAt: DateTime.makeUnsafe(0),

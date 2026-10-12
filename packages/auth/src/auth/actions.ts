@@ -116,6 +116,8 @@ export const makeActionApi = Effect.fn("Auth.makeActionApi")(function* <
 
       // The action has decoded and validated the complete public codec. Existing
       // strategy methods accept encoded inputs at their own operation boundary.
+      // The heterogeneous action table erases codec services here; LocalActionApi restores each action's exact schema services.
+      // @effect-diagnostics-next-line anyUnknownInErrorContext:off
       const encoded = yield* Schema.encodeEffect(action.route.operation.rpc.payloadSchema)(
         input,
       ).pipe(Effect.mapError(() => InvalidOperationInput.make({})));
@@ -150,6 +152,8 @@ export const makeActionApi = Effect.fn("Auth.makeActionApi")(function* <
           }),
       };
 
+      // The selected method's existential error is validated by the exact operation error schema before leaving LocalActionApi.
+      // @effect-diagnostics-next-line anyUnknownInErrorContext:off
       const value = yield* method(payload).pipe(
         Effect.provideService(AuthRequest, {
           ...request,
@@ -192,6 +196,8 @@ export const makeActionApi = Effect.fn("Auth.makeActionApi")(function* <
         )
           return yield* InvalidOperationInput.make({});
 
+        // Indexed iteration erases the paired contract; LocalActionApi retains the exact per-action errors and services.
+        // @effect-diagnostics-next-line anyUnknownInErrorContext:off
         return yield* operation.invokeUnknown(guest, input).pipe(
           provideHandler,
           Effect.provideService(AuthCredentialCommandCollector, request.credentialCommandSink),

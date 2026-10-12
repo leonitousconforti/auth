@@ -1,5 +1,5 @@
 import { PasskeyConfigurationError } from "@yielded/auth/Passkey";
-import { Predicate } from "effect";
+import { Effect, Predicate } from "effect";
 
 /** Only foreign constructor types are erased; this creates Drizzle's actual
  * transaction handle while the shared SqlClient owner holds the transaction. */
@@ -10,10 +10,10 @@ export type DrizzleTransactionFactory = (database: any) => object;
 // oxlint-disable-next-line no-explicit-any
 export type DrizzleTransactionConstructor = new (...arguments_: any[]) => object;
 
-export const makeDrizzleTransactionHandle = (
+export const makeDrizzleTransactionHandle = Effect.fnUntraced(function* (
   database: object,
   constructor: DrizzleTransactionConstructor | undefined,
-): object => {
+): Effect.fn.Return<object, PasskeyConfigurationError> {
   if (
     constructor === undefined ||
     !Predicate.hasProperty(database, "_") ||
@@ -22,10 +22,11 @@ export const makeDrizzleTransactionHandle = (
     !Predicate.hasProperty(database, "select") ||
     typeof database.select !== "function"
   )
-    throw PasskeyConfigurationError.make({});
+    return yield* PasskeyConfigurationError.make({});
   const selection: unknown = database.select();
 
-  if (!Predicate.hasProperty(selection, "dialect")) throw PasskeyConfigurationError.make({});
+  if (!Predicate.hasProperty(selection, "dialect"))
+    return yield* PasskeyConfigurationError.make({});
 
   return new constructor(
     selection.dialect,
@@ -38,4 +39,4 @@ export const makeDrizzleTransactionHandle = (
         ? database.parseRqbJson
         : undefined,
   );
-};
+});

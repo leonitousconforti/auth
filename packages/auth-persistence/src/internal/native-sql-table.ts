@@ -59,6 +59,7 @@ export interface NativeSqlTables {
  * by PostgreSQL. Callers distinguish tables by prefix, never by physical names. */
 export const nativeSqlAlias = (prefix: string, index: number): string => {
   if (!/^[A-Za-z_][A-Za-z0-9_]{0,39}$/.test(prefix))
+    // oxlint-disable-next-line effect/no-untyped-throw -- NativeSqlTables compiles and decodes synchronously; workflow executors capture these mapping failures.
     throw PersistenceMappingError.make({ operation: "mapping", cause: "Invalid SQL alias prefix" });
 
   return `${prefix}${index}`;
@@ -66,10 +67,12 @@ export const nativeSqlAlias = (prefix: string, index: number): string => {
 
 const directTable = (client: SqlClient, physical: object): SqlTable => {
   if (!(physical instanceof Table))
+    // oxlint-disable-next-line effect/no-untyped-throw -- NativeSqlTables compiles and decodes synchronously; workflow executors capture these mapping failures.
     throw PersistenceMappingError.make({ operation: "mapping", cause: "Expected a SQL table" });
 
   const quote = (name: string) => {
     if (name.includes("\0"))
+      // oxlint-disable-next-line effect/no-untyped-throw -- NativeSqlTables compiles and decodes synchronously; workflow executors capture these mapping failures.
       throw PersistenceMappingError.make({ operation: "mapping", cause: "NUL in SQL identifier" });
 
     return client.literal(identifier(name));
@@ -86,6 +89,7 @@ const directTable = (client: SqlClient, physical: object): SqlTable => {
     const column = Object.hasOwn(physical.columns, key) ? physical.columns[key] : undefined;
 
     if (column === undefined)
+      // oxlint-disable-next-line effect/no-untyped-throw -- NativeSqlTables compiles and decodes synchronously; workflow executors capture these mapping failures.
       throw PersistenceMappingError.make({ operation: "column", cause: "Missing SQL column" });
 
     return column;
@@ -154,6 +158,7 @@ const directTable = (client: SqlClient, physical: object): SqlTable => {
             const alias = nativeSqlAlias(prefix, ordinals.get(key)!);
 
             if (!Object.hasOwn(row, alias))
+              // oxlint-disable-next-line effect/no-untyped-throw -- NativeSqlTables compiles and decodes synchronously; workflow executors capture these mapping failures.
               throw PersistenceMappingError.make({
                 operation: "decode",
                 cause: "Missing SQL projection field",
@@ -173,6 +178,7 @@ const directTable = (client: SqlClient, physical: object): SqlTable => {
         const fields = entries(values);
 
         if (fields.length === 0)
+          // oxlint-disable-next-line effect/no-untyped-throw -- NativeSqlTables compiles and decodes synchronously; workflow executors capture these mapping failures.
           throw PersistenceMappingError.make({ operation: "mapping", cause: "Empty SQL update" });
 
         return client`UPDATE ${name} SET ${client.join(", ", false)(fields.map(([key, input]) => client`${quote(getColumn(key).options.name)} = ${value(key, input)}`))}`;

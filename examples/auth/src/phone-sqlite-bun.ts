@@ -1,3 +1,5 @@
+import assert from "node:assert/strict";
+
 import { BunRuntime } from "@effect/platform-bun";
 import * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient";
 import {
@@ -36,10 +38,6 @@ import {
   requirement,
   subjectId,
 } from "./phone-sqlite-schema";
-
-const assert: (condition: unknown, message: string) => asserts condition = (condition, message) => {
-  if (!condition) throw new Error(message);
-};
 
 export const phoneConsumer = Effect.gen(function* () {
   const database = yield* Database;
@@ -234,13 +232,13 @@ export const phoneConsumer = Effect.gen(function* () {
         }),
       );
 
-    const token = (slot: "request-binding" | "session") => {
+    const token = Effect.fnUntraced(function* (slot: "request-binding" | "session") {
       const found = [...commands].reverse().find((c) => c._tag === "Issue" && c.slot === slot);
 
-      if (found?._tag !== "Issue") throw new Error("missing private credential");
+      if (found?._tag !== "Issue") return yield* PhoneOtp.PhoneOtpUnavailable.make({});
 
       return Redacted.value(found.credential);
-    };
+    });
 
     const begin = (
       action: "register" | "verify" | "change",
@@ -261,7 +259,7 @@ export const phoneConsumer = Effect.gen(function* () {
 
         const challenge = yield* as(invocation, auth.begin(input));
 
-        return { input, challenge, binding: token("request-binding") };
+        return { input, challenge, binding: yield* token("request-binding") };
       });
 
     const complete = (
@@ -327,7 +325,7 @@ export const phoneConsumer = Effect.gen(function* () {
       "phone registration failed",
     );
 
-    const initialToken = token("session"),
+    const initialToken = yield* token("session"),
       initial = yield* sessionStrategy
         .inspect(Redacted.make(initialToken))
         .pipe(Effect.map((source) => source.inspection.session));
@@ -362,7 +360,7 @@ export const phoneConsumer = Effect.gen(function* () {
         auth.signIn({ phoneNumber: number, locale: "en-ZA" }),
       );
 
-      const requestBinding = token("request-binding"),
+      const requestBinding = yield* token("request-binding"),
         message = sent.find((m) => m.id === challenge.reference.proofId);
 
       assert(message !== undefined, "sign-in was not delivered");
@@ -379,7 +377,7 @@ export const phoneConsumer = Effect.gen(function* () {
       );
 
       assert(result._tag === "Authenticated", "phone-only sign-in failed");
-      const signed = token("session");
+      const signed = yield* token("session");
 
       return {
         signed,

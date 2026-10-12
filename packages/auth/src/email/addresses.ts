@@ -3,7 +3,12 @@ import { Base64Url } from "effect/encoding";
 
 import { hasCommitScope, type PreparedCommit } from "../hooks/commit";
 import { LifecycleHooks } from "../hooks/LifecycleHooks";
-import { HookDenied, LifecycleEventId, lifecycleEvent, lifecycleSnapshot } from "../hooks/models";
+import {
+  HookDenied,
+  LifecycleEventId,
+  lifecycleEventEffect,
+  lifecycleSnapshotEffect,
+} from "../hooks/models";
 import { LoginIdentifier } from "../identity/models";
 import type { AuthInvocation } from "../operations/context";
 import type { AuthOperationResult } from "../operations/credentials";
@@ -387,7 +392,7 @@ export const makeEmailAddresses = <
                     strategy.policy,
                   );
 
-            const snapshot = lifecycleSnapshot({
+            const snapshot = yield* lifecycleSnapshotEffect({
               action: "identifier-change",
               operation: `${moduleId}/${action}`,
               method: "email-code",
@@ -398,7 +403,7 @@ export const makeEmailAddresses = <
                   : []),
                 current.identifier,
               ],
-            });
+            }).pipe(Effect.orDie);
 
             yield* hooks.before(snapshot);
 
@@ -406,11 +411,11 @@ export const makeEmailAddresses = <
               .randomBytes(32)
               .pipe(Effect.mapError(() => EmailUnavailable.make({})));
 
-            const event = lifecycleEvent({
+            const event = yield* lifecycleEventEffect({
               id: LifecycleEventId.make(Base64Url.encode(bytes)),
               occurredAtMillis: DateTime.toEpochMillis(yield* DateTime.now),
               snapshot,
-            });
+            }).pipe(Effect.orDie);
 
             const mutation = Object.freeze({
               moduleId,

@@ -63,9 +63,12 @@ export const layer = <E, R>(options: Options<E, R>) => {
   const declarations = Object.entries(options.providers);
 
   const environments = Result.try({
-    try: () => snapshotEnvironments.sync(options.environments),
+    try: () => options.environments,
     catch: () => ConfigurationError.make({}),
-  });
+  }).pipe(
+    Result.flatMap(snapshotEnvironments.result),
+    Result.mapError(() => ConfigurationError.make({})),
+  );
 
   return Layer.effect(
     Server,

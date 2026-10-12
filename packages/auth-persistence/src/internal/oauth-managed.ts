@@ -52,10 +52,10 @@ export const makeManagedOAuth = Effect.fnUntraced(function* (
     Effect.mapError(() => configurationError("Cannot configure the OAuth storage clock")),
   );
 
-  function mapped<Role extends StorageRole>(role: Role) {
+  const mapped = Effect.fnUntraced(function* <Role extends StorageRole>(role: Role) {
     const table = storage.tables[role];
 
-    if (table === undefined) throw configurationError(`Missing ${role} mapping`);
+    if (table === undefined) return yield* configurationError(`Missing ${role} mapping`);
 
     return {
       table,
@@ -64,13 +64,13 @@ export const makeManagedOAuth = Effect.fnUntraced(function* (
         readonly [Key in keyof (typeof storageTables)[Role]["columns"]]: Key;
       }),
     };
-  }
+  });
 
   const s = storage.subjects;
   const subject = tables(s.table);
-  const credential = mapped("oauthCredentials");
+  const credential = yield* mapped("oauthCredentials");
   const credentials = tables(credential.table);
-  const authority = mapped("credentials");
+  const authority = yield* mapped("credentials");
   const factors = tables(authority.table);
   const now = tables.expression(clock.engineNowMillis);
   const policies = new Map<string, M.OAuthConnectedPolicy>();
@@ -101,7 +101,7 @@ export const makeManagedOAuth = Effect.fnUntraced(function* (
     },
     subjectId: { toSubject: s.toSubject, toNative: s.toNative, equals: Object.is },
     ownership: {
-      ...mapped("oauthIdentities"),
+      ...(yield* mapped("oauthIdentities")),
       decodeSubjectId: (row: Record<string, unknown>) => row.subjectId,
       encodeInsert: () => ({}),
     },
@@ -209,7 +209,7 @@ export const makeManagedOAuth = Effect.fnUntraced(function* (
   if (features.some((feature) => feature.signIn)) {
     const mapping: OAuthNativeReadMapping = {
       ...shared,
-      flow: { ...mapped("oauthSignInFlows"), encodeInsert: () => ({}) },
+      flow: { ...(yield* mapped("oauthSignInFlows")), encodeInsert: () => ({}) },
       constraints: requiredOAuthSignInConstraints,
     };
 
@@ -220,12 +220,12 @@ export const makeManagedOAuth = Effect.fnUntraced(function* (
     context = Context.add(context, M.OAuthSignInPersistence, services.oauthSignInPersistence);
   }
   if (policies.size > 0) {
-    const job = { ...mapped("oauthConnectedRevocations"), encodeInsert: () => ({}) };
-    const grant = { ...mapped("oauthConnectedGrants"), encodeInsert: () => ({}) };
+    const job = { ...(yield* mapped("oauthConnectedRevocations")), encodeInsert: () => ({}) };
+    const grant = { ...(yield* mapped("oauthConnectedGrants")), encodeInsert: () => ({}) };
 
     const mapping: OAuthNativeConnectedMapping = {
       ...shared,
-      flow: { ...mapped("oauthConnectedFlows"), encodeInsert: () => ({}) },
+      flow: { ...(yield* mapped("oauthConnectedFlows")), encodeInsert: () => ({}) },
       grant,
       policy: { condition: policyCondition },
       constraints: requiredOAuthConnectedConstraints,

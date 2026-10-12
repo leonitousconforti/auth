@@ -12,7 +12,7 @@ import { SecurityRevision } from "@yielded/auth/Sessions";
 import { Effect, Option, Redacted, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 
-import type { PersistenceMappingError } from "./mapping-error";
+import { PersistenceMappingError } from "./mapping-error";
 import type { AnyPasswordPersistenceMapping } from "./models/password-model";
 import { sqlMapping, type SqlTable } from "./native-sql-table";
 import type { PasswordWorkflowOptions } from "./password-policy";
@@ -240,17 +240,24 @@ export const makePasswordCredentials = Effect.fnUntraced(function* (
         const version = yield* allocate(mapping.allocateRevision, mapping.allocateRevisionSync);
 
         if (version === credential.verifierVersion) return yield* unavailable();
-        yield* sqlMapping(() => {
+
+        // A custom encoder cannot turn maintenance into a semantic credential change.
+        const values = yield* sqlMapping(() => {
           const encoded = mapping.credential.encodeVerifier(nextVerifier, version);
 
-          // A custom encoder cannot turn maintenance into a semantic credential change.
-          const values = {
+          return {
             [mapping.credential.verifier]: encoded[mapping.credential.verifier],
             [mapping.credential.verifierVersion]: encoded[mapping.credential.verifierVersion],
           };
+        });
 
-          if (Object.values(values).some((value) => value === undefined)) throw unavailable();
+        if (Object.values(values).some((value) => value === undefined))
+          return yield* PersistenceMappingError.make({
+            operation: "mapping",
+            cause: unavailable(),
+          });
 
+        yield* sqlMapping(() => {
           // Ordinary identity predicates retain index use; the full CAS ignores text collation.
           const exact = sql.and(
             Object.entries({

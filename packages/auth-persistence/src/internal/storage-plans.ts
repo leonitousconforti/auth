@@ -1,4 +1,6 @@
-import { Predicate, Schema } from "effect";
+import { Predicate, Result, Schema } from "effect";
+
+import { PersistenceMappingError } from "./mapping-error";
 
 // These are mapping contracts, not a parser for arbitrary constraint declarations.
 // Role aliases are explicit because their documentation names differ from mapping fields.
@@ -69,84 +71,95 @@ const nestedMappings = [
 const constraintGroups = ["constraints"];
 
 const MappingRecord = Schema.Record(Schema.String, Schema.Unknown);
-const record = Schema.decodeUnknownSync(MappingRecord);
+const record = Schema.decodeUnknownResult(MappingRecord);
 
+const failure = (cause: string) =>
+  Result.fail(PersistenceMappingError.make({ operation: "mapping", cause }));
+
+/** Capture mapping getters and adapter column metadata together, without scheduler suspension. */
 export const storageKeyPlans = (
   input: unknown,
-  columnsFor: (table: object) => Readonly<Record<string, unknown>>,
-) => {
-  const mapping = record(input);
-  const result: Array<{ readonly table: object; readonly keys: ReadonlyArray<string> }> = [];
+  columnsFor: (
+    table: object,
+  ) => Result.Result<Readonly<Record<string, unknown>>, PersistenceMappingError>,
+): Result.Result<
+  Array<{ readonly table: object; readonly keys: ReadonlyArray<string> }>,
+  PersistenceMappingError | Schema.SchemaError
+> =>
+  Result.gen(function* () {
+    const mapping = yield* record(input);
+    const result: Array<{ readonly table: object; readonly keys: ReadonlyArray<string> }> = [];
 
-  for (const group of constraintGroups) {
-    if (mapping[group] === undefined) continue;
-    for (const [name, declaration] of Object.entries(record(mapping[group]))) {
-      if (declaration === "notNull(provisioningRequest.subjectId)") continue;
-      let role: string;
-      let keys: ReadonlyArray<string>;
+    for (const group of constraintGroups) {
+      if (mapping[group] === undefined) continue;
+      for (const [name, declaration] of Object.entries(yield* record(mapping[group]))) {
+        if (declaration === "notNull(provisioningRequest.subjectId)") continue;
+        let role: string;
+        let keys: ReadonlyArray<string>;
 
-      if (typeof declaration === "string") {
-        const plan = uniquePlans[declaration];
+        if (typeof declaration === "string") {
+          const plan = uniquePlans[declaration];
 
-        if (plan !== undefined) [role, keys] = plan;
-        else if (declaration === "unique(id)") {
-          role = "subject";
-          keys = ["id"];
-        } else if (declaration === "unique(scope)") {
-          role = name;
-          keys = ["scope"];
-        } else if (declaration === "unique(credentialId)") {
-          role = "credential";
-          keys = ["id"];
-        } else if (declaration === "unique(namespace,value)") {
-          role = "identifier";
-          keys = ["namespace", "value"];
-        } else if (declaration === "unique(provider,issuer,subject)") {
-          role = "externalIdentity";
-          keys = ["provider", "issuer", "subject"];
-        } else if (declaration === "unique(requestId)") {
-          role = "provisioningRequest";
-          keys = ["requestId"];
-        } else throw new Error("Unknown storage constraint");
-      } else if (Array.isArray(declaration) && declaration.every(Predicate.isString)) {
-        const mappedRole = arrayRoles[name];
+          if (plan !== undefined) [role, keys] = plan;
+          else if (declaration === "unique(id)") {
+            role = "subject";
+            keys = ["id"];
+          } else if (declaration === "unique(scope)") {
+            role = name;
+            keys = ["scope"];
+          } else if (declaration === "unique(credentialId)") {
+            role = "credential";
+            keys = ["id"];
+          } else if (declaration === "unique(namespace,value)") {
+            role = "identifier";
+            keys = ["namespace", "value"];
+          } else if (declaration === "unique(provider,issuer,subject)") {
+            role = "externalIdentity";
+            keys = ["provider", "issuer", "subject"];
+          } else if (declaration === "unique(requestId)") {
+            role = "provisioningRequest";
+            keys = ["requestId"];
+          } else return yield* failure("Unknown storage constraint");
+        } else if (Array.isArray(declaration) && declaration.every(Predicate.isString)) {
+          const mappedRole = arrayRoles[name];
 
-        if (mappedRole === undefined) throw new Error("Unknown storage constraint");
-        role = mappedRole;
-        keys = declaration;
-      } else throw new Error("Invalid storage constraint");
+          if (mappedRole === undefined) return yield* failure("Unknown storage constraint");
+          role = mappedRole;
+          keys = declaration;
+        } else return yield* failure("Invalid storage constraint");
 
-      let target: unknown = mapping;
+        let target: unknown = mapping;
 
-      for (const segment of role.split(".")) target = record(target)[segment];
-      // Session authority places its pending tables in one nested mapping.
-      if (target === undefined && Schema.is(MappingRecord)(mapping.pending))
-        target = mapping.pending[role];
-      let mapped = record(target);
+        for (const segment of role.split(".")) target = (yield* record(target))[segment];
+        // Session authority places its pending tables in one nested mapping.
+        if (target === undefined && Schema.is(MappingRecord)(mapping.pending))
+          target = mapping.pending[role];
+        let mapped = yield* record(target);
 
-      if (role === "pending" && mapped.table === undefined) mapped = record(mapped.pending);
-      if (!Predicate.isObject(mapped.table)) throw new Error("Missing storage table");
-      const columns = columnsFor(mapped.table);
+        if (role === "pending" && mapped.table === undefined)
+          mapped = yield* record(mapped.pending);
+        if (!Predicate.isObject(mapped.table)) return yield* failure("Missing storage table");
+        const columns = yield* columnsFor(mapped.table);
 
-      result.push({
-        table: mapped.table,
-        keys: keys.map((key) => {
+        const table = mapped.table;
+        const physicalKeys: string[] = [];
+
+        for (const key of keys) {
           const value = mapped[key];
 
           if (typeof value !== "string" || columns[value] === undefined)
-            throw new Error("Missing mapped key");
-
-          return value;
-        }),
-      });
+            return yield* failure("Missing mapped key");
+          physicalKeys.push(value);
+        }
+        result.push({ table, keys: physicalKeys });
+      }
     }
-  }
-  for (const nested of nestedMappings) {
-    const value = mapping[nested];
+    for (const nested of nestedMappings) {
+      const value = mapping[nested];
 
-    if (Schema.is(MappingRecord)(value) && value.table === undefined)
-      result.push(...storageKeyPlans(value, columnsFor));
-  }
+      if (Schema.is(MappingRecord)(value) && value.table === undefined)
+        result.push(...(yield* storageKeyPlans(value, columnsFor)));
+    }
 
-  return result;
-};
+    return result;
+  });

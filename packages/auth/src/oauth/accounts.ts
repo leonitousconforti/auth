@@ -12,9 +12,14 @@ import {
 } from "effect";
 import { Base64Url } from "effect/encoding";
 
-import { hasCommitScope, type PreparedCommit } from "../hooks/commit";
+import { prepareCommit, hasCommitScope, type PreparedCommit } from "../hooks/commit";
 import { LifecycleHooks } from "../hooks/LifecycleHooks";
-import { HookDenied, LifecycleEventId, lifecycleEvent, lifecycleSnapshot } from "../hooks/models";
+import {
+  HookDenied,
+  LifecycleEventId,
+  lifecycleEventEffect,
+  lifecycleSnapshotEffect,
+} from "../hooks/models";
 import { IdentityConflict, LastSignInMethod } from "../identity/models";
 import { reportAuthFailure } from "../internal/diagnostics";
 import { AuthenticationClock } from "../operations/clock";
@@ -177,13 +182,7 @@ export const makeOAuthAccounts = <
     }
   >(`effect-auth/oauth/${moduleId.length}:${moduleId}/Accounts`);
 
-  let captured: OAuthAccountsPolicy | undefined;
-
-  try {
-    captured = snapshotOAuthAccountsPolicy.sync(configuration);
-  } catch {
-    /* Layer validates. */
-  }
+  const captured = Result.getOrUndefined(snapshotOAuthAccountsPolicy.result(configuration));
 
   const layer = Layer.effect(
     Accounts,
@@ -216,7 +215,7 @@ export const makeOAuthAccounts = <
       const strategy = yield* sessions.SessionStrategy;
       const clockPolicy = yield* AuthenticationClock;
 
-      const invalidation = snapshotSessionInvalidationWindow.sync(
+      const invalidation = yield* snapshotSessionInvalidationWindow.effect(
         sessionInvalidationWindow("credential-change", strategy.capabilities, strategy.policy),
       );
 
@@ -276,7 +275,7 @@ export const makeOAuthAccounts = <
       ) {
         const intentDigest = yield* hash(intent);
 
-        return snapshotOAuthActionChallenge.sync({
+        return yield* snapshotOAuthActionChallenge.effect({
           moduleId: id,
           action,
           flowId,
@@ -301,8 +300,8 @@ export const makeOAuthAccounts = <
         maximumAgeMillis = policy.maximumEvidenceAgeMillis,
       ) {
         const grant = yield* verifyAction({
-          invocation: snapshotOAuthLinkedAccountsRead_fields_invocation.sync(caller),
-          challenge: snapshotOAuthActionChallenge.sync(expected),
+          invocation: yield* snapshotOAuthLinkedAccountsRead_fields_invocation.effect(caller),
+          challenge: yield* snapshotOAuthActionChallenge.effect(expected),
           ...(proof === undefined ? {} : { proof: Redacted.make(Redacted.value(proof)) }),
         });
 
@@ -328,22 +327,22 @@ export const makeOAuthAccounts = <
         action: "linking" | "credential-change",
         subjectId: OAuthAccountRevision["subjectId"],
       ) {
-        const snapshot = lifecycleSnapshot({
+        const snapshot = yield* lifecycleSnapshotEffect({
           action,
           operation: `${moduleId}/accounts/${action === "linking" ? "link" : "unlink"}`,
           subjectId,
           method: "oauth",
           identifiers: [],
-        });
+        }).pipe(Effect.orDie);
 
         yield* before(snapshot);
         const bytes = yield* randomBytes(32).pipe(Effect.mapError(() => OAuthUnavailable.make({})));
 
-        const event = lifecycleEvent({
+        const event = yield* lifecycleEventEffect({
           id: LifecycleEventId.make(Base64Url.encode(bytes)),
           occurredAtMillis: DateTime.toEpochMillis(yield* DateTime.now),
           snapshot,
-        });
+        }).pipe(Effect.orDie);
 
         bytes.fill(0);
 
@@ -416,7 +415,7 @@ export const makeOAuthAccounts = <
 
           if (expiresAtMillis <= now) return yield* OAuthRejected.make({});
 
-          const intent = snapshotOAuthLinkIntentContext.sync({
+          const intent = yield* snapshotOAuthLinkIntentContext.effect({
             ...prepared.configuration,
             ...(prepared.responseMode === undefined ? {} : { responseMode: prepared.responseMode }),
             namespace: "effect-auth/oauth-link-context/v1",
@@ -449,34 +448,39 @@ export const makeOAuthAccounts = <
             request.actionProof,
           );
 
-          const context = snapshotOAuthLinkTransactionContext.sync({
+          const context = yield* snapshotOAuthLinkTransactionContext.effect({
             ...intent,
             authorization,
           });
 
           const sealed = yield* seal({
-            context: snapshotOAuthLinkTransactionContext.sync(context),
-            secrets: snapshotOAuthTransactionSecrets.sync(prepared.secrets),
+            context: yield* snapshotOAuthLinkTransactionContext.effect(context),
+            secrets: yield* snapshotOAuthTransactionSecrets.effect(prepared.secrets),
           }).pipe(Effect.flatMap((value) => snapshotOAuthSealedTransaction.effect(value)));
 
-          const flow = snapshotOAuthLinkFlow.sync({
+          const flow = yield* snapshotOAuthLinkFlow.effect({
             context,
             sealed,
           });
 
           const expected = Schema.encodeSync(flowJson)(flow);
 
-          const receipt = yield* issue(snapshotOAuthLinkFlow.sync(flow), (value, journal) => {
-            const decision = snapshotOAuthLinkIssueDecision.sync(value);
+          const receipt = yield* issue(
+            yield* snapshotOAuthLinkFlow.effect(flow),
+            prepareCommit((value, journal) =>
+              Result.gen(function* () {
+                const decision = snapshotOAuthLinkIssueDecision.sync(value);
 
-            if (
-              decision._tag === "Issued" &&
-              Schema.encodeSync(flowJson)(decision.flow) !== expected
-            )
-              throw OAuthUnavailable.make({});
+                if (
+                  decision._tag === "Issued" &&
+                  Schema.encodeSync(flowJson)(decision.flow) !== expected
+                )
+                  return yield* Result.fail(OAuthUnavailable.make({}));
 
-            return journal.prepare(decision._tag === "Issued");
-          });
+                return journal.prepare(decision._tag === "Issued");
+              }),
+            ),
+          );
 
           if (!(yield* read(receipt))) return yield* OAuthRejected.make({});
 
@@ -525,7 +529,7 @@ export const makeOAuthAccounts = <
             ...(response.issuer === undefined ? {} : { responseIssuer: response.issuer }),
           };
 
-          const access = snapshotOAuthLinkAccess.sync(
+          const access = yield* snapshotOAuthLinkAccess.effect(
             authenticated === undefined
               ? { ...binding, formPostSubject: true as const }
               : { ...binding, subjectId: authenticated.subjectId },
@@ -540,7 +544,7 @@ export const makeOAuthAccounts = <
 
             return yield* OAuthRejected.make({});
           }
-          const flow = snapshotOAuthLinkFlow.sync(consumed.flow);
+          const flow = yield* snapshotOAuthLinkFlow.effect(consumed.flow);
           const context = flow.context;
 
           if (authenticated === undefined && context.responseMode !== "form_post")
@@ -587,7 +591,7 @@ export const makeOAuthAccounts = <
                 return yield* OAuthUnavailable.make({});
 
               return yield* exchangeVerifiedIdentity({
-                configuration: snapshotOAuthProtocolConfiguration.sync(context),
+                configuration: yield* snapshotOAuthProtocolConfiguration.effect(context),
                 response,
                 secrets,
                 verificationStartedAt: yield* DateTime.now,
@@ -608,32 +612,38 @@ export const makeOAuthAccounts = <
             return yield* OAuthRejected.make({});
           const event = yield* eventFor("linking", caller.subjectId);
 
-          const finished = yield* link({ flow, identity }, (value, journal) => {
-            const decision = snapshotOAuthLinkDecision.sync(value);
+          const finished = yield* link(
+            { flow, identity },
+            prepareCommit((value, journal) =>
+              Result.gen(function* () {
+                const decision = snapshotOAuthLinkDecision.sync(value);
 
-            if (decision._tag === "Linked") {
-              const c = decision.credential;
+                if (decision._tag === "Linked") {
+                  const c = decision.credential;
 
-              if (
-                c.moduleId !== id ||
-                c.revision.subjectId !== caller.subjectId ||
-                c.identity.provider !== identity.identity.provider ||
-                c.identity.issuer !== identity.identity.issuer ||
-                c.identity.subject !== identity.identity.subject ||
-                c.revision.securityRevision !== context.revision.securityRevision ||
-                !c.revision.credentials.some(
-                  (item) =>
-                    item.credentialId === c.credentialId && item.revision === c.credentialRevision,
-                ) ||
-                new Set(c.revision.credentials.map((item) => item.credentialId)).size !==
-                  c.revision.credentials.length
-              )
-                throw OAuthUnavailable.make({});
-              if (decision.changed) journal.stage(event);
-            }
+                  if (
+                    c.moduleId !== id ||
+                    c.revision.subjectId !== caller.subjectId ||
+                    c.identity.provider !== identity.identity.provider ||
+                    c.identity.issuer !== identity.identity.issuer ||
+                    c.identity.subject !== identity.identity.subject ||
+                    c.revision.securityRevision !== context.revision.securityRevision ||
+                    !c.revision.credentials.some(
+                      (item) =>
+                        item.credentialId === c.credentialId &&
+                        item.revision === c.credentialRevision,
+                    ) ||
+                    new Set(c.revision.credentials.map((item) => item.credentialId)).size !==
+                      c.revision.credentials.length
+                  )
+                    return yield* Result.fail(OAuthUnavailable.make({}));
+                  if (decision.changed) journal.stage(event);
+                }
 
-            return journal.prepare(decision);
-          }).pipe(Effect.flatMap(read));
+                return journal.prepare(decision);
+              }),
+            ),
+          ).pipe(Effect.flatMap(read));
 
           if (finished._tag === "Conflict") return yield* IdentityConflict.make({});
           if (finished._tag === "Rejected") return yield* OAuthRejected.make({});
@@ -673,7 +683,7 @@ export const makeOAuthAccounts = <
           });
 
           if (found === undefined) return yield* OAuthRejected.make({});
-          const credential = snapshotOAuthCredentialSnapshot.sync(found);
+          const credential = yield* snapshotOAuthCredentialSnapshot.effect(found);
 
           if (
             credential.moduleId !== id ||
@@ -702,25 +712,27 @@ export const makeOAuthAccounts = <
 
           const receipt = yield* unlink(
             {
-              credential: snapshotOAuthCredentialSnapshot.sync(credential),
-              authorization: snapshotOAuthActionAuthorization.sync(authorization),
-              invalidation: snapshotSessionInvalidationWindow.sync(invalidation),
+              credential: yield* snapshotOAuthCredentialSnapshot.effect(credential),
+              authorization: yield* snapshotOAuthActionAuthorization.effect(authorization),
+              invalidation: yield* snapshotSessionInvalidationWindow.effect(invalidation),
             },
-            (value, journal) => {
-              const decision = snapshotOAuthUnlinkDecision.sync(value);
+            prepareCommit((value, journal) =>
+              Result.gen(function* () {
+                const decision = snapshotOAuthUnlinkDecision.sync(value);
 
-              if (decision._tag === "Unlinked") {
-                if (
-                  decision.result.credentialId !== credential.credentialId ||
-                  Schema.encodeSync(invalidationJson)(decision.result.invalidation) !==
-                    expectedInvalidation
-                )
-                  throw OAuthUnavailable.make({});
-                journal.stage(event);
-              }
+                if (decision._tag === "Unlinked") {
+                  if (
+                    decision.result.credentialId !== credential.credentialId ||
+                    Schema.encodeSync(invalidationJson)(decision.result.invalidation) !==
+                      expectedInvalidation
+                  )
+                    return yield* Result.fail(OAuthUnavailable.make({}));
+                  journal.stage(event);
+                }
 
-              return journal.prepare(decision);
-            },
+                return journal.prepare(decision);
+              }),
+            ),
           );
 
           const decision = yield* read(receipt);
@@ -780,13 +792,19 @@ export const makeOAuthAccounts = <
             limit,
           });
 
-          const receipt = yield* cleanup(input, (value, journal) => {
-            const result = snapshotCleanupResult.sync(value);
+          const receipt = yield* cleanup(
+            input,
+            prepareCommit((value, journal) =>
+              Result.gen(function* () {
+                const result = snapshotCleanupResult.sync(value);
 
-            if (result.removed > input.limit) throw OAuthUnavailable.make({});
+                if (result.removed > input.limit)
+                  return yield* Result.fail(OAuthUnavailable.make({}));
 
-            return journal.prepare(result);
-          });
+                return journal.prepare(result);
+              }),
+            ),
+          );
 
           return yield* read(receipt);
         }),

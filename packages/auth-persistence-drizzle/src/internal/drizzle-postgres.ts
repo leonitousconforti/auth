@@ -40,6 +40,7 @@ const makeTable = (definition: StorageTable) =>
         const [first, ...rest] = keys;
 
         if (first === undefined)
+          // oxlint-disable-next-line effect/no-untyped-throw -- Drizzle table declaration callbacks must synchronously return constraints for schema generation.
           throw PersistenceConfigurationError.make({ reason: "An empty unique key is invalid" });
 
         return uniqueIndex(`${definition.name}_key_${i}`).on(
@@ -51,6 +52,7 @@ const makeTable = (definition: StorageTable) =>
         const [first, ...rest] = keys;
 
         if (first === undefined)
+          // oxlint-disable-next-line effect/no-untyped-throw -- Drizzle table declaration callbacks must synchronously return constraints for schema generation.
           throw PersistenceConfigurationError.make({ reason: "An empty index is invalid" });
 
         return index(`${definition.name}_index_${i}`).on(

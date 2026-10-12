@@ -1,4 +1,4 @@
-import { Cause, Context, Effect, Option, Schema } from "effect";
+import { Cause, Context, Effect, Option, Result, Schema } from "effect";
 
 import { LifecycleHooks } from "./LifecycleHooks";
 import { HookConfigurationError, type LifecycleEvent, lifecycleEvent } from "./models";
@@ -22,6 +22,21 @@ export interface CommitJournal {
   /** Stage only work belonging to this transaction/savepoint, before its commit returns. */
   readonly stage: (event: LifecycleEvent) => void;
 }
+
+/** Adapt pure validation to the native persistence owner's synchronous prepare contract.
+ * A rejected preparation must abort that owner's transaction before physical commit. */
+export const prepareCommit =
+  <V, A, E>(prepare: (value: V, journal: CommitJournal) => Result.Result<PreparedCommit<A>, E>) =>
+  (value: V, journal: CommitJournal): PreparedCommit<A> => {
+    const result = prepare(value, journal);
+
+    if (Result.isFailure(result)) {
+      // oxlint-disable-next-line effect/no-untyped-throw -- Native transaction/batch owners require synchronous prepare rejection to roll back before committing.
+      throw result.failure;
+    }
+
+    return result.success;
+  };
 
 /** Current journal for internal transaction operations. Public commit-owner
  * continuations still receive the journal explicitly at the native boundary. */
@@ -87,6 +102,7 @@ export const coordinateCommit = <A, E, R>(
 
       const assertOpen = (): void => {
         if (!open)
+          // oxlint-disable-next-line effect/no-untyped-throw -- CommitJournal is a synchronous native transaction callback API; closed journals must reject before physical commit.
           throw HookConfigurationError.make({
             reason: "closed-journal",
             contribution: "transaction",
@@ -103,6 +119,7 @@ export const coordinateCommit = <A, E, R>(
 
         for (const event of incoming) {
           if (next.has(event.id))
+            // oxlint-disable-next-line effect/no-untyped-throw -- Native journal staging must reject duplicate events while the transaction can still roll back.
             throw HookConfigurationError.make({
               reason: "duplicate-event",
               contribution: event.id,

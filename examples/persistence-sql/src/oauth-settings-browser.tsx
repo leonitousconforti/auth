@@ -212,6 +212,7 @@ const stopCompletion = registry.mount(complete);
 registry.set(complete, undefined);
 const root = document.getElementById("root");
 
+// oxlint-disable-next-line effect/no-untyped-throw, effect/no-native-error -- React host bootstrap cannot mount without its DOM root.
 if (root === null) throw new Error("Missing account settings root");
 createRoot(root).render(
   <RegistryContext.Provider value={registry}>

@@ -5,6 +5,7 @@ import { SqlClient } from "effect/sql";
 import type { Fragment } from "effect/sql/Statement";
 
 import { sqlBatchAssertion } from "../d1-planning";
+import { PersistenceMappingError } from "../mapping-error";
 import type { OAuthConnectedRevocationMapping } from "../models/oauth-connected-model";
 import type { NativeSqlTables } from "../native-sql-table";
 import { exactSqlText, executeSqlChange } from "../sql-change";
@@ -18,7 +19,7 @@ import {
 } from "../sql-commit";
 import type { SqlExpression, TableModel } from "../table-model";
 import { prepareOAuthNative } from "./native-sign-in";
-import { invariant, storage, unavailable } from "./state";
+import { invalidState, storage, unavailable } from "./state";
 
 // The driver validates physical metadata; schema decoding owns durable values.
 export type OAuthNativeRevocationMapping = OAuthConnectedRevocationMapping<
@@ -66,7 +67,9 @@ export const makeNativeOAuthRevocationServices = Effect.fnUntraced(function* (
     if (batch !== undefined) {
       yield* appendSqlBatchStatement(sql`${statement}`);
       yield* appendSqlBatchStatement(sqlBatchAssertion(sql, sql`changes() = 1`));
-    } else invariant((yield* executeSqlChange(sql, statement)) === 1);
+    } else {
+      if (!((yield* executeSqlChange(sql, statement)) === 1)) return yield* invalidState();
+    }
   });
 
   const finish = (condition: Fragment) =>
@@ -74,7 +77,11 @@ export const makeNativeOAuthRevocationServices = Effect.fnUntraced(function* (
       ? registerSqlPostcondition({
           name: "oauth-revocation",
           check: Effect.gen(function* () {
-            invariant((yield* sql`select 1 where ${condition}`).length === 1);
+            if (!((yield* sql`select 1 where ${condition}`).length === 1))
+              return yield* PersistenceMappingError.make({
+                operation: "postcondition",
+                cause: invalidState(),
+              });
           }),
         })
       : registerSqlBatchPostcondition({
@@ -89,11 +96,14 @@ export const makeNativeOAuthRevocationServices = Effect.fnUntraced(function* (
           const moduleId = M.snapshotOAuthSync(M.OAuthModuleId, input.moduleId);
           const claimId = M.snapshotOAuthSync(M.OAuthClaimId, input.claimId);
 
-          invariant(
-            Number.isSafeInteger(input.lifetimeMillis) &&
+          if (
+            !(
+              Number.isSafeInteger(input.lifetimeMillis) &&
               input.lifetimeMillis >= 1000 &&
-              input.lifetimeMillis <= 300000,
-          );
+              input.lifetimeMillis <= 300000
+            )
+          )
+            return yield* invalidState();
 
           const pending = sql.and([
             exact(j.moduleId, moduleId),
@@ -108,17 +118,20 @@ export const makeNativeOAuthRevocationServices = Effect.fnUntraced(function* (
           const row = job.decode(rows[0], "job_");
           const encoded = row[j.snapshot];
 
-          invariant(typeof encoded === "string");
+          if (!(typeof encoded === "string")) return yield* invalidState();
           const value = stored.decode(encoded);
 
-          invariant(
-            row[j.jobId] === value.jobId &&
+          if (
+            !(
+              row[j.jobId] === value.jobId &&
               value.grant.context.moduleId === moduleId &&
               mapping.subjectId.equals(
                 row[j.subjectId],
                 yield* mapping.subjectId.toNative(value.grant.context.subjectId),
-              ),
-          );
+              )
+            )
+          )
+            return yield* invalidState();
           const engineNow = yield* Schema.decodeEffect(Schema.Int)(Number(rows[0].engine_now));
 
           const deadline = engineNow + input.lifetimeMillis;
@@ -171,7 +184,7 @@ export const makeNativeOAuthRevocationServices = Effect.fnUntraced(function* (
             const rows = yield* sql`select 1 from ${job.name} where ${target}`;
 
             if (rows.length === 0) return yield* prepareOAuthNative({ settled: false }, prepare);
-            invariant(rows.length === 1);
+            if (!(rows.length === 1)) return yield* invalidState();
             yield* change(statement);
           } else if ((yield* executeSqlChange(sql, statement)) !== 1)
             return yield* prepareOAuthNative({ settled: false }, prepare);

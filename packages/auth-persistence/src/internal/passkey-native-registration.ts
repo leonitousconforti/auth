@@ -10,7 +10,7 @@ import type {
 } from "./models/passkey-write-model";
 import { passkeyCanonicalJson, passkeyDigest } from "./passkey-actions";
 import { preparePasskeyNative, type NativePasskeyServices } from "./passkey-native";
-import { passkeyNativeInvariant } from "./passkey-native-state";
+import { invalidPasskeyState } from "./passkey-native-state";
 import { makePasskeyNativeWrites } from "./passkey-native-write";
 import { passkeyMatchesAccess, validPasskeyCeremony } from "./passkey-policy";
 import { appendSqlBatchStatement } from "./sql-commit";
@@ -37,13 +37,13 @@ export const makePasskeyNativeRegistration = <R>(
   const { write, postcondition, check, insertCredential, subjectCondition, owned } =
     makePasskeyNativeWrites(base, mapping);
 
-  const invariant: typeof passkeyNativeInvariant = passkeyNativeInvariant;
+  const invalidState = invalidPasskeyState;
   const codec = passkeyCanonicalJson(mapping.registration.schema);
 
   const describe = Effect.fnUntraced(function* (original: R) {
     const encoded = codec.encode(original);
 
-    invariant(new TextEncoder().encode(encoded).length <= 1048576);
+    if (!(new TextEncoder().encode(encoded).length <= 1048576)) return yield* invalidState();
     const registration = codec.decode(encoded);
 
     const labels = yield* Schema.decodeEffect(
@@ -146,9 +146,10 @@ export const makePasskeyNativeRegistration = <R>(
           const nativeId = provision.subjectId;
           const subjectId = mapping.read.subjectIds.toSubject(nativeId);
 
-          invariant(
-            mapping.read.subjectIds.equals(mapping.read.subjectIds.toNative(subjectId), nativeId),
-          );
+          if (
+            !mapping.read.subjectIds.equals(mapping.read.subjectIds.toNative(subjectId), nativeId)
+          )
+            return yield* invalidState();
           if (base.batch) yield* appendSqlBatchStatement(sqlBatchAssertion(sql, eligible));
           else yield* check(eligible);
           // Inserting the new subject acquires its lock before the challenge or
@@ -159,9 +160,8 @@ export const makePasskeyNativeRegistration = <R>(
           let subjectRow: Readonly<Record<string, unknown>> = provision.values;
 
           if (base.batch) {
-            invariant(
-              mapping.read.subject.isActiveStatus(provision.values[mapping.read.subject.status]),
-            );
+            if (!mapping.read.subject.isActiveStatus(provision.values[mapping.read.subject.status]))
+              return yield* invalidState();
             revision = yield* Schema.decodeUnknownEffect(M.PasskeyRevision)({
               subjectId,
               securityRevision: provision.values[mapping.read.subject.securityRevision],
@@ -171,7 +171,7 @@ export const makePasskeyNativeRegistration = <R>(
           } else {
             const current = yield* state.readAuthority(nativeId, true);
 
-            invariant(current !== undefined);
+            if (!(current !== undefined)) return yield* invalidState();
             subjectRow = current.row;
             revision = current.revision;
             nowMillis = current.nowMillis;

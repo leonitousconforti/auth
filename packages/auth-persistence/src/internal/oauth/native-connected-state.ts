@@ -6,7 +6,7 @@ import type { NativeSqlTables } from "../native-sql-table";
 import { exactSqlText } from "../sql-change";
 import type { SqlExpression, TableModel } from "../table-model";
 import { makeOAuthNativeMutation } from "./native-mutation";
-import { invariant, oauthIdentityKey, storage } from "./state";
+import { invalidState, oauthIdentityKey, storage } from "./state";
 
 // Physical metadata is checked by the adapter compiler.
 export type OAuthNativeConnectedMapping = OAuthConnectedMapping<
@@ -91,13 +91,14 @@ export const makeOAuthNativeConnectedState = Effect.fnUntraced(function* (
   ) {
     const encoded = row[g.snapshot];
 
-    invariant(typeof encoded === "string");
+    if (!(typeof encoded === "string")) return yield* invalidState();
     const value = stored.decode(encoded);
     const c = value.context;
     const identityKey = yield* oauthIdentityKey(c.identity);
 
-    invariant(
-      row[g.moduleId] === c.moduleId &&
+    if (
+      !(
+        row[g.moduleId] === c.moduleId &&
         row[g.grantId] === c.grantId &&
         mapping.subjectId.equals(row[g.subjectId], nativeId) &&
         mapping.subjectId.equals(yield* mapping.subjectId.toNative(c.subjectId), nativeId) &&
@@ -106,27 +107,36 @@ export const makeOAuthNativeConnectedState = Effect.fnUntraced(function* (
         row[g.grantVersion] === c.grantVersion &&
         row[g.tokenVersion] === c.tokenVersion &&
         mapping.clock.decodeInstant(row[g.expiresAt]) ===
-          Math.max(c.metadata.useUntilMillis, c.metadata.refreshUseUntilMillis ?? 0),
-    );
+          Math.max(c.metadata.useUntilMillis, c.metadata.refreshUseUntilMillis ?? 0)
+      )
+    )
+      return yield* invalidState();
 
     const state = yield* Schema.decodeUnknownEffect(M.OAuthConnectedGrantSnapshot.fields.state)(
       row[g.state],
     );
 
-    if (state === "Refreshing")
-      invariant(
-        typeof row[g.refreshClaimId] === "string" &&
+    if (state === "Refreshing") {
+      if (
+        !(
+          typeof row[g.refreshClaimId] === "string" &&
           typeof row[g.refreshNextTokenVersion] === "string" &&
           row[g.refreshClaimedAt] !== null &&
-          row[g.refreshClaimExpiresAt] !== null,
-      );
-    else
-      invariant(
-        row[g.refreshClaimId] === null &&
+          row[g.refreshClaimExpiresAt] !== null
+        )
+      )
+        return yield* invalidState();
+    } else {
+      if (
+        !(
+          row[g.refreshClaimId] === null &&
           row[g.refreshNextTokenVersion] === null &&
           row[g.refreshClaimedAt] === null &&
-          row[g.refreshClaimExpiresAt] === null,
-      );
+          row[g.refreshClaimExpiresAt] === null
+        )
+      )
+        return yield* invalidState();
+    }
 
     const snapshot = M.snapshotOAuthSync(M.OAuthConnectedGrantSnapshot, {
       ...value,
@@ -147,7 +157,7 @@ export const makeOAuthNativeConnectedState = Effect.fnUntraced(function* (
     const rows =
       yield* sql`select ${grant.fields("grant_")} from ${grant.name} where ${key(input, nativeId)} ${locking ? mutation.lock : sql``}`;
 
-    invariant(rows.length <= 1);
+    if (!(rows.length <= 1)) return yield* invalidState();
 
     return rows[0] === undefined
       ? undefined
@@ -206,11 +216,15 @@ export const makeOAuthNativeConnectedState = Effect.fnUntraced(function* (
     if (found[g.grantId] === null) return { revision };
     const decoded = yield* decode(found, nativeId);
 
-    if (input.selector._tag === "Identity")
-      invariant(
-        storage(M.OAuthExternalIdentity).encode(decoded.value.context.identity) ===
-          storage(M.OAuthExternalIdentity).encode(input.selector.identity),
-      );
+    if (input.selector._tag === "Identity") {
+      if (
+        !(
+          storage(M.OAuthExternalIdentity).encode(decoded.value.context.identity) ===
+          storage(M.OAuthExternalIdentity).encode(input.selector.identity)
+        )
+      )
+        return yield* invalidState();
+    }
 
     return { revision, grant: decoded.snapshot };
   });

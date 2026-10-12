@@ -12,6 +12,7 @@ export class SqlExpression {
 
 const quoted = (client: SqlClient, name: string) => {
   if (name.includes("\0"))
+    // oxlint-disable-next-line effect/no-untyped-throw -- SQL expression compilation must synchronously return a Fragment; workflow adapters capture mapping failures.
     throw PersistenceMappingError.make({ operation: "mapping", cause: "NUL in SQL identifier" });
 
   return client.literal(identifier(name));
@@ -49,6 +50,7 @@ export const compileSqlExpression = (
     !(expression instanceof Table) &&
     !(expression instanceof Column)
   )
+    // oxlint-disable-next-line effect/no-untyped-throw -- SQL expression compilation must synchronously return a Fragment; workflow adapters capture mapping failures.
     throw PersistenceMappingError.make({
       operation: "mapping",
       cause: "Expected a SQL expression",

@@ -43,7 +43,8 @@ const string = (value: unknown) => Schema.decodeUnknownSync(Schema.String)(value
 
 /** Derive shared row mappings from a managed or custom storage layout.
  * Acquire Effect Crypto once; the returned allocators retain that implementation.
- * Each factory requires its role tables to exist. Supplying native tables derives
+ * Each factory returns an Effect that fails with PersistenceMappingError when
+ * its role tables are missing. Supplying native tables derives
  * batch commit predicates and subject policy columns. Adapter authors may refine
  * clocks and authority policy for explicit services.
  */
@@ -59,22 +60,24 @@ export const makeMappings = Effect.fnUntraced(function* (
     Effect.mapError(failure),
   );
 
-  const table = (role: StorageRole) => {
+  const table = Effect.fnUntraced(function* (role: StorageRole) {
     const found = input.tables[role];
 
-    if (found === undefined) throw failure(`Missing ${role} mapping`);
+    if (found === undefined) return yield* failure(`Missing ${role} mapping`);
 
     return found;
-  };
+  });
 
-  const mapped = (role: StorageRole) => ({
-    table: table(role),
-    ...Object.fromEntries(Object.keys(storageTables[role].columns).map((key) => [key, key])),
+  const mapped = Effect.fnUntraced(function* (role: StorageRole) {
+    return {
+      table: yield* table(role),
+      ...Object.fromEntries(Object.keys(storageTables[role].columns).map((key) => [key, key])),
+    };
   });
 
   const { subjects: s, encodeInstant: instant, decodeInstant: readInstant } = input;
   const subjectId = { toNative: s.toNative, toSubject: s.toSubject, equals: Object.is };
-  const identifierTable = tables?.(table("identifiers"));
+  const identifierTable = tables?.(yield* table("identifiers"));
 
   const activeIdentifier =
     identifierTable === undefined
@@ -103,45 +106,57 @@ export const makeMappings = Effect.fnUntraced(function* (
     nextSecurityRevision: () => allocate.pipe(Effect.map(SecurityRevision.make)),
   };
 
-  const authorityCredential = () => ({
-    ...mapped("credentials"),
-    subjectId: "subjectId",
-    credentialId: "credentialId",
-    revision: "revision",
-    status: "active",
-    activeStatusValue: true,
-    d1ActiveStatusValue: true,
-    isActiveStatus: (value: unknown) => value === true,
-    encodeInsert: (row: object) => ({ ...row, active: true }),
-    encodeRevision: (revision: SecurityRevision) => ({ revision }),
+  const authorityCredential = Effect.fnUntraced(function* () {
+    return {
+      ...(yield* mapped("credentials")),
+      subjectId: "subjectId",
+      credentialId: "credentialId",
+      revision: "revision",
+      status: "active",
+      activeStatusValue: true,
+      d1ActiveStatusValue: true,
+      isActiveStatus: (value: unknown) => value === true,
+      encodeInsert: (row: object) => ({ ...row, active: true }),
+      encodeRevision: (revision: SecurityRevision) => ({ revision }),
+    };
   });
 
-  const authority = () => ({ subjectId, subject, credential: authorityCredential() });
+  const authority = Effect.fnUntraced(function* () {
+    return { subjectId, subject, credential: yield* authorityCredential() };
+  });
 
   const clock = yield* makeStorageClock(input);
 
-  const proofs = (): AnyProofPersistenceMapping<SqlExpression> => ({
-    constraints: requiredProofConstraints,
-    subjectId,
-    subject: { table: s.table, id: s.id },
-    clock,
-    proof: {
-      ...mapped("proofs"),
-      moduleId: "moduleId",
-      purpose: "purpose",
-      seriesKey: "seriesKey",
-      proofId: "proofId",
-      binding: "binding",
-      verifierKeyId: "verifierKeyId",
-      verifierDigest: "verifierDigest",
-      issuedAt: "issuedAt",
-      expiresAt: "expiresAt",
-      failedAttempts: "failedAttempts",
-      encodeInsert: () => ({}),
-    },
+  const proofs = Effect.fnUntraced(function* (): Effect.fn.Return<
+    AnyProofPersistenceMapping<SqlExpression>,
+    PersistenceMappingError
+  > {
+    return {
+      constraints: requiredProofConstraints,
+      subjectId,
+      subject: { table: s.table, id: s.id },
+      clock,
+      proof: {
+        ...(yield* mapped("proofs")),
+        moduleId: "moduleId",
+        purpose: "purpose",
+        seriesKey: "seriesKey",
+        proofId: "proofId",
+        binding: "binding",
+        verifierKeyId: "verifierKeyId",
+        verifierDigest: "verifierDigest",
+        issuedAt: "issuedAt",
+        expiresAt: "expiresAt",
+        failedAttempts: "failedAttempts",
+        encodeInsert: () => ({}),
+      },
+    };
   });
 
-  const passwords = (): AnyPasswordPersistenceMapping<SqlExpression> => {
+  const passwords = Effect.fnUntraced(function* (): Effect.fn.Return<
+    AnyPasswordPersistenceMapping<SqlExpression>,
+    PersistenceMappingError
+  > {
     const verifier = (replacement: PasswordReplacement) => ({
       verifier: Redacted.value(replacement.verifier),
       normalization: replacement.normalization,
@@ -150,7 +165,7 @@ export const makeMappings = Effect.fnUntraced(function* (
     return {
       subjectId,
       subject,
-      authorityCredential: authorityCredential(),
+      authorityCredential: yield* authorityCredential(),
       constraints: requiredPasswordConstraints,
       encodeInstant: instant,
       decodeInstant: readInstant,
@@ -158,7 +173,7 @@ export const makeMappings = Effect.fnUntraced(function* (
       allocateRevision: allocate.pipe(Effect.map(SecurityRevision.make)),
       sessionInvalidation: "same-authority-immediate",
       identifier: {
-        table: table("identifiers"),
+        table: yield* table("identifiers"),
         namespace: "namespace",
         value: "value",
         subjectId: "subjectId",
@@ -179,7 +194,7 @@ export const makeMappings = Effect.fnUntraced(function* (
         }),
       },
       credential: {
-        ...mapped("passwords"),
+        ...(yield* mapped("passwords")),
         moduleId: "moduleId",
         subjectId: "subjectId",
         credentialId: "credentialId",
@@ -228,113 +243,123 @@ export const makeMappings = Effect.fnUntraced(function* (
       },
       clock,
     };
-  };
-
-  const emails = (): AnyEmailAddressMapping<SqlExpression> => ({
-    subjectId,
-    subject: { ...subject, activeStatusValue: s.activeValue },
-    constraints: requiredEmailAddressConstraints,
-    addressCardinality: "single",
-    changeDisposition: "retire-source",
-    clock,
-    encodeInstant: instant,
-    decodeInstant: readInstant,
-    allocateCredentialId: allocate,
-    allocateRevision: allocate.pipe(Effect.map(SecurityRevision.make)),
-    sessionInvalidation: "same-authority-immediate",
-    isIdentifierConflict: () => false,
-    isCredentialConflict: () => false,
-    authorityCredential: {
-      ...authorityCredential(),
-      encodeActivation: (revision) => ({ revision, active: true }),
-      encodeRetirement: (revision) => ({ revision, active: false }),
-    },
-    identifier: {
-      table: table("identifiers"),
-      namespace: "namespace",
-      value: "value",
-      subjectId: "subjectId",
-      verifiedAt: "verifiedAt",
-      bindingRevision: "revision",
-      isCurrent: (row) => row.active === true && row.verifiedAt !== null,
-      isMutableTarget: (row) => row.active === true && row.verifiedAt === null,
-      ...(identifierTable === undefined || activeIdentifier === undefined
-        ? {}
-        : {
-            d1CurrentCondition: ({ bindingRevision }) =>
-              sql`${activeIdentifier} and ${identifierTable.column("verifiedAt")} is not null and ${exactSqlText(sql, identifierTable.column("revision"), identifierTable.value("revision", bindingRevision))}`,
-            d1MutableTargetCondition: () =>
-              sql`${activeIdentifier} and ${identifierTable.column("verifiedAt")} is null`,
-          }),
-      encodeVerifiedInsert: ({ identifier, subjectId, verifiedAtMillis, bindingRevision }) => ({
-        ...identifier,
-        subjectId,
-        verifiedAt: instant(verifiedAtMillis),
-        revision: bindingRevision,
-        active: true,
-      }),
-      encodeVerification: ({ verifiedAtMillis, bindingRevision }) => ({
-        verifiedAt: instant(verifiedAtMillis),
-        revision: bindingRevision,
-        active: true,
-      }),
-      encodeRetirement: ({ bindingRevision }) => ({ revision: bindingRevision, active: false }),
-    },
-    credential: {
-      activeStatusValue: true,
-      table: table("emailCredentials"),
-      moduleId: "moduleId",
-      subjectId: "subjectId",
-      credentialId: "credentialId",
-      identifierNamespace: "identifierNamespace",
-      identifierValue: "identifierValue",
-      credentialRevision: "credentialRevision",
-      status: "active",
-      isActiveStatus: (value) => value === true,
-      encodeVerifiedInsert: ({ identifier, ...row }) => ({
-        ...row,
-        identifierNamespace: identifier.namespace,
-        identifierValue: identifier.value,
-        active: true,
-      }),
-      encodeActivation: ({ identifier, credentialRevision }) => ({
-        identifierNamespace: identifier.namespace,
-        identifierValue: identifier.value,
-        credentialRevision,
-        active: true,
-      }),
-      encodeRetirement: ({ credentialRevision }) => ({ credentialRevision, active: false }),
-      decode: ({ moduleId, subject: row, identifier, credential }) =>
-        Effect.gen(function* () {
-          return yield* decode(
-            Schema.Struct(Struct.omit(EmailCredentialSnapshot.fields, ["requirement"])),
-            {
-              moduleId,
-              identifier: { namespace: identifier.namespace, value: identifier.value },
-              identifierRevision: identifier.revision,
-              verifiedAtMillis: yield* readInstant(identifier.verifiedAt),
-              credentialId: credential.credentialId,
-              credentialRevision: credential.credentialRevision,
-              revision: {
-                subjectId: yield* s.toSubject(row[s.id]),
-                securityRevision: row[s.securityRevision],
-                credentials: [
-                  {
-                    credentialId: credential.credentialId,
-                    revision: credential.credentialRevision,
-                  },
-                ],
-              },
-            },
-          );
-        }),
-    },
   });
 
-  const pending = <C extends Schema.Codec<unknown, unknown, never, never>>(
+  const emails = Effect.fnUntraced(function* (): Effect.fn.Return<
+    AnyEmailAddressMapping<SqlExpression>,
+    PersistenceMappingError
+  > {
+    return {
+      subjectId,
+      subject: { ...subject, activeStatusValue: s.activeValue },
+      constraints: requiredEmailAddressConstraints,
+      addressCardinality: "single",
+      changeDisposition: "retire-source",
+      clock,
+      encodeInstant: instant,
+      decodeInstant: readInstant,
+      allocateCredentialId: allocate,
+      allocateRevision: allocate.pipe(Effect.map(SecurityRevision.make)),
+      sessionInvalidation: "same-authority-immediate",
+      isIdentifierConflict: () => false,
+      isCredentialConflict: () => false,
+      authorityCredential: {
+        ...(yield* authorityCredential()),
+        encodeActivation: (revision) => ({ revision, active: true }),
+        encodeRetirement: (revision) => ({ revision, active: false }),
+      },
+      identifier: {
+        table: yield* table("identifiers"),
+        namespace: "namespace",
+        value: "value",
+        subjectId: "subjectId",
+        verifiedAt: "verifiedAt",
+        bindingRevision: "revision",
+        isCurrent: (row) => row.active === true && row.verifiedAt !== null,
+        isMutableTarget: (row) => row.active === true && row.verifiedAt === null,
+        ...(identifierTable === undefined || activeIdentifier === undefined
+          ? {}
+          : {
+              d1CurrentCondition: ({ bindingRevision }) =>
+                sql`${activeIdentifier} and ${identifierTable.column("verifiedAt")} is not null and ${exactSqlText(sql, identifierTable.column("revision"), identifierTable.value("revision", bindingRevision))}`,
+              d1MutableTargetCondition: () =>
+                sql`${activeIdentifier} and ${identifierTable.column("verifiedAt")} is null`,
+            }),
+        encodeVerifiedInsert: ({ identifier, subjectId, verifiedAtMillis, bindingRevision }) => ({
+          ...identifier,
+          subjectId,
+          verifiedAt: instant(verifiedAtMillis),
+          revision: bindingRevision,
+          active: true,
+        }),
+        encodeVerification: ({ verifiedAtMillis, bindingRevision }) => ({
+          verifiedAt: instant(verifiedAtMillis),
+          revision: bindingRevision,
+          active: true,
+        }),
+        encodeRetirement: ({ bindingRevision }) => ({ revision: bindingRevision, active: false }),
+      },
+      credential: {
+        activeStatusValue: true,
+        table: yield* table("emailCredentials"),
+        moduleId: "moduleId",
+        subjectId: "subjectId",
+        credentialId: "credentialId",
+        identifierNamespace: "identifierNamespace",
+        identifierValue: "identifierValue",
+        credentialRevision: "credentialRevision",
+        status: "active",
+        isActiveStatus: (value) => value === true,
+        encodeVerifiedInsert: ({ identifier, ...row }) => ({
+          ...row,
+          identifierNamespace: identifier.namespace,
+          identifierValue: identifier.value,
+          active: true,
+        }),
+        encodeActivation: ({ identifier, credentialRevision }) => ({
+          identifierNamespace: identifier.namespace,
+          identifierValue: identifier.value,
+          credentialRevision,
+          active: true,
+        }),
+        encodeRetirement: ({ credentialRevision }) => ({ credentialRevision, active: false }),
+        decode: ({ moduleId, subject: row, identifier, credential }) =>
+          Effect.gen(function* () {
+            return yield* decode(
+              Schema.Struct(Struct.omit(EmailCredentialSnapshot.fields, ["requirement"])),
+              {
+                moduleId,
+                identifier: { namespace: identifier.namespace, value: identifier.value },
+                identifierRevision: identifier.revision,
+                verifiedAtMillis: yield* readInstant(identifier.verifiedAt),
+                credentialId: credential.credentialId,
+                credentialRevision: credential.credentialRevision,
+                revision: {
+                  subjectId: yield* s.toSubject(row[s.id]),
+                  securityRevision: row[s.securityRevision],
+                  credentials: [
+                    {
+                      credentialId: credential.credentialId,
+                      revision: credential.credentialRevision,
+                    },
+                  ],
+                },
+              },
+            );
+          }),
+      },
+    };
+  });
+
+  const pending = Effect.fnUntraced(function* <
+    C extends Schema.Codec<unknown, unknown, never, never>,
+  >(
     claims: C,
     moduleId: string,
-  ): PendingAuthenticationMapping<C["Type"], TableModel, TableModel, TableModel, unknown> => {
+  ): Effect.fn.Return<
+    PendingAuthenticationMapping<C["Type"], TableModel, TableModel, TableModel, unknown>,
+    PersistenceMappingError
+  > {
     const record = Schema.fromJsonString(
       Schema.Struct({
         digest: TokenDigest,
@@ -347,13 +372,13 @@ export const makeMappings = Effect.fnUntraced(function* (
     );
 
     return {
-      ...authority(),
+      ...(yield* authority()),
       moduleId,
       clock,
       isConstraintConflict: () => false,
       constraints: { pendingDigest: "unique(pending.digest)" },
       pending: {
-        table: table("pending"),
+        table: yield* table("pending"),
         moduleId: "moduleId",
         kind: "kind",
         digest: "digest",
@@ -391,20 +416,25 @@ export const makeMappings = Effect.fnUntraced(function* (
           ),
       },
     };
-  };
+  });
 
-  const sessions = <C extends Schema.Codec<unknown, unknown, never, never>>(
+  const sessions = Effect.fnUntraced(function* <
+    C extends Schema.Codec<unknown, unknown, never, never>,
+  >(
     claims: C,
     moduleId: string,
-  ): StatefulSessionMapping<
-    C["Type"],
-    TableModel,
-    TableModel,
-    TableModel,
-    TableModel,
-    unknown,
-    unknown
-  > => {
+  ): Effect.fn.Return<
+    StatefulSessionMapping<
+      C["Type"],
+      TableModel,
+      TableModel,
+      TableModel,
+      TableModel,
+      unknown,
+      unknown
+    >,
+    PersistenceMappingError
+  > {
     const record = Schema.fromJsonString(
       Schema.Struct({
         ...SessionMetadata.fields,
@@ -427,10 +457,10 @@ export const makeMappings = Effect.fnUntraced(function* (
       }),
     });
 
-    const login = pending(claims, moduleId);
+    const login = yield* pending(claims, moduleId);
 
     return {
-      ...authority(),
+      ...(yield* authority()),
       moduleId,
       clock,
       isConstraintConflict: () => false,
@@ -445,7 +475,7 @@ export const makeMappings = Effect.fnUntraced(function* (
         equals: Object.is,
       },
       session: {
-        table: table("sessions"),
+        table: yield* table("sessions"),
         sessionId: "sessionId",
         subjectId: "subjectId",
         digest: "digest",
@@ -470,7 +500,7 @@ export const makeMappings = Effect.fnUntraced(function* (
           }),
       },
     };
-  };
+  });
 
   return { table, authority, proofs, passwords, emails, sessions, pending, string };
 });

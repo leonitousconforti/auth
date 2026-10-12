@@ -18,48 +18,47 @@ class CurrentMysqlTransaction extends Context.Service<
 >()("@yielded/auth-persistence-drizzle/CurrentMysqlTransaction") {}
 
 /** The native handle reuses the physical owner's exact savepoint closure. */
-export const makeMysqlTransactionHandle = (
+export const makeMysqlTransactionHandle = Effect.fnUntraced(function* (
   database: any,
-): Effect.Effect<EffectMysql2Transaction<any, any>> =>
-  Effect.map(Effect.serviceOption(CurrentMysqlTransaction), (current) => {
-    if (Option.isNone(current))
-      throw PersistenceMappingError.make({
-        operation: "transaction",
-        cause: "MySQL transaction owner is required",
-      });
-    const scope = current.value;
+): Effect.fn.Return<EffectMysql2Transaction<any, any>, PersistenceMappingError> {
+  const current = yield* Effect.serviceOption(CurrentMysqlTransaction);
 
-    class NativeTransaction extends EffectMysql2Transaction<any, any> {
-      override transaction<A, E, R>(body: (transaction: any) => Effect.Effect<A, E, R>) {
-        return Effect.gen(function* () {
-          const current = yield* Effect.serviceOption(CurrentMysqlTransaction);
+  if (Option.isNone(current))
+    return yield* PersistenceMappingError.make({
+      operation: "transaction",
+      cause: "MySQL transaction owner is required",
+    });
+  const scope = current.value;
 
-          if (
-            !scope.active ||
-            Option.isNone(current) ||
-            current.value !== scope ||
-            scope.client.transactionService !== database.$client.transactionService
-          )
-            return yield* Effect.die(
-              PersistenceMappingError.make({
-                operation: "transaction",
-                cause: "MySQL transaction handle escaped its owner",
-              }),
-            );
+  class NativeTransaction extends EffectMysql2Transaction<any, any> {
+    override transaction<A, E, R>(body: (transaction: any) => Effect.Effect<A, E, R>) {
+      return Effect.gen(function* () {
+        const current = yield* Effect.serviceOption(CurrentMysqlTransaction);
 
-          return yield* scope.transaction(
-            Effect.suspend(() =>
-              body(
-                new NativeTransaction(database.dialect, database._.session, database._.relations),
-              ),
-            ),
+        if (
+          !scope.active ||
+          Option.isNone(current) ||
+          current.value !== scope ||
+          scope.client.transactionService !== database.$client.transactionService
+        )
+          return yield* Effect.die(
+            PersistenceMappingError.make({
+              operation: "transaction",
+              cause: "MySQL transaction handle escaped its owner",
+            }),
           );
-        });
-      }
-    }
 
-    return new NativeTransaction(database.dialect, database._.session, database._.relations);
-  });
+        return yield* scope.transaction(
+          Effect.suspend(() =>
+            body(new NativeTransaction(database.dialect, database._.session, database._.relations)),
+          ),
+        );
+      });
+    }
+  }
+
+  return new NativeTransaction(database.dialect, database._.session, database._.relations);
+});
 
 /** Locking discovery and later SQL policy predicates must see the same current
  * authority. MySQL's default repeatable-read snapshot is unsuitable after a

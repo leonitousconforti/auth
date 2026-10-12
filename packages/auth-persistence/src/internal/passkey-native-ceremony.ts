@@ -6,7 +6,7 @@ import type { NativeSqlTables } from "./native-sql-table";
 import { passkeyOperationInputs } from "./passkey-inputs";
 import { preparePasskeyNative } from "./passkey-native";
 import { makePasskeyNativeFlow } from "./passkey-native-flow";
-import { passkeyNativeInvariant } from "./passkey-native-state";
+import { invalidPasskeyState } from "./passkey-native-state";
 import { makeSqlCommitExecutor, SqlBatchCommit } from "./sql-commit";
 import type { TableModel } from "./table-model";
 
@@ -32,12 +32,12 @@ export const makeNativePasskeyCeremonyServices = Effect.fnUntraced(function* (
     consume: () => Effect.fail(M.PasskeyUnavailable.make({})),
     context: (access) =>
       executor.read(
-        Effect.suspend(() => {
+        Effect.gen(function* () {
           const input = M.snapshotPasskeySync(M.PasskeyAccess, access);
 
-          passkeyNativeInvariant(input.purpose === "registration");
+          if (!(input.purpose === "registration")) return yield* invalidPasskeyState();
 
-          return flow.context(input);
+          return yield* flow.context(input);
         }),
       ),
     cleanup: (original, prepare) =>
@@ -45,7 +45,7 @@ export const makeNativePasskeyCeremonyServices = Effect.fnUntraced(function* (
         Effect.gen(function* () {
           const input = M.snapshotPasskeySync(passkeyOperationInputs.cleanup, original);
 
-          passkeyNativeInvariant(flow.validModule(input.moduleId));
+          if (!flow.validModule(input.moduleId)) return yield* invalidPasskeyState();
 
           return yield* preparePasskeyNative(
             yield* flow.cleanup(input.moduleId, input.limit, batch !== undefined),

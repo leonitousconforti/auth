@@ -11,7 +11,7 @@ import { sqlBatchAssertion } from "./d1-planning";
 import {
   makeNativeEmailReader,
   emailUnavailable as unavailable,
-  ensureEmail as ensure,
+  invalidEmailState as invalidState,
 } from "./email-native-state";
 import {
   allocateEmailValue,
@@ -109,8 +109,9 @@ export const makeNativeEmailAddressServices = Effect.fnUntraced(function* (
           .pipe(Effect.provideService(SqlBatchCommit, batch));
 
   const stage = Effect.fnUntraced(function* (statement: Fragment) {
-    if (batch === undefined) ensure((yield* executeSqlChange(sql, statement)) === 1);
-    else {
+    if (batch === undefined) {
+      if (!((yield* executeSqlChange(sql, statement)) === 1)) return yield* invalidState();
+    } else {
       yield* appendSqlBatchStatement(sql`${statement}`);
       yield* appendSqlBatchStatement(sqlBatchAssertion(sql, sql`changes() = 1`));
     }
@@ -204,11 +205,14 @@ export const makeNativeEmailAddressServices = Effect.fnUntraced(function* (
           yield* sql`select ${subject.fields("email_locked_")} from ${subject.name} where ${id(subject, s.id, native)} limit 2 ${batch === undefined ? lock : sql``}`;
 
         if (locked.length !== 1) return yield* prepare("rejected", project);
-        ensure(
-          (yield* mapping.subjectId.toSubject(
-            subject.decode(locked[0]!, "email_locked_")[s.id],
-          )) === input.captured.revision.subjectId,
-        );
+        if (
+          !(
+            (yield* mapping.subjectId.toSubject(
+              subject.decode(locked[0]!, "email_locked_")[s.id],
+            )) === input.captured.revision.subjectId
+          )
+        )
+          return yield* invalidState();
 
         const current = yield* target(
           {
@@ -264,7 +268,7 @@ export const makeNativeEmailAddressServices = Effect.fnUntraced(function* (
           if (deadline !== undefined) break;
         }
 
-        ensure(deadline !== undefined);
+        if (!(deadline !== undefined)) return yield* invalidState();
         const freshness = sql`${now} >= ${current.now} and ${now} < ${deadline}`;
 
         const factorCondition = (revision: AuthenticationRevision) =>
@@ -288,7 +292,7 @@ export const makeNativeEmailAddressServices = Effect.fnUntraced(function* (
             ),
           );
           if (current.targetIdentifier !== undefined) {
-            ensure(i.d1MutableTargetCondition !== undefined);
+            if (!(i.d1MutableTargetCondition !== undefined)) return yield* invalidState();
             yield* appendSqlBatchStatement(
               sqlBatchAssertion(
                 sql,
@@ -297,7 +301,7 @@ export const makeNativeEmailAddressServices = Effect.fnUntraced(function* (
             );
           }
           if (current.target.source !== undefined) {
-            ensure(i.d1CurrentCondition !== undefined);
+            if (!(i.d1CurrentCondition !== undefined)) return yield* invalidState();
             yield* appendSqlBatchStatement(
               sqlBatchAssertion(
                 sql,
@@ -334,7 +338,8 @@ export const makeNativeEmailAddressServices = Effect.fnUntraced(function* (
           ? current.revision.securityRevision
           : yield* allocateEmailSecurityRevision(mapping, mode, current.revision.securityRevision);
 
-        ensure(confirms || nextSecurityRevision !== current.revision.securityRevision);
+        if (!(confirms || nextSecurityRevision !== current.revision.securityRevision))
+          return yield* invalidState();
 
         const targetCredentialId =
           current.targetCredential === undefined
@@ -350,7 +355,7 @@ export const makeNativeEmailAddressServices = Effect.fnUntraced(function* (
         const source = current.target.source;
 
         if (action === "change-address") {
-          ensure(source !== undefined);
+          if (!(source !== undefined)) return yield* invalidState();
           yield* stage(
             sql`${identifier.update(i.encodeRetirement({ source: source.identifier, bindingRevision: sourceIdentifierRevision }))} where ${identifierKey(source.identifier)} and ${id(identifier, i.subjectId, native)} and ${exact(identifier, i.bindingRevision, source.identifierRevision)}`,
           );
@@ -425,7 +430,7 @@ export const makeNativeEmailAddressServices = Effect.fnUntraced(function* (
         };
 
         if (batch !== undefined) {
-          ensure(i.d1CurrentCondition !== undefined);
+          if (!(i.d1CurrentCondition !== undefined)) return yield* invalidState();
 
           const conditions = [
             redeemed.validUntil,
@@ -464,8 +469,9 @@ export const makeNativeEmailAddressServices = Effect.fnUntraced(function* (
                     }),
               });
 
-              ensure(
-                final !== undefined &&
+              if (
+                !(
+                  final !== undefined &&
                   sameEmailRevision(final.revision, revision) &&
                   final.now >= current.now &&
                   final.now < deadline &&
@@ -474,16 +480,24 @@ export const makeNativeEmailAddressServices = Effect.fnUntraced(function* (
                   final.targetSnapshot.credentialRevision === targetCredentialRevision &&
                   final.targetSnapshot.identifierRevision === targetIdentifierRevision &&
                   (yield* mapping.decodeInstant(final.targetIdentifier![i.verifiedAt])) ===
-                    current.now,
-              );
+                    current.now
+                )
+              )
+                return yield* invalidState();
               const policy = yield* s.decodeActionRequirement(final.subject, action);
 
-              ensure(
-                yield* passwordEvidenceSatisfiedAt(input.authorization.evidence, policy, final.now),
-              );
-              if (source !== undefined)
-                ensure(
-                  final.sourceIdentifier !== undefined &&
+              if (
+                !(yield* passwordEvidenceSatisfiedAt(
+                  input.authorization.evidence,
+                  policy,
+                  final.now,
+                ))
+              )
+                return yield* invalidState();
+              if (source !== undefined) {
+                if (
+                  !(
+                    final.sourceIdentifier !== undefined &&
                     final.sourceCredential !== undefined &&
                     final.sourceAuthority !== undefined &&
                     (yield* mapping.subjectId.toSubject(final.sourceAuthority[a.subjectId])) ===
@@ -496,8 +510,11 @@ export const makeNativeEmailAddressServices = Effect.fnUntraced(function* (
                     final.sourceIdentifier[i.bindingRevision] === sourceIdentifierRevision &&
                     !i.isCurrent(final.sourceIdentifier) &&
                     final.sourceCredential[c.credentialRevision] === sourceCredentialRevision &&
-                    !c.isActiveStatus(final.sourceCredential[c.status]),
-                );
+                    !c.isActiveStatus(final.sourceCredential[c.status])
+                  )
+                )
+                  return yield* invalidState();
+              }
             }).pipe(
               Effect.mapError((cause) =>
                 PersistenceMappingError.make({ operation: "decode", cause }),

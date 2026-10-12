@@ -243,6 +243,7 @@ export const ownership = {
   decodeSubjectId: (row) => Schema.decodeUnknownSync(Schema.String)(row.subjectId),
   // This example grants access only to identities provisioned at startup.
   encodeInsert: () => {
+    // oxlint-disable-next-line effect/no-untyped-throw -- Synchronous SQL encodeInsert rejects unprovisioned identities; the persistence adapter captures this failure.
     throw PersistenceMappingError.make({
       operation: "oauth-storage.unprovisioned-identity",
       cause: undefined,

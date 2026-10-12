@@ -154,7 +154,10 @@ export const makeSessionTarget = <DatabaseId, D extends NativeDriverDatabase>(
         authenticationAuthority(
           clockMapping(options.mapping) as unknown as NativeAuthenticationAuthorityMapping<Claims>,
         ),
-        (transaction: NativeDriverTransaction<DB>, services) => {
+        (
+          transaction: NativeDriverTransaction<DB>,
+          services,
+        ): Effect.Effect<A, E, Exclude<R, AuthenticationAuthority>> => {
           const work = body.pipe(
             Effect.provideService(AuthenticationAuthority, services.authenticationAuthority),
           );
@@ -260,7 +263,10 @@ export const makeSessionTarget = <DatabaseId, D extends NativeDriverDatabase>(
         pendingAuthentication(
           clockMapping(options.mapping) as unknown as NativePendingAuthenticationMapping<Claims>,
         ),
-        (transaction: NativeDriverTransaction<DB>, services) => {
+        (
+          transaction: NativeDriverTransaction<DB>,
+          services,
+        ): Effect.Effect<A, E, Exclude<R, Id>> => {
           const work = body.pipe(
             Effect.provideService(options.target, services.pendingAuthentication),
           );
@@ -386,7 +392,10 @@ export const makeSessionTarget = <DatabaseId, D extends NativeDriverDatabase>(
         statefulSessionPersistence(
           clockMapping(options.mapping) as unknown as NativeStatefulSessionMapping<Claims>,
         ),
-        (transaction: NativeDriverTransaction<DB>, services) => {
+        (
+          transaction: NativeDriverTransaction<DB>,
+          services,
+        ): Effect.Effect<A, E, Exclude<Exclude<R, Id>, RepositoryId>> => {
           const work = body.pipe(
             Effect.provideService(options.persistence, services.statefulSessionPersistence),
             Effect.provideService(options.repository, services.sessionRepository),
@@ -487,7 +496,10 @@ export const makeSessionTarget = <DatabaseId, D extends NativeDriverDatabase>(
         signedSessionValidity(
           clockMapping(options.mapping) as unknown as NativeSignedSessionValidityMapping,
         ),
-        (transaction: NativeDriverTransaction<DB>, services) => {
+        (
+          transaction: NativeDriverTransaction<DB>,
+          services,
+        ): Effect.Effect<A, E, Exclude<R, Id>> => {
           const work = body.pipe(
             Effect.provideService(options.target, services.signedSessionValidity),
           );
@@ -602,7 +614,10 @@ export const makeSessionTarget = <DatabaseId, D extends NativeDriverDatabase>(
         sessionStepUpPersistence(
           clockMapping(options.mapping) as unknown as NativeSessionStepUpMapping<Claims>,
         ),
-        (transaction: NativeDriverTransaction<DB>, services) => {
+        (
+          transaction: NativeDriverTransaction<DB>,
+          services,
+        ): Effect.Effect<A, E, Exclude<R, Id>> => {
           const work = body.pipe(
             Effect.provideService(options.target, services.sessionStepUpPersistence),
           );

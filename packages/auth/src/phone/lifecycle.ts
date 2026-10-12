@@ -4,7 +4,7 @@ import { makeAuthStrategy } from "../auth/AuthStrategy";
 import { defaultLayer, hooksLayer } from "../auth/defaults";
 import { hasCommitScope } from "../hooks/commit";
 import { LifecycleHooks } from "../hooks/LifecycleHooks";
-import { lifecycleEvent, lifecycleSnapshot, LifecycleEventId } from "../hooks/models";
+import { lifecycleEvent, lifecycleSnapshotEffect, LifecycleEventId } from "../hooks/models";
 import { LoginIdentifier } from "../identity/models";
 import type { AuthInvocation } from "../operations/context";
 import { makeOperation, operationGroup } from "../operations/operation";
@@ -389,7 +389,7 @@ export const makePhoneLifecycle = <
         const now = yield* DateTime.now;
         const hooks = yield* LifecycleHooks;
 
-        const snapshot = lifecycleSnapshot({
+        const snapshot = yield* lifecycleSnapshotEffect({
           action: input.action === "register" ? "registration" : "identifier-change",
           operation: `${moduleId}/${input.action}`,
           method: "phone-otp",
@@ -397,7 +397,7 @@ export const makePhoneLifecycle = <
           ...(current.target.revision === null
             ? {}
             : { subjectId: current.target.revision.subjectId }),
-        });
+        }).pipe(Effect.orDie);
 
         yield* hooks.before(snapshot);
 

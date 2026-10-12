@@ -19,7 +19,7 @@ import type {
 } from "./models/session-model";
 import type { NativeSqlTables, SqlTable } from "./native-sql-table";
 import { makeConditionalSqlInsert } from "./session-native-record";
-import { sessionInvariant } from "./session-native-state";
+import { invalidSessionState } from "./session-native-state";
 import { exactSqlText, executeSqlChange } from "./sql-change";
 import { appendSqlBatchStatement, registerSqlCommitReceipt } from "./sql-commit";
 import type { AnyTableModel } from "./table-model";
@@ -80,11 +80,14 @@ export const makeNativeSessionPending = Effect.fnUntraced(function* (
     kind: PendingAuthenticationKind,
     row: Record<string, unknown>,
   ) {
-    sessionInvariant(
-      row[p.moduleId] === mapping.moduleId &&
+    if (
+      !(
+        row[p.moduleId] === mapping.moduleId &&
         row[p.kind] === kind &&
-        (row[p.consumed] === false || row[p.consumed] === 0),
-    );
+        (row[p.consumed] === false || row[p.consumed] === 0)
+      )
+    )
+      return yield* invalidSessionState();
 
     return yield* Schema.decodeUnknownEffect(StoredSessionPending)({
       kind,
@@ -104,7 +107,7 @@ export const makeNativeSessionPending = Effect.fnUntraced(function* (
     const rows =
       yield* sql`select ${table.fields("pending_")}, ${now} as engine_now from ${table.name} where ${predicate(table, kind, digest)} limit 2`;
 
-    sessionInvariant(rows.length <= 1);
+    if (!(rows.length <= 1)) return yield* invalidSessionState();
     if (rows[0] === undefined) return undefined;
 
     return {
@@ -123,7 +126,9 @@ export const makeNativeSessionPending = Effect.fnUntraced(function* (
     }
     const changed = yield* executeSqlChange(sql, statement);
 
-    if (expected !== undefined) sessionInvariant(changed === expected);
+    if (expected !== undefined) {
+      if (!(changed === expected)) return yield* invalidSessionState();
+    }
 
     return changed;
   });
@@ -132,7 +137,7 @@ export const makeNativeSessionPending = Effect.fnUntraced(function* (
     input: SessionPendingInsert<unknown>,
     condition: Fragment = sql`1 = 1`,
   ) {
-    sessionInvariant(input.moduleId === mapping.moduleId);
+    if (!(input.moduleId === mapping.moduleId)) return yield* invalidSessionState();
 
     const row = {
       ...p.encodeInsert(input),
@@ -150,7 +155,7 @@ export const makeNativeSessionPending = Effect.fnUntraced(function* (
       [p.consumed]: false,
     };
 
-    yield* stage(conditionalInsert(table, row, condition), 1);
+    yield* stage(yield* conditionalInsert(table, row, condition), 1);
   });
 
   const consumption = (

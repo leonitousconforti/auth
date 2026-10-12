@@ -99,7 +99,10 @@ export const makeProofTarget = <DatabaseId, D extends NativeDriverDatabase>(
         database,
         options.mapping as unknown as AnyProofPersistenceMapping,
         configuration,
-        (transaction: NativeDriverTransaction<Database>, services) => {
+        (
+          transaction: NativeDriverTransaction<Database>,
+          services,
+        ): Effect.Effect<A, E, Exclude<R, ProofPersistence>> => {
           const work = Effect.provideService(body, ProofPersistence, services.proofPersistence);
 
           return options.transaction === undefined

@@ -2,7 +2,7 @@ import { Context, Crypto, DateTime, Effect, Layer, Schema } from "effect";
 import { Base64Url } from "effect/encoding";
 
 import { LifecycleHooks } from "../hooks/LifecycleHooks";
-import { LifecycleEventId, lifecycleEvent, lifecycleSnapshot } from "../hooks/models";
+import { LifecycleEventId, lifecycleEvent, lifecycleEventEffect } from "../hooks/models";
 import { LastSignInMethod } from "../identity/models";
 import type { AuthInvocation } from "../operations/context";
 import type { AuthOperationResult } from "../operations/credentials";
@@ -50,7 +50,7 @@ import { PasskeyCredentials } from "./PasskeyCredentials";
 import { PasskeyManagementPersistence } from "./PasskeyManagementPersistence";
 import { PasskeyPersistence } from "./PasskeyPersistence";
 import { PasskeyManagementPolicy, type PasskeyMethodPolicy } from "./policy";
-import { snapshotPasskey, snapshotPasskeySync } from "./snapshot";
+import { snapshotPasskey, snapshotPasskeySync, snapshotPasskeyResult } from "./snapshot";
 
 const enrollmentDecision = Schema.Union([
   Schema.TaggedStruct("Enrolled", { credential: PasskeyCredentialSummary }),
@@ -92,13 +92,9 @@ export const makePasskeyManagement = <
   input: PasskeyManagementPolicy,
   sessions: ReturnType<typeof makeSessionModule<SessionId, Claims>>,
 ) => {
-  const captured = (() => {
-    try {
-      return Effect.succeed(snapshotPasskeySync(PasskeyManagementPolicy, input));
-    } catch {
-      return Effect.fail(PasskeyConfigurationError.make({}));
-    }
-  })();
+  const captured = Effect.fromResult(snapshotPasskeyResult(PasskeyManagementPolicy, input)).pipe(
+    Effect.mapError(() => PasskeyConfigurationError.make({})),
+  );
 
   const ceremony = makePasskeyCeremony(moduleId, source, "enrollment");
 
@@ -230,23 +226,27 @@ export const makePasskeyManagement = <
         return authorization;
       }, passkeyUnexpected);
 
-      const event = (
+      const eventInput = (
         operation: string,
         commandId: string,
         subjectId: typeof PasskeyCredential.Type.revision.subjectId,
         nowMillis: number,
-      ) =>
-        lifecycleEvent({
-          id: LifecycleEventId.make(`passkey/${moduleId}/${operation}/${commandId}`),
-          occurredAtMillis: nowMillis,
-          snapshot: lifecycleSnapshot({
-            action: "credential-change",
-            operation: `${moduleId}/passkey/${operation}`,
-            subjectId,
-            method: "passkey",
-            identifiers: [],
-          }),
-        });
+      ) => ({
+        id: LifecycleEventId.make(`passkey/${moduleId}/${operation}/${commandId}`),
+        occurredAtMillis: nowMillis,
+        snapshot: {
+          action: "credential-change" as const,
+          operation: `${moduleId}/passkey/${operation}`,
+          subjectId,
+          method: "passkey",
+          identifiers: [],
+        },
+      });
+
+      const event = (...args: Parameters<typeof eventInput>) => lifecycleEvent(eventInput(...args));
+
+      const eventEffect = (...args: Parameters<typeof eventInput>) =>
+        lifecycleEventEffect(eventInput(...args)).pipe(Effect.orDie);
 
       return Management.of({
         begin: Effect.fn("PasskeyManagement.begin")(
@@ -391,7 +391,9 @@ export const makePasskeyManagement = <
             request = yield* snapshotPasskey(RenameInput, input),
             timestamp = DateTime.toEpochMillis(yield* DateTime.now);
 
-          yield* hooks.before(event("rename", request.commandId, subjectId, timestamp).snapshot);
+          yield* hooks.before(
+            (yield* eventEffect("rename", request.commandId, subjectId, timestamp)).snapshot,
+          );
 
           const result = yield* readPasskeyCommit(
             yield* persistence.rename(
@@ -464,7 +466,9 @@ export const makePasskeyManagement = <
           const authorization = yield* authorize(invocation, challenge, request.actionProof),
             timestamp = DateTime.toEpochMillis(yield* DateTime.now);
 
-          yield* hooks.before(event("remove", request.commandId, subjectId, timestamp).snapshot);
+          yield* hooks.before(
+            (yield* eventEffect("remove", request.commandId, subjectId, timestamp)).snapshot,
+          );
 
           const result = yield* readPasskeyCommit(
             yield* persistence.remove(

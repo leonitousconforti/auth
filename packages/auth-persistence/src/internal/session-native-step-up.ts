@@ -28,7 +28,7 @@ import {
 import {
   sameSessionRevision,
   normalizeSessionOperation,
-  sessionInvariant,
+  invalidSessionState,
   sessionUnavailable,
 } from "./session-native-state";
 import { allocateSessionValue } from "./session-policy";
@@ -72,7 +72,9 @@ export const makeNativeSessionStepUpServices = Effect.fnUntraced(function* <Clai
     state,
     pending,
     read: readPending,
-  } = yield* makeNativeSessionPendingReader(tables, mapping, batch !== undefined);
+  } = yield* normalizeSessionOperation(
+    makeNativeSessionPendingReader(tables, mapping, batch !== undefined),
+  );
 
   const conditionalInsert = yield* makeConditionalSqlInsert();
 
@@ -100,15 +102,18 @@ export const makeNativeSessionStepUpServices = Effect.fnUntraced(function* <Clai
   const decode = Effect.fnUntraced(function* (stored: StoredSessionPending) {
     const intent = yield* decodeStepUpIntent(stored.snapshot);
 
-    sessionInvariant(
-      intent.digest === stored.digest &&
+    if (
+      !(
+        intent.digest === stored.digest &&
         intent.version === stored.version &&
         intent.flowId === stored.flowId &&
         intent.bindingDigest === stored.bindingDigest &&
         intent.revision.subjectId === stored.subjectId &&
         DateTime.toEpochMillis(intent.expiresAt) === stored.expiresAtMillis &&
-        intent.attemptLimit === stored.attemptLimit,
-    );
+        intent.attemptLimit === stored.attemptLimit
+      )
+    )
+      return yield* invalidSessionState();
 
     return intent;
   });
@@ -122,7 +127,7 @@ export const makeNativeSessionStepUpServices = Effect.fnUntraced(function* <Clai
     const subject = yield* mapping.subjectId.toNative(intent.revision.subjectId);
 
     if (mapping.source.kind === "Stateful") {
-      sessionInvariant(records !== undefined);
+      if (!(records !== undefined)) return yield* invalidSessionState();
 
       const nativeSession = yield* mapping.source.sessionId.toNative(intent.sourceSessionId),
         { s, table } = records;
@@ -130,7 +135,7 @@ export const makeNativeSessionStepUpServices = Effect.fnUntraced(function* <Clai
       const rows =
         yield* sql`select ${table.fields("source_")} from ${table.name} where ${state.id(table, s.subjectId, subject)} and ${state.id(table, s.sessionId, nativeSession)} and ${records.live(table)} limit 2`;
 
-      sessionInvariant(rows.length <= 1);
+      if (!(rows.length <= 1)) return yield* invalidSessionState();
       if (rows[0] === undefined) return undefined;
       const record = yield* records.decode(table.decode(rows[0], "source_"));
 
@@ -175,7 +180,8 @@ export const makeNativeSessionStepUpServices = Effect.fnUntraced(function* <Clai
       yield* registerSqlPostcondition({
         name,
         check: Effect.gen(function* () {
-          sessionInvariant((yield* sql`select 1 where ${condition}`).length === 1);
+          if (!((yield* sql`select 1 where ${condition}`).length === 1))
+            return yield* invalidSessionState();
         }).pipe(
           Effect.provideService(AuthenticationClock, state.clockPolicy),
           Effect.mapError((cause) => PersistenceMappingError.make({ operation: "decode", cause })),
@@ -357,7 +363,8 @@ export const makeNativeSessionStepUpServices = Effect.fnUntraced(function* <Clai
           let replacementRecord: StatefulSessionRecord<Claims> | undefined;
 
           if (replacement._tag === "Stateful" && mapping.source.kind === "Stateful") {
-            sessionInvariant(records !== undefined && original.record !== undefined);
+            if (!(records !== undefined && original.record !== undefined))
+              return yield* invalidSessionState();
 
             const next: StatefulSessionRecord<Claims> = {
               ...replacement.inspection.session,
@@ -410,7 +417,7 @@ export const makeNativeSessionStepUpServices = Effect.fnUntraced(function* <Clai
             };
 
             yield* pending.stage(
-              conditionalInsert(table, values, sql`${authority} and ${original.condition}`),
+              yield* conditionalInsert(table, values, sql`${authority} and ${original.condition}`),
               1,
             );
             replacementCondition = sql`exists(select 1 from ${table.name} where ${state.exact(table, t.moduleId, mapping.moduleId)} and ${state.id(table, t.subjectId, current.native)} and ${state.id(table, t.sessionId, session)} and ${tables.expression(mapping.clock.toMillis(table.column(t.absoluteExpiresAt)))} >= ${DateTime.toEpochMillis(intent.sourceAbsoluteExpiresAt)})`;
@@ -429,16 +436,18 @@ export const makeNativeSessionStepUpServices = Effect.fnUntraced(function* <Clai
               check: Effect.gen(function* () {
                 const actual = yield* state.read(intent.revision.subjectId);
 
-                sessionInvariant(
-                  actual !== undefined && sameSessionRevision(actual.revision, evidence.revision),
-                );
+                if (
+                  !(actual !== undefined && sameSessionRevision(actual.revision, evidence.revision))
+                )
+                  return yield* invalidSessionState();
                 yield* sessionEvidenceDeadline(evidence, plan.baseRequirement, actual.now);
                 yield* sessionEvidenceDeadline(evidence, actual.requirement, actual.now);
                 yield* sessionEvidenceDeadline(evidence, intent.requirement, actual.now);
                 if (replacementRecord !== undefined && records !== undefined) {
                   const row = yield* records.read(replacementRecord.digest);
 
-                  sessionInvariant(row !== undefined && sameSessionRecord(row, replacementRecord));
+                  if (!(row !== undefined && sameSessionRecord(row, replacementRecord)))
+                    return yield* invalidSessionState();
                 }
               }).pipe(
                 Effect.provideService(AuthenticationClock, state.clockPolicy),

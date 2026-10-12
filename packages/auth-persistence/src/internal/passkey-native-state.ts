@@ -31,9 +31,7 @@ export type PasskeyNativeMapping = PasskeyPersistenceMapping<
 
 export type PasskeyNativeRow = Readonly<Record<string, unknown>>;
 
-export const passkeyNativeInvariant: (value: unknown) => asserts value = (value) => {
-  if (!value) throw M.PasskeyUnavailable.make({});
-};
+export const invalidPasskeyState = () => M.PasskeyUnavailable.make({});
 
 export const makePasskeyNativeReadState = Effect.fnUntraced(function* (
   tables: NativeSqlTables,
@@ -55,26 +53,29 @@ export const makePasskeyNativeReadState = Effect.fnUntraced(function* (
   const active = (table: "subject" | "credential" | "authority") =>
     tables.expression(read[table].activeCondition);
 
-  const invariant: typeof passkeyNativeInvariant = passkeyNativeInvariant;
+  const invalidState = invalidPasskeyState;
   const sameId = (nativeId: unknown, value: unknown) => read.subjectIds.equals(nativeId, value);
 
-  const native = (id: M.PasskeyCredential["revision"]["subjectId"]) => {
+  const native = Effect.fnUntraced(function* (id: M.PasskeyCredential["revision"]["subjectId"]) {
     const value = read.subjectIds.toNative(id);
 
-    invariant(read.subjectIds.toSubject(value) === id);
+    if (!(read.subjectIds.toSubject(value) === id)) return yield* invalidState();
 
     return value;
-  };
+  });
 
-  const revisions = (nativeId: unknown, rows: ReadonlyArray<PasskeyNativeRow>) => {
+  const revisions = Effect.fnUntraced(function* (
+    nativeId: unknown,
+    rows: ReadonlyArray<PasskeyNativeRow>,
+  ) {
     const entries = new Map<string, M.PasskeyCredential["revision"]["securityRevision"]>();
 
     for (const row of rows) {
       if (row[read.authority.credentialId] === null) continue;
-      invariant(sameId(nativeId, row[read.authority.subjectId]));
+      if (!sameId(nativeId, row[read.authority.subjectId])) return yield* invalidState();
       if (!read.authority.isActiveStatus(row[read.authority.status])) continue;
 
-      const decoded = Schema.decodeUnknownSync(M.PasskeyRevision.fields.credentials)([
+      const decoded = yield* Schema.decodeUnknownEffect(M.PasskeyRevision.fields.credentials)([
         {
           credentialId: row[read.authority.credentialId],
           revision: row[read.authority.revision],
@@ -83,31 +84,34 @@ export const makePasskeyNativeReadState = Effect.fnUntraced(function* (
 
       const entry = decoded[0];
 
-      invariant(entry !== undefined);
+      if (!(entry !== undefined)) return yield* invalidState();
       const previous = entries.get(entry.credentialId);
 
-      invariant(previous === undefined || previous === entry.revision);
+      if (!(previous === undefined || previous === entry.revision)) return yield* invalidState();
       entries.set(entry.credentialId, entry.revision);
     }
-    invariant(entries.size <= 64);
+    if (!(entries.size <= 64)) return yield* invalidState();
 
     return [...entries]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([credentialId, revision]) => ({ credentialId, revision }));
-  };
+  });
 
-  const revision = (row: PasskeyNativeRow, factors: ReadonlyArray<PasskeyNativeRow>) => {
+  const revision = Effect.fnUntraced(function* (
+    row: PasskeyNativeRow,
+    factors: ReadonlyArray<PasskeyNativeRow>,
+  ) {
     const id = read.subject.decodeId(row);
     const subjectId = read.subjectIds.toSubject(id);
 
-    invariant(sameId(native(subjectId), id));
+    if (!sameId(yield* native(subjectId), id)) return yield* invalidState();
 
-    return Schema.decodeUnknownSync(M.PasskeyRevision)({
+    return yield* Schema.decodeUnknownEffect(M.PasskeyRevision)({
       subjectId,
       securityRevision: row[read.subject.securityRevision],
-      credentials: revisions(id, factors),
+      credentials: yield* revisions(id, factors),
     });
-  };
+  });
 
   const decodeCredential = Effect.fnUntraced(function* (
     row: PasskeyNativeRow,
@@ -122,9 +126,8 @@ export const makePasskeyNativeReadState = Effect.fnUntraced(function* (
       owned?.revision !== row[read.credential.credentialRevision]
     )
       return undefined;
-    invariant(
-      read.subjectIds.toSubject(read.credential.decodeSubjectId(row)) === current.subjectId,
-    );
+    if (!(read.subjectIds.toSubject(read.credential.decodeSubjectId(row)) === current.subjectId))
+      return yield* invalidState();
 
     return M.snapshotPasskeySync(M.PasskeyCredential, {
       ...value,
@@ -163,7 +166,7 @@ export const makePasskeyNativeReadState = Effect.fnUntraced(function* (
         select locked_factors.*, ${credential.fields("c_")} from ${credential.name} left join locked_factors on 1 = 1
         where ${credential.column(read.credential.subjectId)} = ${credential.value(read.credential.subjectId, nativeId)} and ${exactSqlText(sql, credential.column(read.credential.credentialId), credential.value(read.credential.credentialId, credentialId))} and ${active("credential")}`;
 
-      invariant(rows.length <= 64);
+      if (!(rows.length <= 64)) return yield* invalidState();
 
       return {
         row,
@@ -171,7 +174,7 @@ export const makePasskeyNativeReadState = Effect.fnUntraced(function* (
           credentialId === undefined || rows[0] === undefined
             ? undefined
             : credential.decode(rows[0], "c_"),
-        revision: revision(
+        revision: yield* revision(
           row,
           rows.map((row) => factor.decode(row, "f_")),
         ),
@@ -193,8 +196,8 @@ export const makePasskeyNativeReadState = Effect.fnUntraced(function* (
       !read.subject.isActiveStatus(row[read.subject.status])
     )
       return undefined;
-    invariant(
-      rows.every((selected) => {
+    if (
+      !rows.every((selected) => {
         const other = observedSubject.decode(selected, "s_");
 
         return (
@@ -202,13 +205,14 @@ export const makePasskeyNativeReadState = Effect.fnUntraced(function* (
           other[read.subject.securityRevision] === row[read.subject.securityRevision] &&
           read.subject.isActiveStatus(other[read.subject.status])
         );
-      }),
-    );
+      })
+    )
+      return yield* invalidState();
 
     return {
       row,
       credential: credentialId === undefined ? undefined : joinedCredential.decode(rows[0]!, "c_"),
-      revision: revision(
+      revision: yield* revision(
         row,
         rows.map((selected) => observedFactor.decode(selected, "f_")),
       ),
@@ -245,10 +249,13 @@ export const makePasskeyNativeReadState = Effect.fnUntraced(function* (
       if (found.length !== 1) return undefined;
       const row = credential.decode(found[0]!, "c_");
 
-      invariant(
-        row[read.credential.rpId] === rpId &&
-          row[read.credential.protocolCredentialId] === protocolCredentialId,
-      );
+      if (
+        !(
+          row[read.credential.rpId] === rpId &&
+          row[read.credential.protocolCredentialId] === protocolCredentialId
+        )
+      )
+        return yield* invalidState();
       nativeId = read.credential.decodeSubjectId(row);
     }
 
@@ -273,13 +280,16 @@ export const makePasskeyNativeReadState = Effect.fnUntraced(function* (
     const subjectRow = s.decode(rows[0]!, "s_");
     const owner = read.credential.decodeSubjectId(row);
 
-    invariant(
-      (joinedIds || sameId(owner, nativeId)) &&
+    if (
+      !(
+        (joinedIds || sameId(owner, nativeId)) &&
         row[read.credential.rpId] === rpId &&
-        row[read.credential.protocolCredentialId] === protocolCredentialId,
-    );
-    invariant(
-      rows.every((selected) => {
+        row[read.credential.protocolCredentialId] === protocolCredentialId
+      )
+    )
+      return yield* invalidState();
+    if (
+      !rows.every((selected) => {
         const other = c.decode(selected, "c_");
         const subjectValue = s.decode(selected, "s_");
 
@@ -290,12 +300,13 @@ export const makePasskeyNativeReadState = Effect.fnUntraced(function* (
           other[read.credential.credentialRevision] === row[read.credential.credentialRevision] &&
           subjectValue[read.subject.securityRevision] === subjectRow[read.subject.securityRevision]
         );
-      }),
-    );
+      })
+    )
+      return yield* invalidState();
 
     return yield* decodeCredential(
       row,
-      revision(
+      yield* revision(
         subjectRow,
         rows.map((row) => f.decode(row, "f_")),
       ),

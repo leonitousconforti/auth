@@ -8,10 +8,13 @@ import { reportAuthDiagnostic } from "@yielded/auth/Persistence";
 import { getTableColumns, getTableName, is, Table } from "drizzle-orm";
 import { getTableConfig as getMysqlTableConfig, MySqlTable } from "drizzle-orm/mysql-core";
 import { getTableConfig as getPgTableConfig, PgTable } from "drizzle-orm/pg-core";
-import { Effect } from "effect";
+import { Effect, Result } from "effect";
 import { SqlClient } from "effect/sql/SqlClient";
 
 import { NativeDatabase } from "./native-database";
+
+const invalidMapping = () =>
+  PersistenceMappingError.make({ operation: "mapping", cause: "Invalid storage key mapping" });
 
 /** Validate at acquisition using the root database supplied by the adapter. */
 export const validateDrizzleStorage = Effect.fnUntraced(
@@ -19,16 +22,18 @@ export const validateDrizzleStorage = Effect.fnUntraced(
     const physical = yield* Effect.try({
       try: () =>
         storageKeyPlans(mapping, (table) => {
-          if (!is(table, Table)) throw new Error("Missing storage table");
+          if (!is(table, Table))
+            return Result.fail(
+              PersistenceMappingError.make({
+                operation: "mapping",
+                cause: "Expected a SQL table",
+              }),
+            );
 
-          return getTableColumns(table);
+          return Result.succeed(getTableColumns(table));
         }),
-      catch: () =>
-        PersistenceMappingError.make({
-          operation: "mapping",
-          cause: "Invalid storage key mapping",
-        }),
-    });
+      catch: invalidMapping,
+    }).pipe(Effect.flatMap(Effect.fromResult), Effect.mapError(invalidMapping));
 
     const { $client: client } = yield* NativeDatabase;
 

@@ -67,6 +67,7 @@ const policy = (options: SessionOptions, immediate: boolean, cacheFor?: Duration
       requireImmediateInvalidation: immediate && positiveCacheMillis === 0,
     });
   } catch {
+    // oxlint-disable-next-line effect/no-untyped-throw -- Public synchronous session configuration rejects unsupported static policy.
     throw SessionConfigurationError.make({ reason: "policy" });
   }
   const issuer = options.issuer;
@@ -164,6 +165,7 @@ export const configuredLayer = <
         : defaults(sessions.stateAssistedLayer(configured));
 
   // The selected mode determines exactly which persistence port the layer acquires.
+  // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off
   return layer as Layer.Layer<
     ModuleService<Id, "strategy", Claims["Type"]>,
     SessionConfigurationError | AuthConfigurationError,

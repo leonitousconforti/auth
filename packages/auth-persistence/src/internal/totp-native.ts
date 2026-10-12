@@ -42,10 +42,8 @@ export type NativeTotpMapping = TotpMapping<
 
 const unavailable = () => TotpUnavailable.make({});
 
-const invariant: (value: unknown) => asserts value = (value) => {
-  if (!value)
-    throw PersistenceMappingError.make({ operation: "decode", cause: "Invalid TOTP authority" });
-};
+const invalidState = () =>
+  PersistenceMappingError.make({ operation: "decode", cause: "Invalid TOTP authority" });
 
 const codec = Schema.fromJsonString(TotpRecord);
 const encodeTotpRecord = Schema.encodeSync(codec);
@@ -117,7 +115,9 @@ export const makeNativeTotpServices = Effect.fnUntraced(function* (
     if (batch !== undefined) {
       yield* appendSqlBatchStatement(sql`${statement}`);
       yield* appendSqlBatchStatement(sqlBatchAssertion(sql, sql`changes() = ${expected}`));
-    } else invariant((yield* executeSqlChange(sql, statement)) === expected);
+    } else {
+      if (!((yield* executeSqlChange(sql, statement)) === expected)) return yield* invalidState();
+    }
   });
 
   const capture = Effect.fnUntraced(function* (
@@ -126,7 +126,7 @@ export const makeNativeTotpServices = Effect.fnUntraced(function* (
   ) {
     const nativeId = mapping.subjectIds.toNative(subjectId);
 
-    invariant(mapping.subjectIds.toSubject(nativeId) === subjectId);
+    if (!(mapping.subjectIds.toSubject(nativeId) === subjectId)) return yield* invalidState();
 
     const scope = yield* digest(
       `effect-auth/totp/scope/v1/${mapping.moduleId.length}:${mapping.moduleId}/${subjectId}`,
@@ -136,7 +136,7 @@ export const makeNativeTotpServices = Effect.fnUntraced(function* (
       const owners =
         yield* sql`select ${subject.column(s.id)} from ${subject.name} where ${id(subject, s.id, nativeId)} and ${active} limit 2 ${lock}`;
 
-      invariant(owners.length <= 1);
+      if (!(owners.length <= 1)) return yield* invalidState();
       if (owners[0] === undefined) return undefined;
     }
     // The distinct subject lock always precedes the ordered authority locks.
@@ -149,7 +149,7 @@ export const makeNativeTotpServices = Effect.fnUntraced(function* (
       from ${subject.name} left join ${factor.name} on ${exact(factor, f.scope, scope)} left join current_credentials on 1 = 1
       where ${id(subject, s.id, nativeId)} and ${active} limit 65`;
 
-    invariant(rows.length <= 64);
+    if (!(rows.length <= 64)) return yield* invalidState();
     if (rows[0] === undefined) return undefined;
 
     const subjectRow = subject.decode(rows[0], "s_"),
@@ -165,8 +165,10 @@ export const makeNativeTotpServices = Effect.fnUntraced(function* (
       const value = credential.decode(row, "c_");
 
       if (value[c.id] === null || value[c.id] === undefined) continue;
-      invariant(mapping.subjectIds.toSubject(value[c.subjectId]) === subjectId);
-      invariant(!credentials.some((entry) => entry.credentialId === value[c.id]));
+      if (!(mapping.subjectIds.toSubject(value[c.subjectId]) === subjectId))
+        return yield* invalidState();
+      if (!!credentials.some((entry) => entry.credentialId === value[c.id]))
+        return yield* invalidState();
       credentials.push({ credentialId: value[c.id], revision: value[c.revision] });
     }
 
@@ -183,30 +185,37 @@ export const makeNativeTotpServices = Effect.fnUntraced(function* (
       ),
     };
 
-    invariant(
-      mapping.subjectIds.toSubject(subjectRow[s.id]) === subjectId && Number.isSafeInteger(now),
-    );
+    if (
+      !(mapping.subjectIds.toSubject(subjectRow[s.id]) === subjectId && Number.isSafeInteger(now))
+    )
+      return yield* invalidState();
 
     const record =
       factorRow === undefined ? null : yield* Schema.decodeUnknownEffect(codec)(factorRow[f.state]);
 
-    invariant(
-      record === null ||
+    if (
+      !(
+        record === null ||
         (record.moduleId === mapping.moduleId &&
           record.subjectId === subjectId &&
           record.version === factorRow?.[f.version] &&
           (record.secret === null || record.secret.revision === record.revision) &&
-          (record.pending === null || record.pending.secret.revision === record.pending.revision)),
-    );
+          (record.pending === null || record.pending.secret.revision === record.pending.revision))
+      )
+    )
+      return yield* invalidState();
 
-    invariant(
-      record === null ||
+    if (
+      !(
+        record === null ||
         record.secret === null ||
         ordered.credentials.some(
           (entry) =>
             entry.credentialId === record.credentialId && entry.revision === record.revision,
-        ),
-    );
+        )
+      )
+    )
+      return yield* invalidState();
 
     const snapshot = yield* Schema.decodeEffect(Schema.toType(TotpSnapshot))({
       revision: ordered,
@@ -218,11 +227,14 @@ export const makeNativeTotpServices = Effect.fnUntraced(function* (
   });
 
   const mutate = Effect.fnUntraced(function* (input: TotpMutation) {
-    invariant(
-      input.moduleId === mapping.moduleId &&
+    if (
+      !(
+        input.moduleId === mapping.moduleId &&
         Schema.encodeSync(Schema.fromJsonString(TotpPolicy))(input.policy) ===
-          Schema.encodeSync(Schema.fromJsonString(TotpPolicy))(mapping.policy),
-    );
+          Schema.encodeSync(Schema.fromJsonString(TotpPolicy))(mapping.policy)
+      )
+    )
+      return yield* invalidState();
     const captured = yield* capture(input.subjectId, true);
 
     if (captured === undefined) return reject;
@@ -583,10 +595,13 @@ export const makeNativeTotpServices = Effect.fnUntraced(function* (
 
       if (sql.onDialectOrElse({ mysql: () => true, orElse: () => false }) && batch === undefined) {
         yield* sql`${upsert}`;
-        invariant(
-          (yield* sql`select 1 from ${credential.name} where ${id(credential, c.subjectId, nativeId)} and ${exact(credential, c.id, next.credentialId)} and ${exact(credential, c.revision, next.revision)} and ${id(credential, c.status, c.encodeStatus(next.secret !== null))}`)
-            .length === 1,
-        );
+        if (
+          !(
+            (yield* sql`select 1 from ${credential.name} where ${id(credential, c.subjectId, nativeId)} and ${exact(credential, c.id, next.credentialId)} and ${exact(credential, c.revision, next.revision)} and ${id(credential, c.status, c.encodeStatus(next.secret !== null))}`)
+              .length === 1
+          )
+        )
+          return yield* invalidState();
       } else yield* stage(upsert);
     }
 
@@ -604,7 +619,7 @@ export const makeNativeTotpServices = Effect.fnUntraced(function* (
       };
 
       yield* stage(
-        conditionalInsert(
+        yield* conditionalInsert(
           factor,
           insert,
           semantic ? writeGuard : sql.and([writeGuard, initialFactor]),
@@ -651,20 +666,20 @@ export const makeNativeTotpServices = Effect.fnUntraced(function* (
       yield* registerSqlPostcondition({
         name: "totp-factor-and-authority",
         check: Effect.gen(function* () {
-          invariant((yield* sql`select 1 where ${finalCondition}`).length === 1);
+          if (!((yield* sql`select 1 where ${finalCondition}`).length === 1))
+            return yield* invalidState();
           if (input.authorization !== undefined) {
             const final = yield* capture(input.subjectId);
 
-            invariant(final !== undefined && final.now >= now);
+            if (!(final !== undefined && final.now >= now)) return yield* invalidState();
             const expected = mapping.subject.decodeRequirement(expectedPolicy);
 
             const encodedRequirement = Schema.encodeSync(
               Schema.fromJsonString(AuthenticationRequirement),
             );
 
-            invariant(
-              encodedRequirement(final.snapshot.requirement) === encodedRequirement(expected),
-            );
+            if (!(encodedRequirement(final.snapshot.requirement) === encodedRequirement(expected)))
+              return yield* invalidState();
           }
         }).pipe(
           Effect.provideService(Crypto.Crypto, crypto),
@@ -680,7 +695,7 @@ export const makeNativeTotpServices = Effect.fnUntraced(function* (
       executor.read(
         provide(
           Effect.gen(function* () {
-            invariant(input.moduleId === mapping.moduleId);
+            if (!(input.moduleId === mapping.moduleId)) return yield* invalidState();
 
             return (yield* capture(input.subjectId))?.snapshot;
           }),

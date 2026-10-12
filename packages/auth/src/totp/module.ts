@@ -3,7 +3,7 @@ import { Context, DateTime, Effect, Layer, Redacted, Schema } from "effect";
 import { makeAuthStrategy } from "../auth/AuthStrategy";
 import { hasCommitScope, type PreparedCommit } from "../hooks/commit";
 import { LifecycleHooks } from "../hooks/LifecycleHooks";
-import { LifecycleEventId, lifecycleEvent, lifecycleSnapshot } from "../hooks/models";
+import { LifecycleEventId, lifecycleEventEffect, lifecycleSnapshotEffect } from "../hooks/models";
 import type { AuthInvocation } from "../operations/context";
 import type { AuthOperationResult } from "../operations/credentials";
 import { operationGroup } from "../operations/operation";
@@ -237,17 +237,17 @@ export const makeTotpModule = <
       action: Parameters<TotpPersistence["Service"]["mutate"]>[0]["action"],
       authorization?: typeof TotpActionAuthorization.Type,
     ) {
-      const event = lifecycleEvent({
+      const event = yield* lifecycleEventEffect({
         id: LifecycleEventId.make(`totp/${moduleId}/${commandId}`),
         occurredAtMillis: DateTime.toEpochMillis(yield* DateTime.now),
-        snapshot: lifecycleSnapshot({
+        snapshot: yield* lifecycleSnapshotEffect({
           action: "credential-change",
           operation: `${moduleId}/totp/${action._tag.toLowerCase()}`,
           subjectId: captured.revision.subjectId,
           method: action._tag === "Recovery" ? "recovery-code" : "totp",
           identifiers: [],
-        }),
-      });
+        }).pipe(Effect.orDie),
+      }).pipe(Effect.orDie);
 
       if (action._tag !== "Verify" && (action._tag !== "Recovery" || action.reset))
         yield* hooks.before(event.snapshot);

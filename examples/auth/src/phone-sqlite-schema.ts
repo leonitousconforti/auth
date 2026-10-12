@@ -65,6 +65,7 @@ export const encodeInstant = (millis: number) => new Date(millis).toISOString();
 
 export const nativeSubject = (id: AuthSchema.SubjectId) => {
   if (!/^customer:[1-9][0-9]*$/.test(id))
+    // oxlint-disable-next-line effect/no-untyped-throw -- The SQL mapping codec is synchronous; its adapter captures this typed failure.
     throw PersistenceMappingError.make({
       operation: "phone-example-codec",
       cause: "invalid consumer value",
@@ -72,6 +73,7 @@ export const nativeSubject = (id: AuthSchema.SubjectId) => {
   const result = Number(id.slice(9));
 
   if (!Number.isSafeInteger(result))
+    // oxlint-disable-next-line effect/no-untyped-throw -- The SQL mapping codec is synchronous; its adapter captures this typed failure.
     throw PersistenceMappingError.make({
       operation: "phone-example-codec",
       cause: "invalid consumer value",
@@ -118,6 +120,7 @@ export const proofs = {
     encodeInstant,
     decodeInstant: (value) => {
       if (typeof value !== "string" || !Number.isFinite(Date.parse(value)))
+        // oxlint-disable-next-line effect/no-untyped-throw -- The SQL mapping codec is synchronous; its adapter captures this typed failure.
         throw PersistenceMappingError.make({
           operation: "phone-example-codec",
           cause: "invalid consumer value",

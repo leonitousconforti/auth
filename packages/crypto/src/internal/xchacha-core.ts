@@ -369,6 +369,7 @@ export const encrypt = (
       return out;
     } catch (error) {
       out.fill(0);
+      // oxlint-disable-next-line effect/no-untyped-throw -- Synchronous primitive rethrows the original host failure after wiping secret buffers; the Effect adapter classifies it.
       throw error;
     }
   });
@@ -396,6 +397,7 @@ export const decrypt = (
       return out;
     } catch (error) {
       out.fill(0);
+      // oxlint-disable-next-line effect/no-untyped-throw -- Synchronous primitive rethrows the original host failure after wiping secret buffers; the Effect adapter classifies it.
       throw error;
     }
   });

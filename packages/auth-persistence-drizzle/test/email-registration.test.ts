@@ -36,7 +36,7 @@ const fingerprint = TokenDigest.make("owner-registration");
 const columns = getTableColumns(storage.schema.identifiers);
 
 const mappings = Effect.gen(function* () {
-  const email = (yield* makeStorageMappings(storage)).emails();
+  const email = yield* (yield* makeStorageMappings(storage)).emails();
   const d1 = yield* d1Mapping;
 
   const proofMapping = d1;

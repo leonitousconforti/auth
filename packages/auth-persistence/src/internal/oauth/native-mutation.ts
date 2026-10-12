@@ -5,6 +5,7 @@ import { SqlError } from "effect/sql/SqlError";
 import type { Fragment } from "effect/sql/Statement";
 
 import { sqlBatchAssertion } from "../d1-planning";
+import { PersistenceMappingError } from "../mapping-error";
 import type { OAuthOwnershipTable } from "../models/oauth-model";
 import type { NativeSqlTables } from "../native-sql-table";
 import { exactSqlText, executeSqlChange } from "../sql-change";
@@ -15,7 +16,7 @@ import {
 } from "../sql-commit";
 import type { TableModel } from "../table-model";
 import { makeOAuthNativeAuthority, type OAuthNativeReadMapping } from "./native-state";
-import { invariant, oauthIdentityKey } from "./state";
+import { invalidState, oauthIdentityKey } from "./state";
 
 export type OAuthNativeMutationMapping = Pick<
   OAuthNativeReadMapping,
@@ -45,7 +46,7 @@ export const makeOAuthNativeMutation = Effect.fnUntraced(function* (
     else {
       const rows = yield* sql`select 1 where ${condition}`;
 
-      invariant(rows.length === 1);
+      if (!(rows.length === 1)) return yield* invalidState();
     }
   });
 
@@ -68,7 +69,11 @@ export const makeOAuthNativeMutation = Effect.fnUntraced(function* (
           check: Effect.gen(function* () {
             const rows = yield* sql`select 1 where ${condition}`;
 
-            invariant(rows.length === 1);
+            if (!(rows.length === 1))
+              return yield* PersistenceMappingError.make({
+                operation: "postcondition",
+                cause: invalidState(),
+              });
           }),
         });
 
@@ -139,15 +144,18 @@ export const makeOAuthNativeMutation = Effect.fnUntraced(function* (
     const rows =
       yield* sql`select ${ownership.fields("identity_")} from ${ownership.name} where ${exact(o.identityKey, identityKey)}`;
 
-    invariant(rows.length <= 1);
+    if (!(rows.length <= 1)) return yield* invalidState();
     const row = rows[0] === undefined ? undefined : ownership.decode(rows[0], "identity_");
 
     if (row !== undefined) {
-      invariant(
-        row[o.provider] === identity.provider &&
+      if (
+        !(
+          row[o.provider] === identity.provider &&
           row[o.issuer] === identity.issuer &&
-          row[o.externalSubject] === identity.subject,
-      );
+          row[o.externalSubject] === identity.subject
+        )
+      )
+        return yield* invalidState();
       if (!mapping.subjectId.equals(o.decodeSubjectId(row), nativeId)) return undefined;
       if (batch)
         yield* assert(
@@ -179,14 +187,17 @@ export const makeOAuthNativeMutation = Effect.fnUntraced(function* (
     const raced =
       yield* sql`select ${ownership.fields("identity_")} from ${ownership.name} where ${exact(o.identityKey, identityKey)}`;
 
-    invariant(raced.length === 1);
+    if (!(raced.length === 1)) return yield* invalidState();
     const committed = ownership.decode(raced[0]!, "identity_");
 
-    invariant(
-      committed[o.provider] === identity.provider &&
+    if (
+      !(
+        committed[o.provider] === identity.provider &&
         committed[o.issuer] === identity.issuer &&
-        committed[o.externalSubject] === identity.subject,
-    );
+        committed[o.externalSubject] === identity.subject
+      )
+    )
+      return yield* invalidState();
 
     return mapping.subjectId.equals(o.decodeSubjectId(committed), nativeId)
       ? identityKey

@@ -74,7 +74,7 @@ export const EmailLive = Layer.effect(
                 redemption.input.purpose !== "email-address-verification"
               )
                 return prepare("rejected", journal);
-              if (redeemInOwner(state, redemption.input, now, journal) !== "redeemed")
+              if ((yield* redeemInOwner(state, redemption.input, now, journal)) !== "redeemed")
                 return prepare("rejected", journal);
               const receipt = prepare("changed", journal);
 

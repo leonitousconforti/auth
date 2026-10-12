@@ -94,7 +94,7 @@ export const prepare = Effect.fn("OAuthRegistration.prepareIntent")(function* (
 
   credentialBytes.fill(0);
 
-  const intent = snapshotOAuthRegistrationIntent.sync({
+  const intent = yield* snapshotOAuthRegistrationIntent.effect({
     namespace: "effect-auth/oauth-registration-intent/v1",
     reference,
     context: flow.context,

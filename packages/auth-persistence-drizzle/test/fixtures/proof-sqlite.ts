@@ -69,7 +69,7 @@ export const storage = persistence.managed({
 });
 
 // Use production codecs and table mapping, rather than a test proof-store implementation.
-export const proofMapping = Effect.map(makeStorageMappings(storage), (mappings) =>
+export const proofMapping = Effect.flatMap(makeStorageMappings(storage), (mappings) =>
   mappings.proofs(),
 );
 

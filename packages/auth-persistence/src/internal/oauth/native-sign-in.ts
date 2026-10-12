@@ -7,7 +7,7 @@ import type { NativeSqlTables } from "../native-sql-table";
 import { makeSqlCommitExecutor, registerSqlCommitReceipt, SqlBatchCommit } from "../sql-commit";
 import { makeOAuthNativeFlow } from "./native-flow";
 import { makeOAuthNativeState, type OAuthNativeReadMapping } from "./native-state";
-import { invariant, unavailable } from "./state";
+import { invalidState, unavailable } from "./state";
 
 export const prepareOAuthNative = <Value, A>(
   value: Value,
@@ -18,7 +18,8 @@ export const prepareOAuthNative = <Value, A>(
 
     const receipt = prepare(value, journal);
 
-    invariant(receipt?._tag === "PreparedCommit" && Effect.isEffect(receipt.read));
+    if (!(receipt?._tag === "PreparedCommit" && Effect.isEffect(receipt.read)))
+      return yield* invalidState();
     yield* registerSqlCommitReceipt(receipt);
 
     return receipt;

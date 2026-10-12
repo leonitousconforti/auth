@@ -1,8 +1,14 @@
 import { Context, Crypto, DateTime, Effect, Layer, Redacted, Result, Schema } from "effect";
 import { Base64Url } from "effect/encoding";
 
+import { prepareCommit } from "../hooks/commit";
 import { LifecycleHooks } from "../hooks/LifecycleHooks";
-import { HookDenied, LifecycleEventId, lifecycleEvent, lifecycleSnapshot } from "../hooks/models";
+import {
+  HookDenied,
+  LifecycleEventId,
+  lifecycleEventEffect,
+  lifecycleSnapshotEffect,
+} from "../hooks/models";
 import { IdentityConflict } from "../identity/models";
 import { AuthenticationClock } from "../operations/clock";
 import type { AuthInvocation } from "../operations/context";
@@ -209,7 +215,7 @@ export const makeOAuthConnected = <const Id extends string>(
       ) {
         const intentDigest = yield* hash(intent);
 
-        return snapshotOAuthConnectedActionChallenge.sync({
+        return yield* snapshotOAuthConnectedActionChallenge.effect({
           moduleId: id,
           action,
           flowId,
@@ -235,7 +241,7 @@ export const makeOAuthConnected = <const Id extends string>(
       ) {
         const granted = yield* verifyAction({
           invocation: { ...caller },
-          challenge: snapshotOAuthConnectedActionChallenge.sync(expected),
+          challenge: yield* snapshotOAuthConnectedActionChallenge.effect(expected),
           ...(proof === undefined ? {} : { proof: Redacted.make(Redacted.value(proof)) }),
         });
 
@@ -264,21 +270,21 @@ export const makeOAuthConnected = <const Id extends string>(
         operation: "connect" | "disconnect",
         subjectId: OAuthAccountRevision["subjectId"],
       ) {
-        const snapshot = lifecycleSnapshot({
+        const snapshot = yield* lifecycleSnapshotEffect({
           action: "linking",
           operation: moduleId + "/connected/" + operation,
           subjectId,
           method: "oauth-connected",
           identifiers: [],
-        });
+        }).pipe(Effect.orDie);
 
         yield* before(snapshot);
 
-        return lifecycleEvent({
+        return yield* lifecycleEventEffect({
           id: LifecycleEventId.make(yield* random()),
           occurredAtMillis: DateTime.toEpochMillis(yield* DateTime.now),
           snapshot,
-        });
+        }).pipe(Effect.orDie);
       });
 
       const begin = Effect.fn("OAuthConnected.begin")(function* (
@@ -358,7 +364,7 @@ export const makeOAuthConnected = <const Id extends string>(
           return yield* OAuthUnavailable.make({});
 
         const prepared = yield* prepareAuthorization({
-          profile: snapshotOAuthConnectedProfile.sync(profile),
+          profile: yield* snapshotOAuthConnectedProfile.effect(profile),
           callbackId: request.callbackId,
           flowId: request.flowId,
         }).pipe(
@@ -383,7 +389,7 @@ export const makeOAuthConnected = <const Id extends string>(
 
         if (expiresAtMillis <= now) return yield* OAuthRejected.make({});
 
-        const intent = snapshotOAuthConnectedIntentContext.sync({
+        const intent = yield* snapshotOAuthConnectedIntentContext.effect({
           ...prepared.configuration,
           ...(prepared.responseMode === undefined ? {} : { responseMode: prepared.responseMode }),
           namespace: "effect-auth/oauth-connected-context/v1",
@@ -396,7 +402,7 @@ export const makeOAuthConnected = <const Id extends string>(
               ? request.intent.grantId
               : M.OAuthGrantId.make(yield* random()),
           ...(request.intent._tag === "Reconnect"
-            ? { reconnect: snapshotOAuthConnectedTarget.sync(owned.grant!.context) }
+            ? { reconnect: yield* snapshotOAuthConnectedTarget.effect(owned.grant!.context) }
             : {}),
           maximumEvidenceAgeMillis: policy.maximumEvidenceAgeMillis,
           authenticatedCaller: caller,
@@ -420,32 +426,37 @@ export const makeOAuthConnected = <const Id extends string>(
           request.actionProof,
         );
 
-        const context = snapshotOAuthConnectedTransactionContext.sync({
+        const context = yield* snapshotOAuthConnectedTransactionContext.effect({
           ...intent,
           authorization,
         });
 
         const sealed = yield* sealFlow({
           context,
-          secrets: snapshotOAuthTransactionSecrets.sync(prepared.secrets),
+          secrets: yield* snapshotOAuthTransactionSecrets.effect(prepared.secrets),
         }).pipe(Effect.flatMap((value) => snapshotOAuthSealedTransaction.effect(value)));
 
-        const flow = snapshotOAuthConnectedFlow.sync({
+        const flow = yield* snapshotOAuthConnectedFlow.effect({
           context,
           sealed,
         });
 
-        const receipt = yield* issue(snapshotOAuthConnectedFlow.sync(flow), (value, journal) => {
-          const decision = snapshotOAuthConnectedIssueDecision.sync(value);
+        const receipt = yield* issue(
+          yield* snapshotOAuthConnectedFlow.effect(flow),
+          prepareCommit((value, journal) =>
+            Result.gen(function* () {
+              const decision = snapshotOAuthConnectedIssueDecision.sync(value);
 
-          if (
-            decision._tag === "Issued" &&
-            !connectedSame(M.OAuthConnectedFlow, decision.flow, flow)
-          )
-            throw OAuthUnavailable.make({});
+              if (
+                decision._tag === "Issued" &&
+                !connectedSame(M.OAuthConnectedFlow, decision.flow, flow)
+              )
+                return yield* Result.fail(OAuthUnavailable.make({}));
 
-          return journal.prepare(decision._tag === "Issued");
-        });
+              return journal.prepare(decision._tag === "Issued");
+            }),
+          ),
+        );
 
         if (!(yield* connectedRead(receipt))) return yield* OAuthRejected.make({});
 
@@ -494,7 +505,7 @@ export const makeOAuthConnected = <const Id extends string>(
           ...(response.issuer === undefined ? {} : { responseIssuer: response.issuer }),
         };
 
-        const access = snapshotOAuthConnectedAccess.sync(
+        const access = yield* snapshotOAuthConnectedAccess.effect(
           authenticated === undefined
             ? { ...binding, formPostSubject: true as const }
             : { ...binding, subjectId: authenticated.subjectId },
@@ -582,7 +593,9 @@ export const makeOAuthConnected = <const Id extends string>(
             )
               return yield* OAuthUnavailable.make({});
             const start = DateTime.toEpochMillis(yield* DateTime.now);
-            const protocolConfiguration = snapshotOAuthConnectedConfiguration.sync(context);
+
+            const protocolConfiguration =
+              yield* snapshotOAuthConnectedConfiguration.effect(context);
 
             const rawGrant = yield* exchangeGrant({
               configuration: protocolConfiguration,
@@ -609,7 +622,7 @@ export const makeOAuthConnected = <const Id extends string>(
               )
                 return yield* OAuthProtocolRejected.make({});
 
-              const tokenContext = snapshotOAuthConnectedTokenContext.sync({
+              const tokenContext = yield* snapshotOAuthConnectedTokenContext.effect({
                 namespace: "effect-auth/oauth-connected-token-context/v1",
                 moduleId: id,
                 subjectId: caller.subjectId,
@@ -621,7 +634,7 @@ export const makeOAuthConnected = <const Id extends string>(
                 metadata: projected.metadata,
               });
 
-              return snapshotOAuthConnectedStoredGrant.sync({
+              return yield* snapshotOAuthConnectedStoredGrant.effect({
                 context: tokenContext,
                 sealed: yield* sealTokens({ context: tokenContext, material: projected.material }),
               });
@@ -639,17 +652,19 @@ export const makeOAuthConnected = <const Id extends string>(
 
         const finished = yield* settle(
           { _tag: "Connect", flow, authorization, grant },
-          (value, journal) => {
-            const result = snapshotOAuthConnectedSettlementDecision.sync(value);
+          prepareCommit((value, journal) =>
+            Result.gen(function* () {
+              const result = snapshotOAuthConnectedSettlementDecision.sync(value);
 
-            if (result._tag === "Connected") {
-              if (!connectedSame(M.OAuthConnectedStoredGrant, result.grant, grant))
-                throw OAuthUnavailable.make({});
-              journal.stage(event);
-            }
+              if (result._tag === "Connected") {
+                if (!connectedSame(M.OAuthConnectedStoredGrant, result.grant, grant))
+                  return yield* Result.fail(OAuthUnavailable.make({}));
+                journal.stage(event);
+              }
 
-            return journal.prepare(result);
-          },
+              return journal.prepare(result);
+            }),
+          ),
         ).pipe(Effect.flatMap(connectedRead));
 
         if (finished._tag === "Conflict") return yield* IdentityConflict.make({});
@@ -709,7 +724,7 @@ export const makeOAuthConnected = <const Id extends string>(
 
         if (inspected === undefined || inspected.grant === undefined)
           return yield* OAuthRejected.make({});
-        const grant = snapshotOAuthConnectedStoredGrant.sync(inspected.grant);
+        const grant = yield* snapshotOAuthConnectedStoredGrant.effect(inspected.grant);
         const context = grant.context;
 
         if (
@@ -742,21 +757,23 @@ export const makeOAuthConnected = <const Id extends string>(
             grantVersion: context.grantVersion,
             authorization,
           },
-          (value, journal) => {
-            const decision = snapshotOAuthConnectedDisconnectDecision.sync(value);
+          prepareCommit((value, journal) =>
+            Result.gen(function* () {
+              const decision = snapshotOAuthConnectedDisconnectDecision.sync(value);
 
-            if (decision._tag === "Disconnected") {
-              if (
-                decision.grantId !== request.grantId ||
-                (context.configuration.profile.revocation === "unsupported" &&
-                  decision.remoteRevocation !== "Unsupported")
-              )
-                throw OAuthUnavailable.make({});
-              journal.stage(event);
-            }
+              if (decision._tag === "Disconnected") {
+                if (
+                  decision.grantId !== request.grantId ||
+                  (context.configuration.profile.revocation === "unsupported" &&
+                    decision.remoteRevocation !== "Unsupported")
+                )
+                  return yield* Result.fail(OAuthUnavailable.make({}));
+                journal.stage(event);
+              }
 
-            return journal.prepare(decision);
-          },
+              return journal.prepare(decision);
+            }),
+          ),
         ).pipe(Effect.flatMap(connectedRead));
 
         if (result._tag === "Rejected") return yield* OAuthRejected.make({});

@@ -204,7 +204,9 @@ export const PasswordsLive = Layer.effectContext(
                 !(yield* mutationCurrent(state, input))
               )
                 return prepare("rejected", journal);
-              if (redeemInOwner(state, input.redemption.input, now, journal) !== "redeemed")
+              if (
+                (yield* redeemInOwner(state, input.redemption.input, now, journal)) !== "redeemed"
+              )
                 return prepare("rejected", journal);
               const receipt = prepare("changed", journal);
 

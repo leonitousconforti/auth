@@ -6,7 +6,7 @@ import type { NativeSqlTables } from "./native-sql-table";
 import { makeNativeSessionPending } from "./session-native-pending";
 import {
   makeNativeSessionAuthorityState,
-  sessionInvariant,
+  invalidSessionState,
   sessionUnavailable,
   type NativeSessionAuthorityMapping,
 } from "./session-native-state";
@@ -61,7 +61,8 @@ export const makeNativeSessionPendingReader = Effect.fnUntraced(function* (
     if (rows[0] === undefined) return undefined;
     const record = yield* pending.decode(kind, pt.decode(rows[0], "p_"));
 
-    sessionInvariant(joinedIds || record.subjectId === discoveredSubjectId);
+    if (!(joinedIds || record.subjectId === discoveredSubjectId))
+      return yield* invalidSessionState();
     const owner = yield* mapping.subjectId.toNative(record.subjectId);
 
     const authority = yield* state.decode(

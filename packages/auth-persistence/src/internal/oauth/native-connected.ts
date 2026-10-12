@@ -19,7 +19,7 @@ import {
 import { makeOAuthNativeFlow } from "./native-flow";
 import { prepareOAuthNative } from "./native-sign-in";
 import {
-  invariant,
+  invalidState,
   oauthIdentityKey,
   sameIdentity,
   sameRevision,
@@ -90,7 +90,7 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
       const rows =
         yield* sql`select ${grant.column(g.state)} as state,${now} as instant from ${grant.name} where ${state.key(key, nativeId)} and ${state.exact(g.snapshot, encoded)} and ${required} limit 2`;
 
-      invariant(rows.length <= 1);
+      if (!(rows.length <= 1)) return yield* invalidState();
       const row = rows[0];
 
       return yield* prepareOAuthNative(
@@ -302,14 +302,14 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
 
           const changed = yield* state.change(
             previous === undefined
-              ? conditionalInsert(grant, values, sql`${required} and ${owner}`)
+              ? yield* conditionalInsert(grant, values, sql`${required} and ${owner}`)
               : sql`${grant.update(values)} where ${state.key(key, current.nativeId)} and ${state.exact(g.grantVersion, previous.grantVersion)} and ${state.exact(g.identityKey, identityKey)} and ${state.exact(g.profileKey, previous.configuration.profile.key)} ${input._tag === "SignIn" ? sql`and ${state.exact(g.tokenVersion, previous.tokenVersion)}` : sql``} and ${required} and ${owner}`,
           );
 
           if (changed !== 1) {
             // A fresh connection may have inserted ownership in this transaction.
             // Roll it back together with a lost grant predicate.
-            invariant(input._tag !== "Connect" || previous !== undefined);
+            if (!(input._tag !== "Connect" || previous !== undefined)) return yield* invalidState();
 
             return yield* rejected();
           }
@@ -357,7 +357,7 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
 
           const items = yield* Effect.forEach(rows, (row) =>
             Effect.gen(function* () {
-              invariant(typeof row.summary === "string");
+              if (!(typeof row.summary === "string")) return yield* invalidState();
 
               return M.snapshotOAuthSync(M.OAuthConnectedSummary, {
                 ...state.summary.decode(row.summary),
@@ -453,29 +453,35 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
 
             const encoded = storage(M.OAuthConnectedRevocationJob).encode(retained);
 
-            invariant(
-              Number.isSafeInteger(mapping.revocation.retentionMillis) &&
-                mapping.revocation.retentionMillis >= 120000,
-            );
-            invariant(
-              (yield* state.change(
-                job.insert({
-                  ...j.encodeInsert({ job: retained, subjectId: current.nativeId }),
-                  [j.jobId]: jobId,
-                  [j.moduleId]: key.moduleId,
-                  [j.subjectId]: current.nativeId,
-                  [j.identityKey]: old.identityKey,
-                  [j.snapshot]: encoded,
-                  [j.state]: "Pending",
-                  [j.claimId]: null,
-                  [j.claimedAt]: null,
-                  [j.claimExpiresAt]: null,
-                  [j.retentionUntil]: mapping.clock.encodeInstant(
-                    current.now + mapping.revocation.retentionMillis,
-                  ),
-                }),
-              )) === 1,
-            );
+            if (
+              !(
+                Number.isSafeInteger(mapping.revocation.retentionMillis) &&
+                mapping.revocation.retentionMillis >= 120000
+              )
+            )
+              return yield* invalidState();
+            if (
+              !(
+                (yield* state.change(
+                  job.insert({
+                    ...j.encodeInsert({ job: retained, subjectId: current.nativeId }),
+                    [j.jobId]: jobId,
+                    [j.moduleId]: key.moduleId,
+                    [j.subjectId]: current.nativeId,
+                    [j.identityKey]: old.identityKey,
+                    [j.snapshot]: encoded,
+                    [j.state]: "Pending",
+                    [j.claimId]: null,
+                    [j.claimedAt]: null,
+                    [j.claimExpiresAt]: null,
+                    [j.retentionUntil]: mapping.clock.encodeInstant(
+                      current.now + mapping.revocation.retentionMillis,
+                    ),
+                  }),
+                )) === 1
+              )
+            )
+              return yield* invalidState();
             final.push(
               sql`exists(select 1 from ${job.name} where ${exactSqlText(sql, job.column(j.jobId), job.value(j.jobId, jobId))} and ${exactSqlText(sql, job.column(j.snapshot), job.value(j.snapshot, encoded))})`,
             );
@@ -530,13 +536,16 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
             token.metadata.refreshUseUntilMillis === undefined
           )
             return yield* prepareOAuthNative({ _tag: "ReauthorizationRequired" }, prepare);
-          invariant(
-            Number.isSafeInteger(original.lifetimeMillis) &&
+          if (
+            !(
+              Number.isSafeInteger(original.lifetimeMillis) &&
               original.lifetimeMillis >= 1000 &&
               original.lifetimeMillis <= 300000 &&
               original.nextTokenVersion !== token.tokenVersion &&
-              validConnectedMetadata(token, token.metadata.obtainedAtMillis),
-          );
+              validConnectedMetadata(token, token.metadata.obtainedAtMillis)
+            )
+          )
+            return yield* invalidState();
           const encoded = state.stored.encode(stored);
 
           const upper = Math.min(
@@ -566,7 +575,7 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
             const clock = yield* sql`select ${now} as instant`;
 
             claimedAtMillis = Number(clock[0]?.instant);
-            invariant(Number.isSafeInteger(claimedAtMillis));
+            if (!Number.isSafeInteger(claimedAtMillis)) return yield* invalidState();
             claimExpiresAtMillis = Math.min(claimedAtMillis + original.lifetimeMillis, upper);
             if (claimedAtMillis >= upper)
               return yield* prepareOAuthNative({ _tag: "ReauthorizationRequired" }, prepare);
@@ -586,14 +595,17 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
 
             if (rows.length === 0)
               return yield* refreshMiss(key, nativeId, encoded, required, upper, prepare);
-            invariant(rows.length === 1);
+            if (!(rows.length === 1)) return yield* invalidState();
             const row = grant.decode(rows[0]!, "claimed_");
 
-            invariant(
-              row[g.snapshot] === encoded &&
+            if (
+              !(
+                row[g.snapshot] === encoded &&
                 row[g.refreshClaimId] === original.claimId &&
-                row[g.refreshNextTokenVersion] === original.nextTokenVersion,
-            );
+                row[g.refreshNextTokenVersion] === original.nextTokenVersion
+              )
+            )
+              return yield* invalidState();
             claimedAtMillis = mapping.clock.decodeInstant(row[g.refreshClaimedAt]);
             claimExpiresAtMillis = mapping.clock.decodeInstant(row[g.refreshClaimExpiresAt]);
           }
@@ -663,8 +675,9 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
           if (outcome._tag === "Refreshed") {
             const next = outcome.grant.context;
 
-            invariant(
-              next.moduleId === token.moduleId &&
+            if (
+              !(
+                next.moduleId === token.moduleId &&
                 next.subjectId === token.subjectId &&
                 next.grantId === token.grantId &&
                 next.grantVersion === token.grantVersion &&
@@ -675,8 +688,10 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
                 validConnectedMetadata(next, next.metadata.obtainedAtMillis) &&
                 (next.metadata.refreshUseUntilMillis === undefined ||
                   (token.metadata.refreshUseUntilMillis !== undefined &&
-                    next.metadata.refreshUseUntilMillis <= token.metadata.refreshUseUntilMillis)),
-            );
+                    next.metadata.refreshUseUntilMillis <= token.metadata.refreshUseUntilMillis))
+              )
+            )
+              return yield* invalidState();
             deadline = Math.min(deadline, next.metadata.useUntilMillis);
             lower = next.metadata.obtainedAtMillis;
             values = state.values(outcome.grant, nativeId, yield* oauthIdentityKey(token.identity));
@@ -818,12 +833,13 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
           for (const candidate of candidates) {
             const logical = yield* mapping.subjectId.toSubject(candidate.nativeId);
 
-            invariant(
-              mapping.subjectId.equals(
+            if (
+              !mapping.subjectId.equals(
                 candidate.nativeId,
                 yield* mapping.subjectId.toNative(logical),
-              ),
-            );
+              )
+            )
+              return yield* invalidState();
             owners.set(logical, candidate.nativeId);
           }
           // Collect the complete bounded owner set before locking; every cleanup

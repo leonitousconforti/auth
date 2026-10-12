@@ -46,7 +46,7 @@ export const makeTransactionHandle = <T extends AnyRelations>(
   database: DatabaseValue<T>,
 ): Transaction<T> => ({
   ...database,
-  rollback: () => new EffectTransactionRollbackError(),
+  rollback: () => EffectTransactionRollbackError.make({}),
 });
 
 /**
@@ -88,7 +88,7 @@ export const makeDatabase = Effect.fnUntraced(function* <T extends AnyRelations>
     ...queries,
     $client: client,
     transaction,
-    rollback: () => new EffectTransactionRollbackError(),
+    rollback: () => EffectTransactionRollbackError.make({}),
   });
 
   return { ...queries, $client: client, transaction };

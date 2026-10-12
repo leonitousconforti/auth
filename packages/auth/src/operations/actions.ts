@@ -96,6 +96,7 @@ export const fromOperation = <
   } = {},
 ) => {
   if (operation.exposure !== "public")
+    // oxlint-disable-next-line effect/no-untyped-throw -- Public synchronous action construction rejects invalid static contracts.
     throw OperationConfigurationError.make({
       reason: "internal-exposure",
       operation: options.method ?? "action",
@@ -152,6 +153,7 @@ const bindAction = <
         reveals.length > 0 ||
         (definition.replay !== undefined && definition.replay !== "read-only")))
   )
+    // oxlint-disable-next-line effect/no-untyped-throw -- Public synchronous action construction rejects invalid static contracts.
     throw OperationConfigurationError.make({ reason: "invalid-action", operation: name });
 
   const operation = makeOperation(`${namespace}/api/${name}`, {
@@ -318,6 +320,7 @@ export const make = <
       Schema.NonEmptyString.check(Schema.isMaxLength(128), Schema.isPattern(/^[A-Za-z0-9._:/-]+$/)),
     )(namespace)
   )
+    // oxlint-disable-next-line effect/no-untyped-throw -- Public synchronous action construction rejects invalid static contracts.
     throw OperationConfigurationError.make({ reason: "invalid-action", operation: namespace });
 
   const basePath = options.basePath ?? "/auth";
@@ -327,6 +330,7 @@ export const make = <
       basePath,
     )
   )
+    // oxlint-disable-next-line effect/no-untyped-throw -- Public synchronous action construction rejects invalid static contracts.
     throw OperationConfigurationError.make({ reason: "invalid-action", operation: namespace });
 
   const sessions = makeSessionContract(`${namespace}/sessions`, options.claims);
@@ -334,6 +338,7 @@ export const make = <
   const additional = options.actions?.(sessions) ?? {};
 
   if (Object.keys(additional).some((name) => Object.hasOwn(defaults, name)))
+    // oxlint-disable-next-line effect/no-untyped-throw -- Public synchronous action construction rejects invalid static contracts.
     throw OperationConfigurationError.make({ reason: "duplicate-operation", operation: namespace });
 
   const definitions = { ...defaults, ...additional };

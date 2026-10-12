@@ -39,6 +39,7 @@ interface CapturedDatabase {
 }
 
 const invalid = (cause: string): never => {
+  // oxlint-disable-next-line effect/no-untyped-throw -- Drizzle SQL compilation and codecs are synchronous; workflow executors capture mapping failures.
   throw PersistenceMappingError.make({ operation: "mapping", cause });
 };
 

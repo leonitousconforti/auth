@@ -1,7 +1,18 @@
-import { Context, DateTime, Effect, Exit, Layer, Option, Schema, Crypto, Cause } from "effect";
+import {
+  Result,
+  Context,
+  DateTime,
+  Effect,
+  Exit,
+  Layer,
+  Option,
+  Schema,
+  Crypto,
+  Cause,
+} from "effect";
 import { Base64Url } from "effect/encoding";
 
-import { hasCommitScope } from "../hooks/commit";
+import { prepareCommit, hasCommitScope } from "../hooks/commit";
 import type { AuthInvocation } from "../operations/context";
 import { OperationForbidden } from "../operations/errors";
 import { makeOperation, operationGroup } from "../operations/operation";
@@ -84,13 +95,19 @@ export const makeOAuthConnectedMaintenance = <const Id extends string>(
           limit,
         });
 
-        const receipt = yield* clean(input, (value, journal) => {
-          const result = snapshotCleanupResult.sync(value);
+        const receipt = yield* clean(
+          input,
+          prepareCommit((value, journal) =>
+            Result.gen(function* () {
+              const result = snapshotCleanupResult.sync(value);
 
-          if (result.removed > input.limit) throw OAuthUnavailable.make({});
+              if (result.removed > input.limit)
+                return yield* Result.fail(OAuthUnavailable.make({}));
 
-          return journal.prepare(result);
-        });
+              return journal.prepare(result);
+            }),
+          ),
+        );
 
         return yield* connectedRead(receipt);
       }, connectedSafe);
@@ -119,7 +136,7 @@ export const makeOAuthConnectedMaintenance = <const Id extends string>(
             const decision = yield* connectedRead(receipt);
 
             if (decision._tag === "Empty") return { outcome: "Empty" as const };
-            const owned = snapshotOAuthConnectedRevocationClaim.sync(decision.claim);
+            const owned = yield* snapshotOAuthConnectedRevocationClaim.effect(decision.claim);
 
             if (
               owned.claimId !== claimId ||
@@ -144,13 +161,16 @@ export const makeOAuthConnectedMaintenance = <const Id extends string>(
                 sealed: owned.job.grant.sealed,
               }).pipe(Effect.flatMap((value) => snapshotOAuthConnectedTokenMaterial.effect(value)));
 
-              return yield* revokeGrant({
-                context: snapshotOAuthConnectedTokenContext.sync(context),
-                material: snapshotOAuthConnectedTokenMaterial.sync(material),
-              }).pipe(
-                Effect.flatMap((value) => Schema.decodeEffect(Schema.Literal("Confirmed"))(value)),
-                Effect.ensuring(Effect.sync(() => wipeConnectedMaterial(material))),
-              );
+              return yield* Effect.gen(function* () {
+                return yield* revokeGrant({
+                  context: yield* snapshotOAuthConnectedTokenContext.effect(context),
+                  material: yield* snapshotOAuthConnectedTokenMaterial.effect(material),
+                }).pipe(
+                  Effect.flatMap((value) =>
+                    Schema.decodeEffect(Schema.Literal("Confirmed"))(value),
+                  ),
+                );
+              }).pipe(Effect.ensuring(Effect.sync(() => wipeConnectedMaterial(material))));
             });
 
             const result = yield* Effect.exit(

@@ -18,6 +18,7 @@ import { Cause, Effect, Schema } from "effect";
 
 import {
   column,
+  SubjectProvisioningError,
   isMappedConstraintConflict,
   PersistenceMappingError,
   provisioningFingerprint,
@@ -115,7 +116,9 @@ export const makeMysqlSubjectProvisioningServices = Effect.fnUntraced(function* 
           if (mapping.subject.decodeGeneratedId === undefined)
             return yield* PersistenceMappingError.make({
               operation: "provisionSubject.generatedId",
-              cause: new Error("MySQL generated IDs require decodeGeneratedId"),
+              cause: SubjectProvisioningError.make({
+                message: "MySQL generated IDs require decodeGeneratedId",
+              }),
             });
           const ids = yield* insert.$returningId();
 

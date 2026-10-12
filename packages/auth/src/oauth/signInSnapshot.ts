@@ -1,4 +1,4 @@
-import { DateTime, Effect, Predicate, Schema } from "effect";
+import { DateTime, Effect, Predicate, Result, Schema } from "effect";
 
 import { OAuthUnavailable } from "./signInErrors";
 
@@ -18,52 +18,50 @@ export const makeOAuthSnapshot = <S extends Schema.Codec<unknown, unknown, never
 ) => {
   let detach: ((value: S["Type"]) => S["Type"]) | undefined;
 
+  const capture = (value: S["Type"]) =>
+    Result.try({
+      try: () => {
+        if (detach === undefined) {
+          const codec = Schema.fromJsonString(Schema.toCodecJson(Schema.toType(schema)));
+          const encode = Schema.encodeSync(codec);
+          const decode = Schema.decodeSync(codec);
+
+          detach = (input) => decode(encode(input));
+        }
+        // JSON fields can otherwise retain nested input references through validation.
+        const result = detach(value);
+
+        freezeOAuth(result);
+
+        return result;
+      },
+      catch: () => OAuthUnavailable.make({}),
+    });
+
   const sync = (value: S["Type"]): S["Type"] => {
-    try {
-      if (detach === undefined) {
-        const codec = Schema.fromJsonString(Schema.toCodecJson(Schema.toType(schema)));
-        const encode = Schema.encodeSync(codec);
-        const decode = Schema.decodeSync(codec);
+    const result = capture(value);
 
-        detach = (input) => decode(encode(input));
-      }
-      // JSON fields can otherwise retain nested input references through validation.
-      const result = detach(value);
-
-      freezeOAuth(result);
-
-      return result;
-    } catch {
-      throw OAuthUnavailable.make({});
+    if (Result.isFailure(result)) {
+      // oxlint-disable-next-line effect/no-untyped-throw -- Native persistence prepare callbacks require synchronous rejection before physical commit; workflows use effect.
+      throw result.failure;
     }
+
+    return result.success;
   };
 
   return {
+    result: capture,
     sync,
-    effect: (value: S["Type"]) =>
-      Effect.try({
-        try: () => sync(value),
-        catch: () => OAuthUnavailable.make({}),
-      }),
+    effect: (value: S["Type"]) => Effect.suspend(() => Effect.fromResult(capture(value))),
   };
 };
 
 export const snapshotOAuthSync = <S extends Schema.Codec<unknown, unknown, never, never>>(
   schema: S,
   value: S["Type"],
-): S["Type"] => {
-  try {
-    return makeOAuthSnapshot(schema).sync(value);
-  } catch {
-    throw OAuthUnavailable.make({});
-  }
-};
+): S["Type"] => makeOAuthSnapshot(schema).sync(value);
 
 export const snapshotOAuth = <S extends Schema.Codec<unknown, unknown, never, never>>(
   schema: S,
   value: S["Type"],
-) =>
-  Effect.try({
-    try: () => snapshotOAuthSync(schema, value),
-    catch: () => OAuthUnavailable.make({}),
-  });
+) => Effect.suspend(() => makeOAuthSnapshot(schema).effect(value));

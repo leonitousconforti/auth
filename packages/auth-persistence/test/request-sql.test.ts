@@ -89,8 +89,8 @@ const requestSql = Layer.effect(
       const client = yield* RequestClient;
 
       if (client === undefined)
-        return yield* new SqlError({
-          reason: new ConnectionError({ cause: "No request SQL client" }),
+        return yield* SqlError.make({
+          reason: ConnectionError.make({ cause: "No request SQL client" }),
         });
 
       return yield* client.reserve;

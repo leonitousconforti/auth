@@ -16,9 +16,7 @@ const decoder = new TextDecoder("utf-8", { fatal: true });
 
 export const unavailable = () => OAuthUnavailable.make({});
 
-export const invariant: (value: unknown) => asserts value = (value) => {
-  if (!value) throw unavailable();
-};
+export const invalidState = () => unavailable();
 
 export const nonce = randomId;
 
@@ -66,13 +64,15 @@ export const oauthIdentityKey = Effect.fnUntraced(function* (
     identity.subject,
   ];
 
-  const bytes = fields.map((field) => {
+  const bytes: Uint8Array[] = [];
+
+  for (const field of fields) {
     const value = encoder.encode(field);
 
-    invariant(decoder.decode(value) === field);
+    if (!(decoder.decode(value) === field)) return yield* invalidState();
 
-    return value;
-  });
+    bytes.push(value);
+  }
 
   const packed = new Uint8Array(bytes.reduce((size, value) => size + 4 + value.length, 0));
   const view = new DataView(packed.buffer);

@@ -305,6 +305,7 @@ export const gitHubOAuthAppProvider = (
   try {
     return signInProvider(Result.getOrThrowWith(captureResult(generation, registration), invalid));
   } catch {
+    // oxlint-disable-next-line effect/no-untyped-throw -- Public synchronous provider construction rejects invalid configuration; Effect callers use makeGitHubOAuthAppProvider.
     throw invalid();
   }
 };

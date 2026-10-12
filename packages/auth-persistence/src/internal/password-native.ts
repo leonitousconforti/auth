@@ -39,9 +39,7 @@ import { requireStandalone } from "./standalone";
 
 const unavailable = () => P.PasswordUnavailable.make({});
 
-const ensure: (condition: unknown) => asserts condition = (condition) => {
-  if (!condition) throw unavailable();
-};
+const invalidState = () => unavailable();
 
 export const makeNativePasswordServices = Effect.fnUntraced(function* (
   tables: NativeSqlTables,
@@ -120,15 +118,18 @@ export const makeNativePasswordServices = Effect.fnUntraced(function* (
       ? rows
       : yield* sql`select ${authority.fields("password_authority_")} from ${authority.name} where ${subjectKey(authority, a.subjectId, nativeId)} order by ${authority.column(a.credentialId)} limit 4097`;
 
-    ensure(rows.length <= 4096 && authorityRows.length <= 4096);
+    if (!(rows.length <= 4096 && authorityRows.length <= 4096)) return yield* invalidState();
     if (rows[0] === undefined) return undefined;
     const subjectRow = subject.decode(rows[0], "password_subject_");
     const decodedId = yield* mapping.subjectId.toSubject(subjectRow[s.id]);
 
-    ensure(
-      decodedId === subjectId &&
-        (locked === undefined || subjectRow[s.securityRevision] === locked[s.securityRevision]),
-    );
+    if (
+      !(
+        decodedId === subjectId &&
+        (locked === undefined || subjectRow[s.securityRevision] === locked[s.securityRevision])
+      )
+    )
+      return yield* invalidState();
     const password = credential.decode(rows[0], "password_credential_");
     const passwordRow = password[c.credentialId] === null ? undefined : password;
 
@@ -150,12 +151,12 @@ export const makeNativePasswordServices = Effect.fnUntraced(function* (
         factor[a.credentialId] !== null &&
         (a.status === undefined || a.isActiveStatus?.(factor[a.status]) === true)
       ) {
-        ensure(mapping.subjectId.equals(factor[a.subjectId], nativeId));
+        if (!mapping.subjectId.equals(factor[a.subjectId], nativeId)) return yield* invalidState();
         const id = yield* Schema.decodeUnknownEffect(Schema.String)(factor[a.credentialId]);
         const revision = yield* Schema.decodeUnknownEffect(SecurityRevision)(factor[a.revision]);
         const old = factors.get(id);
 
-        ensure(old === undefined || old.revision === revision);
+        if (!(old === undefined || old.revision === revision)) return yield* invalidState();
         factors.set(id, { credentialId: id, revision, active: true });
       }
     }
@@ -169,7 +170,7 @@ export const makeNativePasswordServices = Effect.fnUntraced(function* (
       )
         identifierRow ??= entry;
     }
-    ensure(factors.size <= 64);
+    if (!(factors.size <= 64)) return yield* invalidState();
 
     const revision = {
       subjectId,
@@ -194,11 +195,15 @@ export const makeNativePasswordServices = Effect.fnUntraced(function* (
             })
             .pipe(Effect.flatMap(P.snapshotPasswordCredential));
 
-    if (snapshot !== undefined)
-      ensure(
-        snapshot.revision.subjectId === subjectId &&
-          snapshot.credentialId === passwordRow?.[c.credentialId],
-      );
+    if (snapshot !== undefined) {
+      if (
+        !(
+          snapshot.revision.subjectId === subjectId &&
+          snapshot.credentialId === passwordRow?.[c.credentialId]
+        )
+      )
+        return yield* invalidState();
+    }
 
     return {
       nativeId,
@@ -228,7 +233,8 @@ export const makeNativePasswordServices = Effect.fnUntraced(function* (
 
       const receipt = project(value, journal);
 
-      ensure(receipt?._tag === "PreparedCommit" && Effect.isEffect(receipt.read));
+      if (!(receipt?._tag === "PreparedCommit" && Effect.isEffect(receipt.read)))
+        return yield* invalidState();
       yield* registerSqlCommitReceipt(receipt);
 
       return receipt;
@@ -249,7 +255,7 @@ export const makeNativePasswordServices = Effect.fnUntraced(function* (
           yield* sql`select ${rawSubject.fields("password_lock_")} from ${rawSubject.name} where ${subjectKey(rawSubject, s.id, nativeId)} limit 2 ${batch === undefined ? lock : sql``}`;
 
         if (rows.length === 0) return yield* prepare("rejected" as const, project);
-        ensure(rows.length === 1);
+        if (!(rows.length === 1)) return yield* invalidState();
         const locked = rawSubject.decode(rows[0]!, "password_lock_");
 
         const state = yield* read(
@@ -343,11 +349,14 @@ export const makeNativePasswordServices = Effect.fnUntraced(function* (
           input.expectedRevision.securityRevision,
         );
 
-        ensure(
-          nextSecurityRevision !== input.expectedRevision.securityRevision &&
+        if (
+          !(
+            nextSecurityRevision !== input.expectedRevision.securityRevision &&
             credentialRevision !== input.credential?.credentialRevision &&
-            verifierVersion !== input.credential?.verifierVersion,
-        );
+            verifierVersion !== input.credential?.verifierVersion
+          )
+        )
+          return yield* invalidState();
 
         const freshUntil = Effect.fnUntraced(function* (
           requirement: AuthenticationRequirement,
@@ -381,13 +390,15 @@ export const makeNativePasswordServices = Effect.fnUntraced(function* (
         const requestedDeadline = yield* freshUntil(input.authorization.requirement),
           currentDeadline = yield* freshUntil(requirement);
 
-        ensure(requestedDeadline !== undefined && currentDeadline !== undefined);
+        if (!(requestedDeadline !== undefined && currentDeadline !== undefined))
+          return yield* invalidState();
         const deadline = Math.min(requestedDeadline, currentDeadline);
         const freshness = sql`${now} >= ${state.now} and ${now} < ${deadline} and ${proofValidity}`;
 
         const stage = Effect.fnUntraced(function* (statement: Fragment) {
-          if (batch === undefined) ensure((yield* executeSqlChange(sql, statement)) === 1);
-          else {
+          if (batch === undefined) {
+            if (!((yield* executeSqlChange(sql, statement)) === 1)) return yield* invalidState();
+          } else {
             yield* appendSqlBatchStatement(sql`${statement}`);
             yield* appendSqlBatchStatement(sqlBatchAssertion(sql, sql`changes() = 1`));
           }
@@ -480,7 +491,7 @@ export const makeNativePasswordServices = Effect.fnUntraced(function* (
             const expected = input.credential;
             const identifierTable = tables(i.table);
 
-            ensure(i.d1CurrentCondition !== undefined);
+            if (!(i.d1CurrentCondition !== undefined)) return yield* invalidState();
             conditions.push(
               sql`exists(select 1 from ${identifierTable.name} where ${exact(identifierTable, i.namespace, expected.identifier.namespace)} and ${exact(identifierTable, i.value, expected.identifier.value)} and ${subjectKey(identifierTable, i.subjectId, nativeId)} and ${tables.expression(i.d1CurrentCondition({ identifier: expected.identifier, nativeSubjectId: nativeId }))})`,
               sql`exists(select 1 from ${identifierTable.name} where ${exact(identifierTable, i.namespace, expected.identifier.namespace)} and ${exact(identifierTable, i.value, expected.identifier.value)} and ${subjectKey(identifierTable, i.subjectId, nativeId)} and ${exact(identifierTable, i.bindingRevision, expected.identifierBindingRevision)} and ${expected.identifierVerifiedAtMillis === undefined ? sql`${identifierTable.column(i.verifiedAt)} is null` : sql`${identifierTable.column(i.verifiedAt)} = ${identifierTable.value(i.verifiedAt, mapping.clock.encodeInstant(expected.identifierVerifiedAtMillis))}`})`,
@@ -492,7 +503,7 @@ export const makeNativePasswordServices = Effect.fnUntraced(function* (
           sql`${rawSubject.update({ [s.securityRevision]: nextSecurityRevision })} where ${subjectKey(rawSubject, s.id, nativeId)} and ${exact(rawSubject, s.securityRevision, input.expectedRevision.securityRevision)} and ${rawSubject.column(s.status)} = ${rawSubject.value(s.status, locked[s.status])} and ${freshness} and ${resultingState ?? sql`1 = 1`}`,
         );
         if (batch !== undefined) {
-          ensure(resultingState !== undefined);
+          if (!(resultingState !== undefined)) return yield* invalidState();
           yield* registerSqlBatchPostcondition({
             name: "password-replacement-authority",
             statement: sqlBatchAssertion(
@@ -513,8 +524,9 @@ export const makeNativePasswordServices = Effect.fnUntraced(function* (
                 input.credential?.identifier,
               );
 
-              ensure(
-                final !== undefined &&
+              if (
+                !(
+                  final !== undefined &&
                   s.isActiveStatus(final.subjectRow[s.status]) &&
                   final.revision.securityRevision === nextSecurityRevision &&
                   final.revision.credentials.length === expectedFactors.length &&
@@ -526,26 +538,35 @@ export const makeNativePasswordServices = Effect.fnUntraced(function* (
                     ),
                   ) &&
                   final.now >= state.now &&
-                  final.now < deadline,
-              );
+                  final.now < deadline
+                )
+              )
+                return yield* invalidState();
               const password = final.passwordRow;
 
-              ensure(
-                password !== undefined &&
+              if (
+                !(
+                  password !== undefined &&
                   password[c.credentialId] === credentialId &&
                   password[c.credentialRevision] === credentialRevision &&
                   password[c.verifierVersion] === verifierVersion &&
                   password[c.verifier] === Redacted.value(input.replacement.verifier) &&
-                  password[c.normalization] === input.replacement.normalization,
-              );
-              if (input.credential !== undefined)
-                ensure(
-                  final.snapshot !== undefined &&
+                  password[c.normalization] === input.replacement.normalization
+                )
+              )
+                return yield* invalidState();
+              if (input.credential !== undefined) {
+                if (
+                  !(
+                    final.snapshot !== undefined &&
                     final.snapshot.identifierBindingRevision ===
                       input.credential.identifierBindingRevision &&
                     final.snapshot.identifierVerifiedAtMillis ===
-                      input.credential.identifierVerifiedAtMillis,
-                );
+                      input.credential.identifierVerifiedAtMillis
+                  )
+                )
+                  return yield* invalidState();
+              }
             }).pipe(
               Effect.mapError((cause) =>
                 PersistenceMappingError.make({ operation: "decode", cause }),
@@ -581,7 +602,7 @@ export const makeNativePasswordServices = Effect.fnUntraced(function* (
             yield* sql`select ${identifier.fields("password_recovery_")} from ${identifier.name} where ${exact(identifier, i.namespace, input.identifier.namespace)} and ${exact(identifier, i.value, input.identifier.value)} limit 2`;
 
           if (rows.length === 0) return Option.none();
-          ensure(rows.length === 1);
+          if (!(rows.length === 1)) return yield* invalidState();
           const row = identifier.decode(rows[0]!, "password_recovery_");
 
           if (!i.isCurrent(row)) return Option.none();

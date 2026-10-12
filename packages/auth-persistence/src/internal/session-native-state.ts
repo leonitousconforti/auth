@@ -26,10 +26,8 @@ import type { AnyTableModel } from "./table-model";
 
 export const sessionUnavailable = () => SessionUnavailable.make({});
 
-export const sessionInvariant: (condition: unknown) => asserts condition = (condition) => {
-  if (!condition)
-    throw PersistenceMappingError.make({ operation: "decode", cause: "Invalid session authority" });
-};
+export const invalidSessionState = () =>
+  PersistenceMappingError.make({ operation: "decode", cause: "Invalid session authority" });
 
 export type SessionDomainFailure =
   | SessionConflict
@@ -104,7 +102,9 @@ export const makeNativeSessionAuthorityState = Effect.fnUntraced(function* (
   const s = mapping.subject,
     c = mapping.credential;
 
-  if (batch) sessionInvariant(s.requirementColumns !== undefined);
+  if (batch) {
+    if (!(s.requirementColumns !== undefined)) return yield* invalidSessionState();
+  }
 
   const subject = tables(s.table),
     credential = tables(c.table);
@@ -124,9 +124,11 @@ export const makeNativeSessionAuthorityState = Effect.fnUntraced(function* (
 
   const activeSubject = (table: SqlTable) => id(table, s.status, s.activeStatusValue);
 
+  if (c.status !== undefined && c.activeStatusValue === undefined)
+    return yield* invalidSessionState();
+
   const activeCredential = (table: SqlTable) => {
     if (c.status === undefined) return sql`1 = 1`;
-    sessionInvariant(c.activeStatusValue !== undefined);
 
     return id(table, c.status, c.activeStatusValue);
   };
@@ -146,23 +148,28 @@ export const makeNativeSessionAuthorityState = Effect.fnUntraced(function* (
   > {
     const row = subject.decode(projected, "s_");
 
-    sessionInvariant((yield* mapping.subjectId.toSubject(row[s.id])) === subjectId);
+    if (!((yield* mapping.subjectId.toSubject(row[s.id])) === subjectId))
+      return yield* invalidSessionState();
     if (!s.isActiveStatus(row[s.status])) return undefined;
     const credentials: { credentialId: string; revision: string }[] = [];
 
     for (const factor of factors) {
       if (factor[c.credentialId] === null || factor[c.credentialId] === undefined) continue;
-      sessionInvariant((yield* mapping.subjectId.toSubject(factor[c.subjectId])) === subjectId);
-      if (c.status !== undefined) sessionInvariant(c.isActiveStatus?.(factor[c.status]) === true);
+      if (!((yield* mapping.subjectId.toSubject(factor[c.subjectId])) === subjectId))
+        return yield* invalidSessionState();
+      if (c.status !== undefined) {
+        if (!(c.isActiveStatus?.(factor[c.status]) === true)) return yield* invalidSessionState();
+      }
 
       const value = yield* Schema.decodeUnknownEffect(
         Schema.Struct({ credentialId: Schema.String, revision: Schema.String }),
       )({ credentialId: factor[c.credentialId], revision: factor[c.revision] });
 
-      sessionInvariant(!credentials.some((other) => other.credentialId === value.credentialId));
+      if (!!credentials.some((other) => other.credentialId === value.credentialId))
+        return yield* invalidSessionState();
       credentials.push(value);
     }
-    sessionInvariant(credentials.length <= 64);
+    if (!(credentials.length <= 64)) return yield* invalidSessionState();
 
     return {
       native,
@@ -190,12 +197,13 @@ export const makeNativeSessionAuthorityState = Effect.fnUntraced(function* (
   const read = Effect.fnUntraced(function* (subjectId: SubjectId, locking = false) {
     const native = yield* mapping.subjectId.toNative(subjectId);
 
-    sessionInvariant((yield* mapping.subjectId.toSubject(native)) === subjectId);
+    if (!((yield* mapping.subjectId.toSubject(native)) === subjectId))
+      return yield* invalidSessionState();
     if (locking && nativeLocks) {
       const owners =
         yield* sql`select ${subject.fields("s_")}, ${now} as engine_now from ${subject.name} where ${id(subject, s.id, native)} and ${activeSubject(subject)} limit 2 ${lock}`;
 
-      sessionInvariant(owners.length <= 1);
+      if (!(owners.length <= 1)) return yield* invalidSessionState();
       if (owners[0] === undefined) return undefined;
 
       const factors =
@@ -226,7 +234,7 @@ export const makeNativeSessionAuthorityState = Effect.fnUntraced(function* (
 
   const guardPolicy = Effect.fnUntraced(function* (current: NativeSessionAuthority) {
     if (!batch) return;
-    sessionInvariant(s.requirementColumns !== undefined);
+    if (!(s.requirementColumns !== undefined)) return yield* invalidSessionState();
 
     yield* guardSqlitePolicy({
       name: "session-subject-policy",

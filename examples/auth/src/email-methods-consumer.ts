@@ -143,7 +143,9 @@ export const makeEmailConsumer = Effect.gen(function* () {
   let sequence = 0;
   const consumedFactors = new Set<string>();
 
-  const own = <A>(body: (s: State, journal: Hooks.CommitJournal, now: number) => A) =>
+  const own = <A, E>(
+    body: (s: State, journal: Hooks.CommitJournal, now: number) => Effect.fn.Return<A, E>,
+  ) =>
     Effect.gen(function* () {
       if (yield* Hooks.hasCommitScope) return yield* Email.EmailUnavailable.make({});
 
@@ -151,17 +153,18 @@ export const makeEmailConsumer = Effect.gen(function* () {
         Effect.gen(function* () {
           const now = DateTime.toEpochMillis(yield* DateTime.now);
 
-          return yield* Effect.try({
-            try: () => {
-              const next = clone(state);
-              const result = body(next, journal, now);
-
-              state = next;
-
-              return result;
-            },
+          const next = yield* Effect.try({
+            try: () => clone(state),
             catch: () => Email.EmailUnavailable.make({}),
           });
+
+          const value = yield* Effect.gen(() => body(next, journal, now)).pipe(
+            Effect.catchDefect(() => Effect.fail(Email.EmailUnavailable.make({}))),
+          );
+
+          state = next;
+
+          return value;
         }),
       ).pipe(
         Effect.map((result) => result.value),
@@ -230,23 +233,23 @@ export const makeEmailConsumer = Effect.gen(function* () {
 
   const proofStore = Proofs.ProofPersistence.of({
     issue: (input, prepare) =>
-      own((s, journal, now) => prepare(issueProof(s.proofs, input, now), journal)).pipe(
-        Effect.mapError(() => Proofs.ProofUnavailable.make({})),
-      ),
+      own(function* (s, journal, now) {
+        return prepare(issueProof(s.proofs, input, now), journal);
+      }).pipe(Effect.mapError(() => Proofs.ProofUnavailable.make({}))),
     redeem: (input, prepare) =>
-      own((s, journal, now) => prepare(redeemProof(s.proofs, input, now), journal)).pipe(
-        Effect.mapError(() => Proofs.ProofUnavailable.make({})),
-      ),
+      own(function* (s, journal, now) {
+        return prepare(redeemProof(s.proofs, input, now), journal);
+      }).pipe(Effect.mapError(() => Proofs.ProofUnavailable.make({}))),
     cancel: (input, prepare) =>
-      own((s, journal) => {
+      own(function* (s, journal) {
         cancelProof(s.proofs, input);
 
         return prepare(undefined, journal);
       }).pipe(Effect.mapError(() => Proofs.ProofUnavailable.make({}))),
     cleanup: (input, prepare) =>
-      own((s, journal, now) => prepare(cleanupProofs(s.proofs, input, now), journal)).pipe(
-        Effect.mapError(() => Proofs.ProofUnavailable.make({})),
-      ),
+      own(function* (s, journal, now) {
+        return prepare(cleanupProofs(s.proofs, input, now), journal);
+      }).pipe(Effect.mapError(() => Proofs.ProofUnavailable.make({}))),
   });
 
   const subjectRequirement = (id: AuthSchema.SubjectId): Sessions.AuthenticationRequirement =>
@@ -289,14 +292,14 @@ export const makeEmailConsumer = Effect.gen(function* () {
     approve: (input, prepare) =>
       validate(input.evidence).pipe(
         Effect.flatMap((assessed) =>
-          own((s, journal, now) => {
+          own(function* (s, journal, now) {
             if (
               !assessed.satisfied ||
               input.pending ||
               !current(s, input.evidence.revision) ||
               now >= DateTime.toEpochMillis(input.expiresAt)
             )
-              throw Sessions.StaleAuthentication.make({});
+              return yield* Sessions.StaleAuthentication.make({});
 
             return prepare(undefined, journal);
           }),
@@ -313,7 +316,7 @@ export const makeEmailConsumer = Effect.gen(function* () {
       journal: Hooks.CommitJournal,
     ) => Hooks.PreparedCommit<A>,
   ) =>
-    own((s, journal, now) => {
+    own(function* (s, journal, now) {
       const source = action === "change" ? input.captured.source : undefined;
       const row = s.subjects.get(input.captured.revision.subjectId);
 
@@ -431,7 +434,7 @@ export const makeEmailConsumer = Effect.gen(function* () {
       };
     }),
     registerWithProof: (input, prepare) =>
-      own((s, journal, now) => {
+      own(function* (s, journal, now) {
         const valid =
           !s.identifiers.has(input.identifier.value) &&
           validBinding(s, input.redemption.input.binding) &&
@@ -467,14 +470,14 @@ export const makeEmailConsumer = Effect.gen(function* () {
     establish: (input, prepare) =>
       validate(input.evidence).pipe(
         Effect.flatMap((assessed) =>
-          own((s, journal, now) => {
+          own(function* (s, journal, now) {
             if (
               !assessed.satisfied ||
               input.pending ||
               !current(s, input.evidence.revision) ||
               now >= DateTime.toEpochMillis(input.session.expiresAt)
             )
-              throw Sessions.SessionConflict.make({});
+              return yield* Sessions.SessionConflict.make({});
 
             const row = {
               ...input.session,
@@ -506,7 +509,7 @@ export const makeEmailConsumer = Effect.gen(function* () {
       }),
     rotate: () => Effect.fail(Sessions.SessionUnavailable.make({})),
     revokeDigest: (digest, prepare) =>
-      own((s, journal) => {
+      own(function* (s, journal) {
         const row = [...s.sessions.values()].find((r) => r.digest === digest);
         const result = prepare(row !== undefined, journal);
 
@@ -555,18 +558,18 @@ export const makeEmailConsumer = Effect.gen(function* () {
       }),
     ),
     requireMfaFixture: (id: AuthSchema.SubjectId) =>
-      Effect.sync(() => {
+      Effect.gen(function* () {
         const row = state.subjects.get(id);
 
-        if (!row) throw new Error("fixture subject missing");
+        if (!row) return yield* Email.EmailUnavailable.make({});
         row.mfa = true;
         row.security = String(Number(row.security) + 1);
       }),
     snapshotFixture: (address: string) =>
-      Effect.sync(() => {
+      Effect.gen(function* () {
         const row = state.identifiers.get(address);
 
-        if (!row) throw new Error("fixture identifier missing");
+        if (!row) return yield* Email.EmailUnavailable.make({});
 
         return snapshot(state, row);
       }),

@@ -20,13 +20,13 @@ const supported = (moduleId: string, purpose: string) =>
 
 /** The same owner calls this after checking protected account authority. Final
  * checks preserve the exact consumed proof ID and its original expiry. */
-export const redeemInOwner = (
+export const redeemInOwner = Effect.fnUntraced(function* (
   state: State,
   input: Proofs.ProofRedemptionInput,
   now: number,
   journal: StoreJournal,
-) => {
-  const rows = restoreProofRows(state.proofs);
+) {
+  const rows = yield* restoreProofRows(state.proofs);
 
   const original = state.proofs.find(
     (row) => row.record.moduleId === input.moduleId && row.record.proofId === input.proofId,
@@ -46,7 +46,7 @@ export const redeemInOwner = (
     );
 
   return decision;
-};
+});
 
 export const ProofsLive = Layer.effect(
   Proofs.ProofPersistence,
@@ -57,10 +57,10 @@ export const ProofsLive = Layer.effect(
       issue: (input, prepare) =>
         store
           .transaction((state, journal, now) =>
-            Effect.sync(() => {
+            Effect.gen(function* () {
               if (!supported(input.record.moduleId, input.record.purpose))
-                throw Proofs.ProofUnavailable.make({});
-              const rows = restoreProofRows(state.proofs);
+                return yield* Proofs.ProofUnavailable.make({});
+              const rows = yield* restoreProofRows(state.proofs);
               const decision = issueProof(rows, input, now);
 
               state.proofs = [...rows.values()];
@@ -76,18 +76,19 @@ export const ProofsLive = Layer.effect(
       redeem: (input, prepare) =>
         store
           .transaction((state, journal, now) =>
-            Effect.sync(() => {
-              if (!supported(input.moduleId, input.purpose)) throw Proofs.ProofUnavailable.make({});
+            Effect.gen(function* () {
+              if (!supported(input.moduleId, input.purpose))
+                return yield* Proofs.ProofUnavailable.make({});
 
-              return prepare(redeemInOwner(state, input, now, journal), journal);
+              return prepare(yield* redeemInOwner(state, input, now, journal), journal);
             }),
           )
           .pipe(Effect.mapError(() => Proofs.ProofUnavailable.make({}))),
       cancel: (input, prepare) =>
         store
           .transaction((state, journal) =>
-            Effect.sync(() => {
-              const rows = restoreProofRows(state.proofs);
+            Effect.gen(function* () {
+              const rows = yield* restoreProofRows(state.proofs);
 
               cancelProof(rows, input);
               state.proofs = [...rows.values()];
@@ -99,8 +100,8 @@ export const ProofsLive = Layer.effect(
       cleanup: (input, prepare) =>
         store
           .transaction((state, journal, now) =>
-            Effect.sync(() => {
-              const rows = restoreProofRows(state.proofs);
+            Effect.gen(function* () {
+              const rows = yield* restoreProofRows(state.proofs);
               const result = cleanupProofs(rows, input, now);
 
               state.proofs = [...rows.values()];

@@ -44,15 +44,15 @@ const readBody = Effect.fnUntraced(function* (response: HttpClientResponse.HttpC
   let size = 0;
 
   const chunks = yield* response.stream.pipe(
-    Stream.mapEffect((chunk) =>
-      Effect.try({
-        try: () => {
-          size += chunk.length;
-          if (size > 1_048_576) throw OAuthUnavailable.make({});
+    Stream.mapEffect(
+      Effect.fnUntraced(function* (chunk) {
+        size += chunk.length;
+        if (size > 1_048_576) return yield* OAuthUnavailable.make({});
 
-          return decoder.decode(chunk, { stream: true });
-        },
-        catch: () => OAuthUnavailable.make({}),
+        return yield* Effect.try({
+          try: () => decoder.decode(chunk, { stream: true }),
+          catch: () => OAuthUnavailable.make({}),
+        });
       }),
     ),
     Stream.runCollect,

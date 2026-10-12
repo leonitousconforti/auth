@@ -59,92 +59,98 @@ export const d1MigrationsLayer = (options: {
         }),
       );
 
-      yield* Effect.tryPromise({
-        try: async () => {
-          const db = drizzle(client.config.db);
-          const name = options.migrationsTable ?? "__drizzle_migrations";
-          const table = sql.identifier(name);
+      yield* Effect.gen(function* () {
+        const db = drizzle(client.config.db);
+        const name = options.migrationsTable ?? "__drizzle_migrations";
+        const table = sql.identifier(name);
 
-          const columns = Schema.decodeUnknownSync(JournalColumns)(
-            await db.all(sql`select name from pragma_table_info(${name})`),
-          ).map((column) => column.name);
+        const columns = (yield* Schema.decodeUnknownEffect(JournalColumns)(
+          yield* Effect.tryPromise({
+            try: () => db.all(sql`select name from pragma_table_info(${name})`),
+            catch: configurationError,
+          }),
+        )).map((column) => column.name);
 
-          const newDb = columns.length === 0;
-          const legacy = !newDb && !columns.includes("name");
+        const newDb = columns.length === 0;
+        const legacy = !newDb && !columns.includes("name");
 
-          if (
-            !newDb &&
-            (!["id", "hash", "created_at"].every((column) => columns.includes(column)) ||
-              legacy === columns.includes("applied_at"))
-          )
-            throw configurationError();
+        if (
+          !newDb &&
+          (!["id", "hash", "created_at"].every((column) => columns.includes(column)) ||
+            legacy === columns.includes("applied_at"))
+        )
+          return yield* configurationError();
 
-          // Original Drizzle SQLite journals can have NULL serial IDs. Use the
-          // physical rowid to backfill each retained entry without changing it.
-          const journal = newDb
-            ? []
-            : Schema.decodeUnknownSync(JournalRows)(
-                await db.all(sql`select rowid as id, hash, cast(created_at as text) as created_at,
+        // Original Drizzle SQLite journals can have NULL serial IDs. Use the
+        // physical rowid to backfill each retained entry without changing it.
+        const journal = newDb
+          ? []
+          : (yield* Schema.decodeUnknownEffect(JournalRows)(
+              yield* Effect.tryPromise({
+                try: () =>
+                  db.all(sql`select rowid as id, hash, cast(created_at as text) as created_at,
               ${legacy ? sql`null` : sql`name`} as name from ${table} order by rowid`),
-              ).map((entry) => ({ ...entry }));
+                catch: configurationError,
+              }),
+            )).map((entry) => ({ ...entry }));
 
-          const journalStatements = newDb
-            ? [
-                db.run(sql`create table ${table} (
+        const journalStatements = newDb
+          ? [
+              db.run(sql`create table ${table} (
                 id integer primary key, hash text not null, created_at numeric,
                 name text, applied_at text
               )`),
-              ]
-            : [];
+            ]
+          : [];
 
-          if (legacy) {
-            // Match retained entries using Drizzle's timestamp/hash convention,
-            // but stage the upgrade with pending SQL: D1 cannot run BEGIN.
+        if (legacy) {
+          // Match retained entries using Drizzle's timestamp/hash convention,
+          // but stage the upgrade with pending SQL: D1 cannot run BEGIN.
+          journalStatements.push(
+            db.run(sql`alter table ${table} add column name text`),
+            db.run(sql`alter table ${table} add column applied_at text`),
+          );
+          for (const entry of journal) {
+            const millis = Math.floor(Number(entry.created_at) / 1000) * 1000;
+
+            const candidates = migrations.filter((migration) => migration.folderMillis === millis);
+
+            const matches =
+              candidates.length === 1
+                ? candidates
+                : (candidates.length === 0 ? migrations : candidates).filter(
+                    (migration) => migration.hash === entry.hash,
+                  );
+
+            const match = matches[0];
+
+            if (matches.length !== 1 || match === undefined) return yield* configurationError();
+            entry.name = match.name;
             journalStatements.push(
-              db.run(sql`alter table ${table} add column name text`),
-              db.run(sql`alter table ${table} add column applied_at text`),
+              db.run(sql`update ${table} set name = ${match.name} where rowid = ${entry.id}`),
             );
-            for (const entry of journal) {
-              const millis = Math.floor(Number(entry.created_at) / 1000) * 1000;
-
-              const candidates = migrations.filter(
-                (migration) => migration.folderMillis === millis,
-              );
-
-              const matches =
-                candidates.length === 1
-                  ? candidates
-                  : (candidates.length === 0 ? migrations : candidates).filter(
-                      (migration) => migration.hash === entry.hash,
-                    );
-
-              const match = matches[0];
-
-              if (matches.length !== 1 || match === undefined) throw configurationError();
-              entry.name = match.name;
-              journalStatements.push(
-                db.run(sql`update ${table} set name = ${match.name} where rowid = ${entry.id}`),
-              );
-            }
           }
+        }
 
-          const statements = [
-            ...journalStatements,
-            ...getMigrationsToRun({
-              localMigrations: migrations,
-              dbMigrations: [...journal],
-            }).flatMap((migration) => [
-              ...migration.sql.map((statement) => db.run(sql.raw(statement))),
-              db.run(sql`insert into ${table} (hash, created_at, name, applied_at)
+        const statements = [
+          ...journalStatements,
+          ...getMigrationsToRun({
+            localMigrations: migrations,
+            dbMigrations: [...journal],
+          }).flatMap((migration) => [
+            ...migration.sql.map((statement) => db.run(sql.raw(statement))),
+            db.run(sql`insert into ${table} (hash, created_at, name, applied_at)
                 values (${migration.hash}, ${migration.folderMillis}, ${migration.name}, ${appliedAt})`),
-            ]),
-          ];
+          ]),
+        ];
 
-          const [first, ...rest] = statements;
+        const [first, ...rest] = statements;
 
-          if (first !== undefined) await db.batch([first, ...rest]);
-        },
-        catch: configurationError,
-      });
+        if (first !== undefined)
+          yield* Effect.tryPromise({
+            try: () => db.batch([first, ...rest]),
+            catch: configurationError,
+          });
+      }).pipe(Effect.catchDefect(() => Effect.fail(configurationError())));
     }).pipe(Effect.mapError(configurationError)),
   );

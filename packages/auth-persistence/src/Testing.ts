@@ -321,16 +321,11 @@ export const layer = <C extends ClaimsCodec, const Id extends string>(
                     );
 
                     // Publication and the owner's return form one uninterruptible commit.
-                    yield* Effect.try({
-                      try: () => {
-                        const finalTime = now();
+                    const finalTime = now();
 
-                        if (stored === undefined || finalTime < time || finalTime >= deadline)
-                          throw unavailable();
-                        stored = encoded;
-                      },
-                      catch: unavailable,
-                    });
+                    if (stored === undefined || finalTime < time || finalTime >= deadline)
+                      return yield* unavailable();
+                    stored = encoded;
 
                     return receipt;
                   }),

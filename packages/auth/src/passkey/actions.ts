@@ -16,7 +16,7 @@ import * as RateLimiter from "effect/persistence/RateLimiter";
 import { boundedMemoryRateLimiter, localRateLimiter } from "../auth/rateLimiter";
 import { hasCommitScope, type PreparedCommit } from "../hooks/commit";
 import { LifecycleHooks } from "../hooks/LifecycleHooks";
-import { lifecycleSnapshot } from "../hooks/models";
+import { lifecycleSnapshotEffect } from "../hooks/models";
 import { reportAuthFailure } from "../internal/diagnostics";
 import type { AuthOperationResult } from "../operations/credentials";
 import { makeRequestBinding } from "../operations/requestBinding";
@@ -62,7 +62,7 @@ import { PasskeyCredentials } from "./PasskeyCredentials";
 import { PasskeyPersistence, type PreparePasskeyCommit } from "./PasskeyPersistence";
 import { PasskeyProtocol } from "./PasskeyProtocol";
 import { PasskeyMethodPolicy, validatePasskeyPolicy } from "./policy";
-import { freezePasskey, samePasskey, snapshotPasskey, snapshotPasskeySync } from "./snapshot";
+import { freezePasskey, samePasskey, snapshotPasskey, snapshotPasskeyResult } from "./snapshot";
 
 /** Module-wide budgets stay per instance and are shared by every passkey facet. */
 class PasskeyModuleLimiter extends Context.Service<PasskeyModuleLimiter, RateLimiter.RateLimiter>()(
@@ -89,13 +89,11 @@ export const passkeyFailure = (error: { readonly _tag: string }) =>
       ? PasskeyUnavailable.make({})
       : PasskeyRejected.make({});
 
-export const capturePasskeyPolicy = (input: PasskeyMethodPolicy) => {
-  try {
-    return validatePasskeyPolicy(snapshotPasskeySync(PasskeyMethodPolicy, input));
-  } catch {
-    return Effect.fail(PasskeyConfigurationError.make({}));
-  }
-};
+export const capturePasskeyPolicy = (input: PasskeyMethodPolicy) =>
+  Effect.fromResult(snapshotPasskeyResult(PasskeyMethodPolicy, input)).pipe(
+    Effect.mapError(() => PasskeyConfigurationError.make({})),
+    Effect.flatMap(validatePasskeyPolicy),
+  );
 
 const clear = { _tag: "Clear", slot: "request-binding" } as const;
 
@@ -302,7 +300,7 @@ export const makePasskeyCeremony = <const Id extends string, const Purpose exten
 
     const before = Effect.fn("Passkey.before")(function* (context: PasskeyContext) {
       yield* hooks.before(
-        lifecycleSnapshot({
+        yield* lifecycleSnapshotEffect({
           action:
             purpose === "registration"
               ? "registration"
@@ -319,7 +317,7 @@ export const makePasskeyCeremony = <const Id extends string, const Purpose exten
             : "target" in context
               ? { subjectId: context.target.revision.subjectId }
               : {}),
-        }),
+        }).pipe(Effect.orDie),
       );
     });
 
