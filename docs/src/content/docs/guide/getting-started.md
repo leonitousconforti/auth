@@ -40,10 +40,9 @@ supplies empty lifecycle hooks; your application selects crypto and the remainin
 
 | You supply                                    | With                                                                                  |
 | --------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Crypto capabilities                           | [Your platform's crypto Layers](../reference/crypto#use-with-auth)                    |
+| Runtime crypto and password hashing           | [WorkerdServices or custom runtime Layers](../reference/crypto#use-with-auth)         |
 | Storage for credentials, sessions, and proofs | [Managed tables, your schema, or your services](./storage)                            |
 | Account checks and session claims             | Your account Layers; see [passwords](./passwords#supply-the-services)                 |
-| Password hashing                              | [`Password.PasswordHashing.layer()`](./passwords#supply-the-services)                 |
 | Proof and request-binding keys                | Your secrets; see [Layer wiring](../reference/adapters#compose-the-application-layer) |
 
 For signed sessions or cookie caching, set `AUTH_SECRET` or provide

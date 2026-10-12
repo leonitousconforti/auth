@@ -20,7 +20,7 @@ application lifetime.
 [CryptoLive](../shared/crypto.ts) selects the portable crypto backend and shares
 KDF admission with password hashing. Provider clients and key caches belong to
 the server Layer's application scope.
-For a Cloudflare Worker, use the [Workers composition](src/crypto-workerd.ts)
+For a Cloudflare Worker, provide `WorkerdServices.layer` as in the [Workers composition](src/workerd-services.ts)
 with Wrangler and `nodejs_compat`; see the [crypto setup](../../docs/src/content/docs/reference/crypto.md#use-with-auth).
 
 The Studio example requires `Postgres.Database` and `TotpSecretKeys`. Provide

@@ -101,9 +101,12 @@ const result = yield* auth.changePassword({ commandId, newPassword });
 
 ## Supply the services
 
-Supply `Password.PasswordHashing.layer()` with an explicit crypto backend,
-bounded KDF admission, and Effect Crypto for entropy. Storage, claims, account
-creation, screening, and change authorization remain application-owned:
+On Cloudflare Workers, provide [`WorkerdServices.layer`](../reference/crypto#use-with-auth)
+once to the application Layer. It includes password hashing and its runtime dependencies.
+Storage, claims, account creation, screening, and change authorization remain application-owned.
+
+For manual composition on other runtimes, supply `Password.PasswordHashing.layer()`
+with a crypto backend, bounded KDF admission, and Effect Crypto for entropy:
 
 ```ts title="apps/server/password-live.ts"
 import { Layer } from "effect";
@@ -146,10 +149,9 @@ and password hashers in each runtime. Size it for the host's memory and CPU budg
 queue exhaustion or an expired wait returns `PasswordKdfBusy`. See
 [KDF resource limits](../reference/crypto#backends-and-resource-limits) for options.
 
-`PasswordHashing.layer()` defaults to Argon2id. On Workers, use
-`WorkerdCrypto.layer(globalThis.crypto.subtle)` from
-`@yielded/crypto/platform-workerd` in `CryptoLive`. Enable `nodejs_compat`;
-Wrangler includes the bundled Wasm without a compiler or separate asset hosting.
+`PasswordHashing.layer()` and `WorkerdServices.layer` default to Argon2id.
+Workers requires `nodejs_compat`; Wrangler includes the bundled Wasm without a
+compiler or separate asset hosting.
 
 To select native scrypt on Node, Bun, or Workers:
 
@@ -158,6 +160,9 @@ Password.PasswordHashing.layer(Password.defaultScryptPasswordHashingConfig).pipe
   Layer.provide(CryptoLive),
 );
 ```
+
+With the Workers bundle, use
+`WorkerdServices.layerWith({ passwordHashing: Password.defaultScryptPasswordHashingConfig })` instead.
 
 The default scrypt configuration uses `N=16384`, `r=8`, `p=5`, the
 [OWASP 16 MiB profile](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#scrypt).

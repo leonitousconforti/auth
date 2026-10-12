@@ -103,7 +103,8 @@ default persistence export without Drizzle installed. A reusable crypto, JOSE, a
 and type-check their published exports with only Effect and first-party packages.
 The checks reject third-party runtime dependency declarations, imports and bundled
 installed code, then exercise packaged crypto, JOSE, OAuth, and Auth credential operations on Node and Bun.
-Browser probes exclude `/platform-*` entries; Node loading excludes `/platform-workerd`.
+Browser probes exclude `/platform-*` entries; Node loading excludes `/platform-workerd`
+and Auth's direct `WorkerdServices` entrypoint, which is absent from its root.
 Exercise that backend through Wrangler's actual Wasm module loading.
 It stages the publisher's manifests and built files with the selected adapters' required dependencies,
 compares equivalent root/group/direct consumers through esbuild and Vite/Rolldown,

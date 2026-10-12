@@ -804,7 +804,7 @@ export const verifyPackageConsumers = Effect.fn("verifyPackageConsumers")(functi
         [
           "--input-type=module",
           "--eval",
-          `for (const name of ${JSON.stringify(coreExports)}) await import(name);`,
+          `for (const name of ${JSON.stringify(coreExports.filter((name) => name !== "@yielded/auth/WorkerdServices"))}) await import(name);`,
         ],
         { cwd: stage, stdout: "pipe", stderr: "pipe" },
       );
@@ -819,7 +819,7 @@ export const verifyPackageConsumers = Effect.fn("verifyPackageConsumers")(functi
           message: `Core consumer with only Effect and first-party packages exited ${code}: ${stderr}`,
         });
       yield* Console.log(
-        `All ${coreExports.length} published core exports load and type-check with only Effect and first-party packages installed.`,
+        `All ${coreExports.length} published core exports type-check with only Effect and first-party packages installed; Node loading excludes WorkerdServices.`,
       );
       yield* checkAuthOperations(stage);
     }),
