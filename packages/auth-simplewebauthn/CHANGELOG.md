@@ -1,5 +1,13 @@
 # @yielded/auth-simplewebauthn
 
+## 0.1.0-beta.35
+
+### Patch Changes
+
+- [#217](https://github.com/yielded-dev/auth/pull/217) [`7cb7cc4`](https://github.com/yielded-dev/auth/commit/7cb7cc4b56ff498d1985575544ef3b87dd9985ca) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Avoid duplicate native public-key imports during passkey authentication while retaining credential validation.
+- Updated dependencies [[`b97748f`](https://github.com/yielded-dev/auth/commit/b97748f6f655d836107184a5f982ea75abc0ea98), [`1f648ae`](https://github.com/yielded-dev/auth/commit/1f648ae827a81fd3d17da28d93548245a43e2538), [`172e9d1`](https://github.com/yielded-dev/auth/commit/172e9d1f975190e8015d7d583b83f5ef7e6d925b), [`5875575`](https://github.com/yielded-dev/auth/commit/5875575c9c62f6d755734f3874e13ca654c8d3bd), [`7f47bce`](https://github.com/yielded-dev/auth/commit/7f47bce67b8e0c7a49a6f2421cf09667a4b5f044), [`948a3f1`](https://github.com/yielded-dev/auth/commit/948a3f12295b59c0bc560941edbbef59cc0b77b9), [`9bc7083`](https://github.com/yielded-dev/auth/commit/9bc7083ced9992ed428c61f45163217b09857079), [`b86c41e`](https://github.com/yielded-dev/auth/commit/b86c41e562a9f623d2f3f7f6fa6d9a9835b5fbb8), [`e368c21`](https://github.com/yielded-dev/auth/commit/e368c21e51bea214efb41158aec4585c8db509a2), [`1a65155`](https://github.com/yielded-dev/auth/commit/1a65155dec67dd4cf6d114132759e93e758d01db), [`56cef27`](https://github.com/yielded-dev/auth/commit/56cef272b938592ea8e05409ce040f3ec4305c74), [`fbc58e3`](https://github.com/yielded-dev/auth/commit/fbc58e3343b140743e24c7a061bcf38985c45383), [`fd5d9e6`](https://github.com/yielded-dev/auth/commit/fd5d9e68803180acc9566317f4578a9f55b30f84)]:
+  - @yielded/auth@0.1.0-beta.35
+
 ## 0.1.0-beta.34
 
 ### Patch Changes

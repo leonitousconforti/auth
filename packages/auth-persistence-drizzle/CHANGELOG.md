@@ -1,5 +1,16 @@
 # @yielded/auth-persistence-drizzle
 
+## 0.1.0-beta.35
+
+### Patch Changes
+
+- [#221](https://github.com/yielded-dev/auth/pull/221) [`d80c822`](https://github.com/yielded-dev/auth/commit/d80c822f78e6e2d0d2bb44d93b579f08dcedb4b0) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Include non-unique indexes for managed credential, identifier, session, and pending-authentication lookups. Generate and apply the corresponding database migration to use the indexes.
+
+- [#215](https://github.com/yielded-dev/auth/pull/215) [`2f5c39b`](https://github.com/yielded-dev/auth/commit/2f5c39bf23e71aa8c697079e0744633d69901354) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Read only subject identity, status, and security revision during stateful session verification and inventory. Preserve complete subject rows for authentication policy callbacks.
+- Updated dependencies [[`439f879`](https://github.com/yielded-dev/auth/commit/439f87934f010ed15d3ba08a2cdc7c6dcb64d0ac), [`b97748f`](https://github.com/yielded-dev/auth/commit/b97748f6f655d836107184a5f982ea75abc0ea98), [`1f648ae`](https://github.com/yielded-dev/auth/commit/1f648ae827a81fd3d17da28d93548245a43e2538), [`172e9d1`](https://github.com/yielded-dev/auth/commit/172e9d1f975190e8015d7d583b83f5ef7e6d925b), [`d80c822`](https://github.com/yielded-dev/auth/commit/d80c822f78e6e2d0d2bb44d93b579f08dcedb4b0), [`2f5c39b`](https://github.com/yielded-dev/auth/commit/2f5c39bf23e71aa8c697079e0744633d69901354), [`5875575`](https://github.com/yielded-dev/auth/commit/5875575c9c62f6d755734f3874e13ca654c8d3bd), [`7f47bce`](https://github.com/yielded-dev/auth/commit/7f47bce67b8e0c7a49a6f2421cf09667a4b5f044), [`948a3f1`](https://github.com/yielded-dev/auth/commit/948a3f12295b59c0bc560941edbbef59cc0b77b9), [`9bc7083`](https://github.com/yielded-dev/auth/commit/9bc7083ced9992ed428c61f45163217b09857079), [`860d90d`](https://github.com/yielded-dev/auth/commit/860d90d35a8cc5e2197276ecde65636bed48ac46), [`b86c41e`](https://github.com/yielded-dev/auth/commit/b86c41e562a9f623d2f3f7f6fa6d9a9835b5fbb8), [`e368c21`](https://github.com/yielded-dev/auth/commit/e368c21e51bea214efb41158aec4585c8db509a2), [`1a65155`](https://github.com/yielded-dev/auth/commit/1a65155dec67dd4cf6d114132759e93e758d01db), [`56cef27`](https://github.com/yielded-dev/auth/commit/56cef272b938592ea8e05409ce040f3ec4305c74), [`fbc58e3`](https://github.com/yielded-dev/auth/commit/fbc58e3343b140743e24c7a061bcf38985c45383), [`fd5d9e6`](https://github.com/yielded-dev/auth/commit/fd5d9e68803180acc9566317f4578a9f55b30f84)]:
+  - @yielded/auth-persistence@0.1.0-beta.35
+  - @yielded/auth@0.1.0-beta.35
+
 ## 0.1.0-beta.34
 
 ### Patch Changes

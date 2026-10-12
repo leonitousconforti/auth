@@ -1,5 +1,11 @@
 # @yielded/crypto
 
+## 0.1.0-beta.35
+
+### Patch Changes
+
+- [#211](https://github.com/yielded-dev/auth/pull/211) [`bdc849c`](https://github.com/yielded-dev/auth/commit/bdc849cde2c652d27f59d60f2a120c9873ce62c0) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Reduce CPU overhead for Argon2id derivations while preserving KDF parameters and cancellation boundaries.
+
 ## 0.1.0-beta.34
 
 ### Patch Changes

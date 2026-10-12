@@ -1,5 +1,39 @@
 # @yielded/auth
 
+## 0.1.0-beta.35
+
+### Patch Changes
+
+- [#219](https://github.com/yielded-dev/auth/pull/219) [`b97748f`](https://github.com/yielded-dev/auth/commit/b97748f6f655d836107184a5f982ea75abc0ea98) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Reduce named action dispatch overhead while preserving invocation-local services and operation validation.
+
+- [#226](https://github.com/yielded-dev/auth/pull/226) [`1f648ae`](https://github.com/yielded-dev/auth/commit/1f648ae827a81fd3d17da28d93548245a43e2538) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Allow OAuth client metadata and JWKS discovery on Cloudflare Workers while continuing to reject redirects.
+
+- [#223](https://github.com/yielded-dev/auth/pull/223) [`172e9d1`](https://github.com/yielded-dev/auth/commit/172e9d1f975190e8015d7d583b83f5ef7e6d925b) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Scan cookie names once per HTTP admission while preserving rejection of ambiguous credentials and optional session-cache misses.
+
+- [#206](https://github.com/yielded-dev/auth/pull/206) [`5875575`](https://github.com/yielded-dev/auth/commit/5875575c9c62f6d755734f3874e13ca654c8d3bd) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Reuse one scoped HMAC key while checking a TOTP code across its allowed time window.
+
+- [#212](https://github.com/yielded-dev/auth/pull/212) [`7f47bce`](https://github.com/yielded-dev/auth/commit/7f47bce67b8e0c7a49a6f2421cf09667a4b5f044) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Reduce repeated session projection work when reading an already verified request session.
+
+- [#209](https://github.com/yielded-dev/auth/pull/209) [`948a3f1`](https://github.com/yielded-dev/auth/commit/948a3f12295b59c0bc560941edbbef59cc0b77b9) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Reuse local public-key resolvers for OAuth client assertions within each configured key generation. Expose `Jwks.makeLocal` to retain a validated local resolver without building a Layer.
+
+- [#205](https://github.com/yielded-dev/auth/pull/205) [`9bc7083`](https://github.com/yielded-dev/auth/commit/9bc7083ced9992ed428c61f45163217b09857079) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Reuse the fixed HTTP request decoder across operations to avoid rebuilding its schema for each request.
+
+- [#220](https://github.com/yielded-dev/auth/pull/220) [`b86c41e`](https://github.com/yielded-dev/auth/commit/b86c41e562a9f623d2f3f7f6fa6d9a9835b5fbb8) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Reuse parsed private keys for provider client assertions within each configured generation and wipe them when its Scope closes.
+
+- [#216](https://github.com/yielded-dev/auth/pull/216) [`e368c21`](https://github.com/yielded-dev/auth/commit/e368c21e51bea214efb41158aec4585c8db509a2) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Reuse the existing shared session contract when constructing an Auth service.
+
+- [#213](https://github.com/yielded-dev/auth/pull/213) [`1a65155`](https://github.com/yielded-dev/auth/commit/1a65155dec67dd4cf6d114132759e93e758d01db) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Reduce allocation and capacity-check overhead in the bounded process-local rate limiter.
+
+- [#222](https://github.com/yielded-dev/auth/pull/222) [`56cef27`](https://github.com/yielded-dev/auth/commit/56cef272b938592ea8e05409ce040f3ec4305c74) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Reuse equivalent OIDC discovery responses while initializing sign-in and retained-access protocols, preserving separate client and verification policies.
+
+- [#208](https://github.com/yielded-dev/auth/pull/208) [`fbc58e3`](https://github.com/yielded-dev/auth/commit/fbc58e3343b140743e24c7a061bcf38985c45383) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Reduce HTTP transport tracing overhead while retaining public request and operation spans. Remove internal body-reading, command-delivery, and admission helper spans and their function stack enrichment.
+
+- [#210](https://github.com/yielded-dev/auth/pull/210) [`fd5d9e6`](https://github.com/yielded-dev/auth/commit/fd5d9e68803180acc9566317f4578a9f55b30f84) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Reuse OAuth snapshot codecs while preserving validation, detached values, and recursive freezing.
+- Updated dependencies [[`0a3254c`](https://github.com/yielded-dev/auth/commit/0a3254cfb5c4633d88a81aadb263a0efed7b3d85), [`b7f695b`](https://github.com/yielded-dev/auth/commit/b7f695bc71991164f0935ed7781a1898d9905aaf), [`948a3f1`](https://github.com/yielded-dev/auth/commit/948a3f12295b59c0bc560941edbbef59cc0b77b9), [`948a3f1`](https://github.com/yielded-dev/auth/commit/948a3f12295b59c0bc560941edbbef59cc0b77b9), [`bdc849c`](https://github.com/yielded-dev/auth/commit/bdc849cde2c652d27f59d60f2a120c9873ce62c0)]:
+  - @yielded/jose@0.1.0-beta.35
+  - @yielded/crypto@0.1.0-beta.35
+  - @yielded/oauth@0.1.0-beta.35
+
 ## 0.1.0-beta.34
 
 ### Patch Changes

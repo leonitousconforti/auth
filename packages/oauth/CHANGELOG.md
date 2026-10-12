@@ -1,5 +1,12 @@
 # @yielded/oauth
 
+## 0.1.0-beta.35
+
+### Patch Changes
+
+- Updated dependencies [[`0a3254c`](https://github.com/yielded-dev/auth/commit/0a3254cfb5c4633d88a81aadb263a0efed7b3d85), [`b7f695b`](https://github.com/yielded-dev/auth/commit/b7f695bc71991164f0935ed7781a1898d9905aaf), [`948a3f1`](https://github.com/yielded-dev/auth/commit/948a3f12295b59c0bc560941edbbef59cc0b77b9), [`948a3f1`](https://github.com/yielded-dev/auth/commit/948a3f12295b59c0bc560941edbbef59cc0b77b9)]:
+  - @yielded/jose@0.1.0-beta.35
+
 ## 0.1.0-beta.34
 
 ### Patch Changes
