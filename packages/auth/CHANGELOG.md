@@ -1,5 +1,15 @@
 # @yielded/auth
 
+## 0.1.0-beta.37
+
+### Patch Changes
+
+- [#232](https://github.com/yielded-dev/auth/pull/232) [`a37f2c9`](https://github.com/yielded-dev/auth/commit/a37f2c956afd791294329108e6d22b764958061f) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Provide Cloudflare Workers runtime dependencies once with `WorkerdServices.layer` from `@yielded/auth/WorkerdServices`, including password hashing, cryptography, bounded KDF admission, and a Fetch HTTP client.
+- Updated dependencies []:
+  - @yielded/crypto@0.1.0-beta.37
+  - @yielded/jose@0.1.0-beta.37
+  - @yielded/oauth@0.1.0-beta.37
+
 ## 0.1.0-beta.36
 
 ### Patch Changes
