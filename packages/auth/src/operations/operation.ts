@@ -104,6 +104,37 @@ export interface OperationHandler<Tag extends string, Payload, Success, Error> {
   readonly contract: Types.Invariant<readonly [Payload, Success, Error]>;
 }
 
+const handlerService = <Tag extends string, Payload, Success, Error, R = never>(tag: Tag) =>
+  Context.Service<
+    OperationHandler<Tag, Payload, Success, Error>,
+    {
+      readonly run: (
+        payload: Payload,
+        context: AuthInvocation,
+      ) => Effect.Effect<AuthOperationResult<Success>, Error, R>;
+    }
+  >(`effect-auth/operations/${tag}`);
+
+/** Internal named-action binding: resolve dependencies and Scope at invocation,
+ * without acquiring a Layer whose only resource is this handler value. */
+export const provideOperationHandler = <Tag extends string, Payload, Success, Error, R>(
+  tag: Tag,
+  run: (
+    payload: Payload,
+    context: AuthInvocation,
+  ) => Effect.Effect<AuthOperationResult<Success>, Error, R>,
+) => {
+  const service = handlerService<Tag, Payload, Success, Error, R>(tag);
+
+  return <A, E, Requirements>(
+    effect: Effect.Effect<A, E, Requirements>,
+  ): Effect.Effect<
+    A,
+    E,
+    Exclude<Requirements, OperationHandler<Tag, Payload, Success, Error>> | R
+  > => Effect.provideService(effect, service, { run });
+};
+
 export type OperationAccess = "any" | "authenticated" | "system";
 export type OperationExposure = "public" | "internal";
 /** Metadata documents the handler's durable guarantee; it does not implement deduplication. */
@@ -254,10 +285,7 @@ const buildOperation = <
     context: AuthInvocation,
   ) => Effect.Effect<AuthOperationResult<Success["Type"]>, Failure, R>;
 
-  const HandlerService = Context.Service<
-    OperationHandler<Tag, Payload["Type"], Success["Type"], Failure>,
-    { readonly run: CredentialHandler }
-  >(`effect-auth/operations/${tag}`);
+  const HandlerService = handlerService<Tag, Payload["Type"], Success["Type"], Failure>(tag);
 
   const decode = Schema.decodeEffect(options.payload);
   // oxlint-disable-next-line no-restricted-properties -- invokeUnknown is the explicit boundary for untyped local callers.

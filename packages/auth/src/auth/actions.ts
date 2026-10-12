@@ -14,7 +14,7 @@ import {
   AuthRevealCommandCollectorService,
 } from "../operations/credentials";
 import { InvalidOperationInput } from "../operations/errors";
-import type { makeOperation } from "../operations/operation";
+import { type makeOperation, provideOperationHandler } from "../operations/operation";
 import type { AuthRevealCommand } from "../operations/reveals";
 import { AuthConfigurationError } from "./AuthConfigurationError";
 import { AuthRequest } from "./AuthRequest";
@@ -170,15 +170,12 @@ export const makeActionApi = Effect.fn("Auth.makeActionApi")(function* <
       return { value, credentialCommands, revealCommands };
     });
 
-    // Restore the handler constructors hidden by the heterogeneous descriptor.
+    // Restore the invocation contract hidden by the heterogeneous descriptor.
     const operation = action.route.operation as unknown as ReturnType<
       typeof makeOperation<string, Schema.Top, Schema.Top, Schema.Top>
     >;
 
-    const layer =
-      operation.credentials || operation.reveals.length > 0
-        ? operation.privateHandlerLayer(run)
-        : operation.handlerLayer((input) => run(input).pipe(Effect.map((result) => result.value)));
+    const provideHandler = provideOperationHandler(operation.rpc._tag, run);
 
     entries.push([
       name,
@@ -196,7 +193,7 @@ export const makeActionApi = Effect.fn("Auth.makeActionApi")(function* <
           return yield* InvalidOperationInput.make({});
 
         return yield* operation.invokeUnknown(guest, input).pipe(
-          Effect.provide(layer, { local: true }),
+          provideHandler,
           Effect.provideService(AuthCredentialCommandCollector, request.credentialCommandSink),
           Effect.provideService(
             AuthRevealCommandCollectorService,
