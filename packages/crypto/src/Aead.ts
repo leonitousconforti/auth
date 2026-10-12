@@ -63,6 +63,8 @@ export interface Key {
 export class Aead extends Context.Service<
   Aead,
   {
+    /** Whether this backend implements an algorithm. Host operations may still fail. */
+    readonly supports: (algorithm: Algorithm) => boolean;
     /** Snapshot once; scope closure joins native work and rejects later use. */
     readonly importKey: (input: KeyInput) => Effect.Effect<Key, OperationError, Scope.Scope>;
     readonly encrypt: (input: EncryptInput) => Effect.Effect<Uint8Array, OperationError>;

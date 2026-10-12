@@ -90,6 +90,8 @@ when the application Schema omits them. `protectedHeader` contains the supported
 header fields.
 
 `Jwt.sign(schema, claims, privateKey, header)` encodes the Schema before signing.
+Asymmetric signing requires `Signature` in the signing effect's environment,
+even when the private key was imported earlier. Provide the crypto Layer there.
 Verification checks the signature and registered claims before decoding the
 application Schema. Both operations preserve `SchemaError` and the Schema's
 encoding/decoding service requirements in `E` and `R`. Schema input reporting is

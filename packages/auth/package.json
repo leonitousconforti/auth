@@ -69,6 +69,7 @@
     "./Schema": "./src/Schema.ts",
     "./WebCrypto": "./src/WebCrypto.ts",
     "./WorkerdServices": "./src/WorkerdServices.ts",
+    "./WorkerdPasswordlessServices": "./src/WorkerdPasswordlessServices.ts",
     "./Sessions": "./src/Sessions.ts",
     "./SessionContract": "./src/SessionContract.ts",
     "./Proofs": "./src/Proofs.ts",

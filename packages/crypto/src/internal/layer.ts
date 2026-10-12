@@ -10,6 +10,26 @@ import { makeHmac } from "./hmac";
 import { type Argon2, makeKdf } from "./kdf";
 import { makeSignature } from "./signature";
 
+export const makeCryptoLayer = (subtle: SubtleCrypto, xchacha?: XChaCha) =>
+  Layer.syncContext(() =>
+    Context.make(Aead, makeAead(subtle, xchacha)).pipe(
+      Context.add(Hmac, makeHmac(subtle)),
+      Context.add(Signature, makeSignature(subtle)),
+    ),
+  );
+
+export const makeKdfLayer = (subtle: SubtleCrypto, input: Partial<Limits>, argon2?: Argon2) => {
+  const snapshot = { ...defaultLimits, ...input };
+
+  return Layer.effect(Kdf)(
+    Effect.gen(function* () {
+      const limits = yield* decode(Limits, snapshot, "parameters");
+
+      return yield* makeKdf(subtle, limits, argon2);
+    }),
+  );
+};
+
 export const makeLayer = (
   subtle: SubtleCrypto,
   input: Partial<Limits>,
@@ -17,19 +37,8 @@ export const makeLayer = (
     readonly argon2?: Argon2;
     readonly xchacha?: XChaCha;
   } = {},
-) => {
-  const snapshot = { ...defaultLimits, ...input };
-
-  return Layer.effectContext(
-    Effect.gen(function* () {
-      const limits = yield* decode(Limits, snapshot, "parameters");
-      const kdf = yield* makeKdf(subtle, limits, extensions.argon2);
-
-      return Context.make(Aead, makeAead(subtle, extensions.xchacha)).pipe(
-        Context.add(Hmac, makeHmac(subtle)),
-        Context.add(Kdf, kdf),
-        Context.add(Signature, makeSignature(subtle)),
-      );
-    }),
+) =>
+  Layer.merge(
+    makeCryptoLayer(subtle, extensions.xchacha),
+    makeKdfLayer(subtle, input, extensions.argon2),
   );
-};

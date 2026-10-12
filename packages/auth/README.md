@@ -13,10 +13,10 @@ backend selection. Resources live in the caller's Scope; credentials stay outsid
 public results and telemetry. Runtime dependencies are Effect and the first-party
 `@yielded/crypto`, `@yielded/jose`, and `@yielded/oauth` packages.
 
-On Cloudflare Workers, provide `WorkerdServices.layer` from
-`@yielded/auth/WorkerdServices` once to your application for runtime crypto,
-password hashing, bounded KDF admission, and a Fetch HTTP client. Other runtimes
-can compose crypto Layers explicitly. Supply application-owned keys separately;
+On Cloudflare Workers, provide `WorkerdPasswordlessServices.layer` from
+`@yielded/auth/WorkerdPasswordlessServices` for runtime crypto and HTTP without Wasm.
+Use `@yielded/auth/WorkerdServices` to include password hashing and bounded KDF
+admission. Other runtimes can compose crypto Layers explicitly. Supply keys separately;
 see [runtime setup](https://yielded.dev/auth/reference/crypto/#use-with-auth).
 
 OAuth providers require an explicit nonretrying, nonredirecting Effect `HttpClient`.

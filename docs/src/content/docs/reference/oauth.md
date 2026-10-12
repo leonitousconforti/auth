@@ -318,6 +318,12 @@ export const Routes = AuthRoutes.pipe(
 The [runnable application](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/oauth-application.ts)
 supplies those application Layers. Native providers require HTTP and crypto services;
 OpenID Connect also requires `Signature`. Protectors require `Aead` and `Crypto`.
+Their Layers check for XChaCha20-Poly1305 support and fail with
+`OAuthConfigurationError` (`reason: "crypto"`) when it is absent. On Workers,
+provide `WorkerdPasswordlessServices.layer` from
+`@yielded/auth/WorkerdPasswordlessServices` for HTTP and crypto without Wasm.
+Use `WorkerdServices` when the application also hashes passwords; see
+[runtime composition](./crypto.md#use-with-auth).
 Keep the resulting Layer alive for the application's lifetime.
 
 Flows default to five minutes; strategy `policy` controls their lifetime. Account

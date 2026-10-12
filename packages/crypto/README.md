@@ -26,6 +26,8 @@ Full backend Layers require one shared `KdfAdmission` Layer to bound derivation
 concurrency and waiting. Interruption waits for admitted native work to finish;
 portable Argon2id yields cooperatively but runs on the calling thread. The focused
 `WebCrypto.layerHmac(subtle)` and global `layerWebCrypto` adapters need no KDF admission.
+`Portable.layerWithoutKdf(subtle)` supplies AEAD, HMAC and signatures without
+KDFs or admission; `platform-workerd.layerKdf(subtle, limits?)` supplies only KDFs.
 
 Secret inputs, derived bytes and decrypted plaintext use `Redacted`. Backend
 errors contain classifications without native causes or secret payloads. Keep

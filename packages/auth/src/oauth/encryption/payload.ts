@@ -108,6 +108,9 @@ export const payloadEncryption = <C, P, S extends Envelope>(
     const aead = yield* Aead;
     const scope = yield* Effect.scope;
 
+    if (!aead.supports("XChaCha20-Poly1305"))
+      return yield* OAuthConfigurationError.make({ reason: "crypto" });
+
     if (
       new Set(configuration.keys.map((entry) => entry.id)).size !== configuration.keys.length ||
       !configuration.keys.some((entry) => entry.id === configuration.activeKeyId)

@@ -1,30 +1,22 @@
-import type { Aead } from "@yielded/crypto/Aead";
 import type { InvalidInput } from "@yielded/crypto/Errors";
-import type { Hmac } from "@yielded/crypto/Hmac";
 import type { Kdf, Limits } from "@yielded/crypto/Kdf";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as WorkerdCrypto from "@yielded/crypto/platform-workerd";
-import type { Signature } from "@yielded/crypto/Signature";
-import { layerCryptoWeb } from "@yielded/crypto/WebCrypto";
-import { type Crypto, Layer } from "effect";
-import { FetchHttpClient, type HttpClient } from "effect/http";
+import { Layer } from "effect";
 
 import type { PasswordHashingConfig } from "./password/configuration";
 import type { PasswordConfigurationError } from "./password/errors";
 import { PasswordHashing } from "./password/PasswordHashing";
+import * as WorkerdPasswordlessServices from "./WorkerdPasswordlessServices";
 
 /** Runtime services for Auth on Cloudflare Workers. Application-owned storage,
  * keys, account policy, delivery, and protocol adapters remain separate.
  */
 export type WorkerdServices =
-  | Crypto.Crypto
-  | Aead
-  | Hmac
+  | WorkerdPasswordlessServices.WorkerdPasswordlessServices
   | Kdf
   | KdfAdmission.KdfAdmission
-  | Signature
-  | PasswordHashing
-  | HttpClient.HttpClient;
+  | PasswordHashing;
 
 export interface Options {
   readonly passwordHashing?: PasswordHashingConfig;
@@ -38,10 +30,9 @@ export interface Options {
 export const layerWith = (
   options: Options,
 ): Layer.Layer<WorkerdServices, InvalidInput | PasswordConfigurationError> => {
-  const platform = Layer.mergeAll(
-    layerCryptoWeb,
-    FetchHttpClient.layer,
-    WorkerdCrypto.layer(globalThis.crypto.subtle, options.kdfLimits).pipe(
+  const platform = Layer.merge(
+    WorkerdPasswordlessServices.layer,
+    WorkerdCrypto.layerKdf(globalThis.crypto.subtle, options.kdfLimits).pipe(
       Layer.provideMerge(KdfAdmission.layer(options.kdfAdmission)),
     ),
   );
@@ -51,6 +42,7 @@ export const layerWith = (
 
 /** Provide once to the application Layer. Includes entropy/digests, crypto,
  * Argon2id password hashing, bounded KDF admission, and a Fetch HttpClient.
+ * Use WorkerdPasswordlessServices for applications without password hashing.
  * Bundle with Wrangler and enable nodejs_compat. This direct entrypoint is not
  * exported from the browser-safe package root.
  *
