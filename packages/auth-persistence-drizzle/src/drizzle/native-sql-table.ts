@@ -178,6 +178,11 @@ export const makeDrizzleSqlTables = (
         return column;
       };
 
+      const ordinals = new Map(entries.map(([key], index) => [key, index]));
+
+      const projection = (keys?: ReadonlyArray<string>) =>
+        keys === undefined ? entries : keys.map((key) => [key, getColumn(key)] as const);
+
       const bind = (alias?: string): SqlTable => {
         const reference = (key: string) => {
           const column = getColumn(key);
@@ -223,20 +228,20 @@ export const makeDrizzleSqlTables = (
               ? { table, name: column.name }
               : undefined;
           },
-          fields: (prefix) =>
+          fields: (prefix, keys) =>
             compile(
               sql.join(
-                entries.map(
-                  ([key], index) =>
-                    sql`${selection(key)} as ${sql.identifier(nativeSqlAlias(prefix, index))}`,
+                projection(keys).map(
+                  ([key]) =>
+                    sql`${selection(key)} as ${sql.identifier(nativeSqlAlias(prefix, ordinals.get(key)!))}`,
                 ),
                 sql`, `,
               ),
             ),
-          decode: (row, prefix) =>
+          decode: (row, prefix, keys) =>
             Object.fromEntries(
-              entries.map(([key, column], index) => {
-                const alias = nativeSqlAlias(prefix, index);
+              projection(keys).map(([key, column]) => {
+                const alias = nativeSqlAlias(prefix, ordinals.get(key)!);
 
                 if (!Object.hasOwn(row, alias)) return invalid("Missing SQL projection field");
                 const value = row[alias];

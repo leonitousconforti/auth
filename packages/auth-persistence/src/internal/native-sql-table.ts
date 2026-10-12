@@ -33,11 +33,14 @@ export interface SqlTable {
   /** Optional codec-free text candidate. Physical type/collation compatibility
    * must still be checked against the database before comparing columns. */
   readonly unencodedTextColumn?: (key: string) => PhysicalTextColumn | undefined;
-  /** Project every column under an ordinal alias, using a distinct prefix per table. */
-  readonly fields: (prefix: string) => Statement.Fragment;
+  /** Project all columns by default, or only the requested keys. Selected keys
+   * retain their full-table ordinal aliases and physical result codecs. Use the
+   * same keys when decoding; unselected columns are not read or decoded. */
+  readonly fields: (prefix: string, keys?: ReadonlyArray<string>) => Statement.Fragment;
   readonly decode: (
     row: Readonly<Record<string, unknown>>,
     prefix: string,
+    keys?: ReadonlyArray<string>,
   ) => Record<string, unknown>;
   readonly value: (key: string, value: unknown) => Statement.Fragment;
   /** Complete INSERT prefix; append conflict/returning clauses in the owning operation. */
@@ -88,6 +91,11 @@ const directTable = (client: SqlClient, physical: object): SqlTable => {
     return column;
   };
 
+  const ordinals = new Map(columns.map(([key], index) => [key, index]));
+
+  const projection = (keys?: ReadonlyArray<string>) =>
+    keys === undefined ? columns : keys.map((key) => [key, getColumn(key)] as const);
+
   const value = (key: string, input: unknown): Statement.Fragment => {
     getColumn(key);
 
@@ -130,19 +138,20 @@ const directTable = (client: SqlClient, physical: object): SqlTable => {
             }
           : undefined,
       value,
-      fields: (prefix) =>
+      fields: (prefix, keys) =>
         client.join(
           ", ",
           false,
         )(
-          columns.map(
-            ([key], index) => client`${column(key)} AS ${quote(nativeSqlAlias(prefix, index))}`,
+          projection(keys).map(
+            ([key]) =>
+              client`${column(key)} AS ${quote(nativeSqlAlias(prefix, ordinals.get(key)!))}`,
           ),
         ),
-      decode: (row, prefix) =>
+      decode: (row, prefix, keys) =>
         Object.fromEntries(
-          columns.map(([key, field], index) => {
-            const alias = nativeSqlAlias(prefix, index);
+          projection(keys).map(([key, field]) => {
+            const alias = nativeSqlAlias(prefix, ordinals.get(key)!);
 
             if (!Object.hasOwn(row, alias))
               throw PersistenceMappingError.make({

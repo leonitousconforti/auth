@@ -161,13 +161,14 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
   const subject = state.subject.as("verified_subject"),
     session = table.as("verified_session"),
     owner = mapping.subject,
+    subjectKeys = [...new Set([owner.id, owner.status, owner.securityRevision])],
     verifiedSessionFields = session.fields("session_"),
-    verifiedSubjectFields = subject.fields("subject_"),
+    verifiedSubjectFields = subject.fields("subject_", subjectKeys),
     sessionFields = table.fields("session_"),
     st = state.subject.as("listed_subject"),
     list = table.as("listed_session"),
     listedSessionFields = list.fields("session_"),
-    listedSubjectFields = st.fields("subject_");
+    listedSubjectFields = st.fields("subject_", subjectKeys);
 
   const verify = Effect.fnUntraced(function* (digest: StatefulSessionRecord<Claims>["digest"]) {
     let discoveredSubjectId: StatefulSessionRecord<Claims>["subjectId"] | undefined;
@@ -199,7 +200,7 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
     sessionInvariant(rows.length <= 1);
     if (rows[0] === undefined) return undefined;
     const record = yield* records.decode(session.decode(rows[0], "session_"));
-    const decoded = subject.decode(rows[0], "subject_");
+    const decoded = subject.decode(rows[0], "subject_", subjectKeys);
 
     sessionInvariant(
       (joinedIds || record.subjectId === discoveredSubjectId) &&
@@ -537,7 +538,7 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
 
             sessionInvariant(subjects.length <= 1);
             if (subjects[0] === undefined) return { sessions: [] };
-            const subject = st.decode(subjects[0], "subject_");
+            const subject = st.decode(subjects[0], "subject_", subjectKeys);
 
             sessionInvariant(
               (yield* mapping.subjectId.toSubject(subject[owner.id])) === input.subjectId,
@@ -565,7 +566,7 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
 
             if (first === undefined) return { sessions: [] };
             if (!joinedRevisions) {
-              const subject = st.decode(first, "subject_");
+              const subject = st.decode(first, "subject_", subjectKeys);
 
               sessionInvariant(
                 (yield* mapping.subjectId.toSubject(subject[owner.id])) === input.subjectId,
@@ -585,7 +586,7 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
             const decoded = yield* Effect.forEach(rows.slice(0, input.limit), (row) =>
               Effect.gen(function* () {
                 const record = yield* records.decode(list.decode(row, "session_"));
-                const subject = st.decode(row, "subject_");
+                const subject = st.decode(row, "subject_", subjectKeys);
 
                 sessionInvariant(
                   record.subjectId === input.subjectId &&
