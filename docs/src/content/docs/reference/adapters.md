@@ -97,10 +97,13 @@ changes. SQLite WASM and D1 take a `migrations` map instead of a folder. Direct
 Effect SQL applications supply their own migration runner.
 
 The composed Layer validates mapped columns and unique keys on its first storage
-operation. Retain it at the composition root and rebuild it after schema changes
-or failed initialization. Canceling one caller leaves setup running for other waiting
-callers. Interrupted setup requires rebuilding the Layer before storage operations can
-resume. Cookie-cached and anonymous session reads do not trigger initialization.
+operation. Its configured SQL client's connection acquirer can read services from
+the invoking request during initialization and subsequent operations. Build
+persistence in the same scope as its SQL client and rebuild it after schema changes
+or failed initialization. Canceling one caller leaves setup
+running for other waiting callers. Interrupted setup requires rebuilding the Layer
+before storage operations resume. Cookie-cached and anonymous session reads do
+not trigger initialization.
 
 Composition supports password sign-in, registration and management, email address
 verification and changes, phone sign-in, passkey sign-in and management, OAuth
@@ -142,6 +145,49 @@ Standalone mutations reject ambient transactions. Use an explicit coordinator to
 combine auth and application writes under one owner. Credentials and lifecycle
 events are released only after that owner commits. An unknown outcome does not
 authorize repeating credential issuance or delivery.
+
+### Workers and request-scoped SQL
+
+Share `WorkerdServices` across requests to retain its KDF admission limits. The
+simplest composition builds auth and persistence per request with one SQL client
+for auth, application queries, and explicit coordinators. Workers
+[TCP sockets belong to the request](https://developers.cloudflare.com/workers/runtime-apis/tcp-sockets/#considerations),
+whether connecting directly or through Hyperdrive.
+
+Inside an [Alchemy Worker constructor](https://alchemy.run/infrastructure-as-effects/runtime/),
+bind Hyperdrive once and acquire SQL inside the handler. Imports and application
+wiring are elided: `AuthLive` supplies auth and persistence but requires SQL;
+`workerdServices` is the shared context built from `WorkerdServices.layer`;
+`handleRequest` is an Effect HTTP handler returning `HttpServerResponse`.
+
+```ts
+const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(Database);
+
+return {
+  fetch: Effect.gen(function* () {
+    const url = yield* hyperdrive.connectionString;
+    const SqlLive = PgClient.layerFrom(PgClient.makeClient({ url }));
+    const RequestLive = AuthLive.pipe(Layer.provideMerge(SqlLive), Layer.orDie);
+
+    return yield* handleRequest.pipe(Effect.provide(RequestLive, { local: true }));
+  }).pipe(Effect.provide(workerdServices)),
+};
+```
+
+`{ local: true }` gives each request its own Layer build and scope.
+`PgClient.makeClient` opens one physical client; `layerFrom` exposes it as both
+`PgClient` and `SqlClient`. Finish SQL work inside the handler Effect: its scope
+closes the client when the Effect completes, including on failure or interruption.
+
+Provide Alchemy's `Cloudflare.Hyperdrive.ConnectBinding` and enable `nodejs_compat`
+in the Worker setup. Set `caching: { disabled: true }` on the Hyperdrive resource
+so auth reads observe current state ([query caching](https://developers.cloudflare.com/hyperdrive/concepts/query-caching/)).
+For a direct connection, substitute a redacted database URL for `url`.
+
+Applications that already share persistence Layers can supply a logical `SqlClient`
+whose acquirer resolves the invoking request's scoped physical client. Initialization
+and later operations use that request context. Keep the shared Layer tied to one
+database and mapping; schema checks run once per Layer, not once per connection.
 
 ### Mix composed and explicit services
 
@@ -308,8 +354,9 @@ reporting pagination exhaustion.
 Keep mapped subject IDs canonical through every column codec. PostgreSQL UUID
 keys can coexist with text subject references; use the same lowercase UUID spelling
 throughout. Logical column types describe driver values, not migration DDL.
-Permit database catalog reads: explicit factories validate required keys and column
-compatibility at acquisition, while composed storage validates on its first operation.
+Permit database catalog reads: explicit session factories validate required keys and
+column compatibility at acquisition; composed storage and direct OAuth factories
+validate on their first operation.
 Schema declarations do not install constraints. Apply migrations before use and
 reacquire persistence Layers after schema changes.
 
@@ -410,6 +457,12 @@ Direct Effect SQL supports PostgreSQL and SQLite with interactive transactions,
 not MySQL or D1 batches. Drizzle applications use their driver entrypoints.
 The [Effect SQL consumer](https://github.com/yielded-dev/auth/tree/main/examples/persistence-sql)
 has no Drizzle dependency.
+
+Direct OAuth factories capture their dependencies at construction and defer database
+access until their first operation. Required schema checks still run before that
+operation; a missing key fails with `OAuthUnavailable` before any write. Rebuild the
+services after schema changes or failed validation. On Workers, supply a
+[request-scoped SQL connection](#workers-and-request-scoped-sql).
 
 Describe tables with `OAuthPersistence.table` and map columns, row codecs, subject
 IDs, authority policy, and required unique keys. `OAuthPersistence.clock` supplies

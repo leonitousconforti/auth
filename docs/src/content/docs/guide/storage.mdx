@@ -99,6 +99,8 @@ yourself. The [Effect SQL app](https://github.com/yielded-dev/auth/tree/main/exa
 runs on SQLite and PostgreSQL. Keep mapped subject IDs canonical and allow the
 adapter to validate the database's columns and unique keys; see
 [mapping requirements](../reference/adapters#sql-session-verification).
+For Workers, share `WorkerdServices` across requests and build auth and persistence
+with [one SQL client per request](../reference/adapters#workers-and-request-scoped-sql).
 
 OAuth sign-in and retained provider access use the same managed or mapped composition.
 Applications with custom registration, login linking, or SQL authorization predicates

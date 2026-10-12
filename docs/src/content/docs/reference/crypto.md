@@ -123,9 +123,9 @@ the [concurrency and queue options](#backends-and-resource-limits).
 
 Admission is shared for the built services' lifetime. To bound concurrent requests
 within a Worker isolate, build and retain these services at that lifetime and
-supply them to request-scoped auth/database Layers. Rebuilding the Layer for every
-request creates independent admission services. This does not coordinate limits
-between isolates or replace sign-in rate limiting.
+supply them to [request-scoped auth/database Layers](./adapters#workers-and-request-scoped-sql).
+Rebuilding the Layer for every request creates independent admission services.
+This does not coordinate limits between isolates or replace sign-in rate limiting.
 
 For other runtimes or custom composition, select the backend explicitly. This
 portable setup supplies Effect entropy/digests and KDF, AEAD, HMAC, and signature services:

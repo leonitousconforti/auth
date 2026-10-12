@@ -25,7 +25,8 @@ Its conditional writes and monotonic revocation require standalone commits.
 on SQLite/D1 or PostgreSQL. Its operations require standalone commits.
 
 Applications own subject provisioning, policy, claims, delivery, and their database
-connection and migration runner.
+connection and migration runner. On Workers, use a [request-scoped SQL connection](../../docs/src/content/docs/reference/adapters.md#workers-and-request-scoped-sql)
+and shared `WorkerdServices`.
 
 The composed Layer covers password sign-in and management, email address verification
 and changes, phone sign-in, passkey sign-in and management, OAuth sign-in with optional

@@ -19,6 +19,7 @@
     "plugins": [
       {
         "name": "@effect/language-service",
+        "effectFn": ["span", "untraced"],
         "allowedUnstableApis": [
           "@effect/atom-react",
           "@effect/platform-bun",

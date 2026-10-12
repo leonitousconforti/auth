@@ -278,8 +278,9 @@ export interface BoundPersistence<
   /** Stateful sessions and OAuth-only stateless sessions are supported. Other session
    * configurations fail acquisition with PersistenceConfigurationError.
    * Capture dependencies at acquisition; validate SQL metadata and configure storage
-   * once on the first service operation. Initialization failures become that port's
-   * unavailable error until layer reacquisition. Canceling a caller leaves initialization
+   * once on the first service operation. The configured SQL client's acquirer can
+   * resolve services from that operation's request context. Initialization failures become
+   * that port's unavailable error until layer reacquisition. Canceling a caller leaves initialization
    * running for other waiting callers; if initialization is interrupted, later operations
    * remain unavailable until layer reacquisition.
    * Managed OAuth metadata/token-use authorizations bind policyRevision to the subject's
