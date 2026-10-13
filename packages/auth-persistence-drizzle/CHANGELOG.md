@@ -1,5 +1,14 @@
 # @yielded/auth-persistence-drizzle
 
+## 0.1.0-beta.39
+
+### Patch Changes
+
+- [#235](https://github.com/yielded-dev/auth/pull/235) [`b81e273`](https://github.com/yielded-dev/auth/commit/b81e27309d9104157bbb119842276a5f7c41dc48) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Import existing OAuth identities into composed persistence so migrated users sign in to their existing subjects. Expose the stable OAuth identity key for application-owned imports.
+- Updated dependencies [[`b81e273`](https://github.com/yielded-dev/auth/commit/b81e27309d9104157bbb119842276a5f7c41dc48)]:
+  - @yielded/auth-persistence@0.1.0-beta.39
+  - @yielded/auth@0.1.0-beta.39
+
 ## 0.1.0-beta.38
 
 ### Patch Changes
