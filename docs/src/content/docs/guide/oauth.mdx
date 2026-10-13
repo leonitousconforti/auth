@@ -68,6 +68,43 @@ Retained sign-in requires an existing account link. [Register new users](#regist
 first, then connect provider access after authentication. After a failed or uncertain
 callback, start a fresh sign-in; authorization codes are single-use.
 
+### Import existing identities
+
+When moving existing users from another auth provider, create their application
+subjects first, then import each verified provider identity. Composed
+`AuthPersistence.layer` supplies `OAuthPersistence.IdentityImports` for configured
+OAuth sign-in strategies with managed or mapped tables, including D1:
+
+```ts
+import { OAuthPersistence } from "@yielded/auth-persistence";
+import { Effect, Schema } from "effect";
+
+const importGitHub = Effect.gen(function* () {
+  const imports = yield* OAuthPersistence.IdentityImports;
+  const identity = yield* Schema.decodeEffect(OAuthPersistence.IdentityImport)({
+    moduleId: AppAuth.strategies.social.persistence.moduleId,
+    subjectId: "existing-user",
+    provider: "github",
+    issuer: "https://github.com/login/oauth",
+    subject: "12345678",
+  });
+
+  return yield* imports.importIdentity(identity);
+});
+```
+
+Run this in your trusted migration job with the same persistence Layer as sign-in.
+Use the exact provider key, issuer and durable subject emitted by your configured
+adapter: GitHub's numeric user ID as a string with `https://github.com/login/oauth`,
+or Google's `sub` with `https://accounts.google.com`. Email and display names do not establish
+ownership. Keep this service outside public routes.
+
+The import atomically stores ownership, the login credential and shared authority.
+The next sign-in returns the existing subject through the normal session flow.
+An exact retry returns the same credential; conflicting ownership, inactive or
+missing subjects, and inconsistent records fail with `OAuthUnavailable`.
+See the [import contract](../reference/oauth#identity-imports) for commit and key details.
+
 ### Use the session and provider access
 
 Under the HTTP middleware, use the regular Auth API:

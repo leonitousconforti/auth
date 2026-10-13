@@ -59,6 +59,14 @@ export * from "./internal/oauth/native-layers";
 export { sql, and, eq } from "./internal/sql-expression";
 export { makeAuthenticationAuthorityServices } from "./internal/sql-authority";
 
+export {
+  IdentityImport,
+  ImportedIdentity,
+  IdentityImports,
+} from "./internal/oauth/identity-import";
+
+export { oauthIdentityKey as identityKey } from "./internal/oauth/state";
+
 export const table = (definition: StorageTable) =>
   new Table(definition.name, definition.columns, definition.unique, definition.schema);
 

@@ -200,6 +200,7 @@ export const setup = Effect.fnUntraced(function* (
   backend: Backend,
   retained = false,
   sessionMode: SessionMode = "stateful",
+  seedLogin = true,
 ) {
   let batches = 0;
 
@@ -266,6 +267,7 @@ export const setup = Effect.fnUntraced(function* (
 
   yield* Effect.gen(function* () {
     yield* insert(config.subjects, { id: "athlete", active: true, revision: "subject-v1" });
+    if (!seedLogin) return;
     yield* insert(table("credentials"), {
       credentialId: "strava-login",
       subjectId: "athlete",

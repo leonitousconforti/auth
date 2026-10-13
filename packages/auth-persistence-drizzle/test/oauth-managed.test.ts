@@ -1,6 +1,8 @@
 import { it } from "@effect/vitest";
 import { Auth, OAuth, Operations, Sessions } from "@yielded/auth";
+import { OAuthPersistence } from "@yielded/auth-persistence";
 import type { CommitJournal, PreparedCommit } from "@yielded/auth/Hooks";
+import { SubjectId } from "@yielded/auth/Schema";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
 import { getTableName } from "drizzle-orm";
@@ -25,6 +27,70 @@ import {
 const backends = ["sqlite", "d1", "pglite"] as const;
 const moduleId = OAuth.OAuthModuleId.make("strava/oauth");
 
+// Human-requested import atomicity: reject authority insertion on both commit owners.
+it.live.each(["sqlite", "d1"] as const)(
+  "%s OAuth imports roll back partial rows and reject unavailable subjects",
+  (backend) =>
+    Effect.gen(function* () {
+      const fixture = yield* setup(backend, false, "stateful", false);
+      const sql = Context.get(fixture.context, SqlClient.SqlClient);
+      const importer = requiredService(fixture.context, OAuthPersistence.IdentityImports);
+
+      const input = yield* Schema.decodeEffect(OAuthPersistence.IdentityImport)({
+        moduleId,
+        subjectId: "athlete",
+        ...identity,
+      });
+
+      const rejected = (value: typeof input) =>
+        Effect.gen(function* () {
+          expect(yield* importer.importIdentity(value).pipe(Effect.result)).toMatchObject({
+            _tag: "Failure",
+            failure: { _tag: "OAuthUnavailable" },
+          });
+        });
+
+      yield* rejected({ ...input, subjectId: SubjectId.make("missing") });
+      yield* rejected({ ...input, moduleId: OAuth.OAuthModuleId.make("disabled") });
+      // Admission must use the same snapshot as the deferred import.
+      const mutable = { ...input };
+      const deferred = importer.importIdentity(mutable);
+
+      mutable.moduleId = OAuth.OAuthModuleId.make("disabled");
+      expect(yield* deferred.pipe(Effect.result)).toMatchObject({
+        _tag: "Failure",
+        failure: { _tag: "OAuthUnavailable" },
+      });
+      yield* rejected({ ...input, subject: "\ud800" });
+      yield* sql`update athletes set active = 0`;
+      yield* rejected(input);
+      yield* sql`update athletes set active = 1`;
+      const authority = getTableName(fixture.table("credentials"));
+
+      yield* sql.unsafe(
+        `create trigger reject_import before insert on "${authority}" begin select raise(abort, 'import failure'); end`,
+      );
+      yield* rejected(input);
+      for (const role of ["oauthIdentities", "oauthCredentials", "credentials"]) {
+        expect(
+          yield* sql`select count(*) as count from ${sql(getTableName(fixture.table(role)))}`,
+        ).toEqual([{ count: 0 }]);
+      }
+      yield* sql`drop trigger reject_import`;
+      const imported = yield* importer.importIdentity(input);
+
+      expect(yield* fixture.signIn.resolve({ moduleId, identity })).toMatchObject({
+        credentialId: imported.credentialId,
+        revision: { subjectId: "athlete" },
+      });
+      // Migration retries must never repair split authority.
+      yield* sql`delete from ${sql(authority)}`;
+      yield* rejected(input);
+      expect(yield* sql`select count(*) as count from ${sql(authority)}`).toEqual([{ count: 0 }]);
+      fixture.assertBatchExecution();
+    }),
+);
+
 function prepare<A>(value: A, journal: CommitJournal): PreparedCommit<A> {
   return journal.prepare(value);
 }
@@ -36,9 +102,32 @@ it.live.each([
   "$backend $sessionMode managed fitness OAuth signs in an existing athlete and verifies its session",
   ({ backend, sessionMode }) =>
     Effect.gen(function* () {
-      const fixture = yield* setup(backend, false, sessionMode);
+      const fixture = yield* setup(backend, false, sessionMode, false);
       const app = sessionMode === "stateless" ? StatelessFitness : Fitness;
       const sql = Context.get(fixture.context, SqlClient.SqlClient);
+      // Human-requested migration seam (#200): import, retry, then the real callback/session.
+      const importer = requiredService(fixture.context, OAuthPersistence.IdentityImports);
+
+      const input = yield* Schema.decodeEffect(OAuthPersistence.IdentityImport)({
+        moduleId,
+        subjectId: "athlete",
+        ...identity,
+      });
+
+      const imported = yield* importer.importIdentity(input);
+
+      expect(yield* importer.importIdentity(input)).toEqual(imported);
+      yield* sql`insert into athletes (id, active, revision) values ('other', ${backend === "pglite" ? true : 1}, 'other-v1')`;
+      expect(
+        yield* importer
+          .importIdentity({ ...input, subjectId: SubjectId.make("other") })
+          .pipe(Effect.result),
+      ).toMatchObject({ _tag: "Failure", failure: { _tag: "OAuthUnavailable" } });
+      for (const role of ["oauthIdentities", "oauthCredentials", "credentials"]) {
+        expect(
+          yield* sql`select count(*) as count from ${sql(getTableName(fixture.table(role)))}`,
+        ).toEqual([{ count: 1 }]);
+      }
       const flowTable = getTableName(fixture.table("oauthSignInFlows"));
       const delivered = new Map<Operations.CredentialSlot, Redacted.Redacted<string>>();
       let exchanges = 0;
@@ -144,8 +233,8 @@ it.live.each([
       expect(replay).toMatchObject({ _tag: "Failure", failure: { _tag: "OAuthRejected" } });
       expect(exchanges).toBe(1);
       expect(yield* fixture.signIn.resolve({ moduleId, identity })).toMatchObject({
-        credentialId: "strava-login",
-        revision: { subjectId: "athlete", securityRevision: "subject-v1" },
+        credentialId: imported.credentialId,
+        revision: { subjectId: "athlete", securityRevision: expect.any(String) },
       });
       expect(
         yield* fixture.signIn.resolve({

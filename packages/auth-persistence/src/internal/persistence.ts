@@ -6,6 +6,7 @@ import {
   OAuthConnectedRevocations,
   OAuthSignInPersistence,
   OAuthUnavailable,
+  snapshotOAuth,
 } from "@yielded/auth/OAuth";
 import {
   PasskeyCredentials,
@@ -42,6 +43,7 @@ import { makeNativeEmailAddressServices } from "./email-native";
 import { PersistenceMappingError } from "./mapping-error";
 import type { NativeSqlTables } from "./native-sql-table";
 import { makeManagedOAuth } from "./oauth-managed";
+import { IdentityImport, IdentityImports } from "./oauth/identity-import";
 import { makeManagedPasskeys } from "./passkey-managed";
 import { makeNativePasswordServices } from "./password-native";
 import { makeComposedPhoneTargets } from "./phone-composed";
@@ -814,6 +816,14 @@ export const createPersistence = <T extends object, R, Database extends object =
               Effect.flatMap(persistence(input.moduleId), (s) => s.resolve(input)),
             cleanup: (input, prepare) =>
               Effect.flatMap(persistence(input.moduleId), (s) => s.cleanup(input, prepare)),
+          });
+          context = Context.add(context, IdentityImports, {
+            importIdentity: Effect.fnUntraced(function* (original) {
+              const input = yield* snapshotOAuth(IdentityImport, original);
+              const persistence = yield* oauthService(IdentityImports, input.moduleId, "signIn");
+
+              return yield* persistence.importIdentity(input);
+            }),
           });
         }
         if (oauthConnected) {

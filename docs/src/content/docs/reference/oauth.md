@@ -331,6 +331,33 @@ linking uses `OAuthLinkTransactionProtector`. Retained access also needs
 `OAuthConnectedTransactionProtector` and `OAuthConnectedTokenProtector` with distinct
 transaction and token keys.
 
+### Identity imports
+
+`OAuthPersistence.IdentityImports` from `@yielded/auth-persistence` is supplied by
+composed SQL and Drizzle persistence when OAuth sign-in is enabled. Its
+`importIdentity` accepts `OAuthPersistence.IdentityImport`: `moduleId`, `subjectId`,
+`provider`, `issuer`, and `subject`. Decode migration data with that Schema and use
+the module ID from the bound strategy's `persistence.moduleId`.
+
+The existing subject must be active. The operation commits identity ownership,
+the login credential and shared authority together, advances subject
+`securityRevision`, and returns `{ credentialId, credentialRevision }`. Matching
+active rows are an idempotent success without changing revisions. Another subject
+or module, inactive credentials, inconsistent authority, invalid input, or storage
+failure returns `OAuthUnavailable`. Imports do not provision subjects, retain
+provider tokens, register users, or issue sessions.
+
+Each call owns one transaction or D1 primary batch and rejects ambient transactions
+and commit scopes. After a lost acknowledgement, retry the same input. Concurrent
+conflicts may fail and can be retried after the competing import completes.
+
+For application-owned persistence, `OAuthPersistence.identityKey(identity)` returns
+the same stable key used by sign-in and requires Effect `Crypto`. It validates the
+exact provider/issuer/subject tuple, rejects malformed Unicode with
+`OAuthUnavailable`, and excludes the OAuth module from ownership. Use it inside
+your own atomic import; the key alone does not create login authority. See the
+[migration example](../guide/oauth#import-existing-identities).
+
 ## Customize callbacks
 
 `Http` derives `/auth/{provider}/callback` from the origin and contract base path.

@@ -3,6 +3,7 @@ import {
   OAuthUnavailable,
   OAuthExternalIdentity,
   snapshotOAuthSync,
+  snapshotOAuth,
 } from "@yielded/auth/OAuth";
 import type { AuthenticationRequirement } from "@yielded/auth/Sessions";
 import { Crypto, Effect, Schema } from "effect";
@@ -50,12 +51,13 @@ export const captureOAuthMapping = <A>(input: A): A => {
   return copy(input) as A;
 };
 
-/** Versioned length-delimited UTF-8 tuple; the module is deliberately excluded.
- * Reject ill-formed UTF-16 rather than letting UTF-8 replacement alias identities. */
+/** Stable persisted identity key for an exact provider/issuer/subject tuple.
+ * Requires Crypto for SHA-256. The module is deliberately excluded: ownership is
+ * shared across modules. Reject ill-formed UTF-16 rather than alias identities. */
 export const oauthIdentityKey = Effect.fnUntraced(function* (
   input: typeof OAuthExternalIdentity.Type,
 ) {
-  const identity = snapshotOAuthSync(OAuthExternalIdentity, input);
+  const identity = yield* snapshotOAuth(OAuthExternalIdentity, input);
 
   const fields = [
     "effect-auth/oauth-identity-key/v1",
@@ -69,7 +71,7 @@ export const oauthIdentityKey = Effect.fnUntraced(function* (
   for (const field of fields) {
     const value = encoder.encode(field);
 
-    if (!(decoder.decode(value) === field)) return yield* invalidState();
+    if (decoder.decode(value) !== field) return yield* unavailable();
 
     bytes.push(value);
   }

@@ -17,8 +17,10 @@ import {
 } from "./models/oauth-connected-model";
 import { requiredOAuthSignInConstraints } from "./models/oauth-model";
 import type { NativeSqlTables } from "./native-sql-table";
+import { IdentityImports } from "./oauth/identity-import";
 import { makeNativeOAuthConnectedServices } from "./oauth/native-connected";
 import type { OAuthNativeConnectedMapping } from "./oauth/native-connected-state";
+import { makeNativeOAuthIdentityImports } from "./oauth/native-import";
 import { makeNativeOAuthRevocationServices } from "./oauth/native-revocations";
 import { makeNativeOAuthSignInServices } from "./oauth/native-sign-in";
 import type { OAuthNativeReadMapping } from "./oauth/native-state";
@@ -110,12 +112,15 @@ export const makeManagedOAuth = Effect.fnUntraced(function* (
       status: "active",
       isActiveStatus: (value: unknown) => value === true,
       activeCondition: sql`${credentials.column("active")} = ${credentials.value("active", true)}`,
+      encodeInsert: () => ({ active: true }),
+      removal: "delete" as const,
     },
     authority: {
       ...authority,
       status: "active",
       isActiveStatus: (value: unknown) => value === true,
       activeCondition: sql`${factors.column("active")} = ${factors.value("active", true)}`,
+      encodeInsert: () => ({ active: true }),
     },
     clock,
   };
@@ -207,17 +212,24 @@ export const makeManagedOAuth = Effect.fnUntraced(function* (
   let context: Context.Context<never> = Context.empty();
 
   if (features.some((feature) => feature.signIn)) {
-    const mapping: OAuthNativeReadMapping = {
+    const mapping = {
       ...shared,
       flow: { ...(yield* mapped("oauthSignInFlows")), encodeInsert: () => ({}) },
       constraints: requiredOAuthSignInConstraints,
-    };
+    } satisfies OAuthNativeReadMapping;
 
     const services = yield* makeNativeOAuthSignInServices(tables, mapping, batch).pipe(
       Effect.mapError(() => configurationError("Cannot configure OAuth sign-in persistence")),
     );
 
     context = Context.add(context, M.OAuthSignInPersistence, services.oauthSignInPersistence);
+    context = Context.add(
+      context,
+      IdentityImports,
+      yield* makeNativeOAuthIdentityImports(tables, mapping).pipe(
+        Effect.mapError(() => configurationError("Cannot configure OAuth identity imports")),
+      ),
+    );
   }
   if (policies.size > 0) {
     const job = { ...(yield* mapped("oauthConnectedRevocations")), encodeInsert: () => ({}) };

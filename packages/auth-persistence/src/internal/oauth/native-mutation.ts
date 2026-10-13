@@ -77,7 +77,10 @@ export const makeOAuthNativeMutation = Effect.fnUntraced(function* (
           }),
         });
 
-  const subjectCondition = (nativeId: unknown, revision: OAuthAccountRevision) => {
+  const subjectCondition = (
+    nativeId: unknown,
+    revision: Pick<OAuthAccountRevision, "securityRevision">,
+  ) => {
     const subject = authority.subject;
 
     return sql.and([

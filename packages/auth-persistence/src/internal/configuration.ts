@@ -33,6 +33,7 @@ import { type Context, type Crypto, type Effect, type Layer, Schema } from "effe
 import type { SqlClient } from "effect/sql";
 
 import type { PersistenceMappingError } from "./mapping-error";
+import type { IdentityImports } from "./oauth/identity-import";
 import type { StorageRole } from "./storage-tables";
 
 export class PersistenceConfigurationError extends Schema.TaggedError<PersistenceConfigurationError>()(
@@ -179,7 +180,7 @@ export type Ports<C extends ClaimsCodec, Id extends string, A extends Definition
   | (Enabled<A, "email"> extends never ? never : EmailAddressPersistence)
   | (UsesProofs<A> extends never ? never : ProofPersistence)
   | (Enabled<A, "phone"> extends never ? never : PhoneSignInTargets)
-  | (OAuthSignIn<A> extends never ? never : OAuthSignInPersistence)
+  | (OAuthSignIn<A> extends never ? never : OAuthSignInPersistence | IdentityImports)
   | (OAuthConnected<A> extends never
       ? never
       : OAuthConnectedPersistence | OAuthConnectedRevocations);
