@@ -17,8 +17,9 @@ import { Base64Url } from "effect/encoding";
 import { Cookies, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { HttpApiBuilder, HttpApiSecurity } from "effect/http-api";
 
-import { reportAuthFailure } from "../../internal/diagnostics";
+import { reportAuthFailure, ReportedOperationDefect } from "../../internal/diagnostics";
 import { origin as Origin } from "../../internal/origin";
+import { timeoutWithCause } from "../../internal/timeout";
 import type * as OAuthScope from "../../OAuthScope";
 import { SubjectId } from "../../Schema";
 import { makeSessionSigningCodec, type SessionSigningKeyring } from "../../sessions/crypto";
@@ -190,7 +191,13 @@ const form = Effect.fnUntraced(function* (request: HttpServerRequest.HttpServerR
               bytes: body.bytes + chunk.length,
             }),
     ),
-    Effect.mapError(() => reject()),
+    Effect.catchCause((cause) =>
+      Effect.failCause(
+        Cause.map(cause, (error) =>
+          error._tag === "OAuthServerRejected" ? error : Unavailable.make({}),
+        ),
+      ),
+    ),
   );
 
   return yield* parameters(new URLSearchParams(body.text + decoder.decode()));
@@ -423,12 +430,16 @@ const makeServer = <
         type Envelope = typeof Envelope.Type;
 
         const codec = yield* makeSessionSigningCodec(Envelope, options.keys, 2048).pipe(
-          Effect.mapError(() => ConfigurationError.make({})),
+          Effect.catchCause((cause) =>
+            Effect.failCause(Cause.map(cause, () => ConfigurationError.make({}))),
+          ),
         );
 
         const random = crypto.randomBytes(32).pipe(
           Effect.map(Base64Url.encode),
-          Effect.mapError(() => Unavailable.make({})),
+          Effect.catchCause((cause) =>
+            Effect.failCause(Cause.map(cause, () => Unavailable.make({}))),
+          ),
         );
 
         const encode = (
@@ -448,15 +459,24 @@ const makeServer = <
               version,
               expiresAtMillis,
             })
-            .pipe(Effect.mapError(() => Unavailable.make({})));
+            .pipe(
+              Effect.catchCause((cause) =>
+                Effect.failCause(Cause.map(cause, () => Unavailable.make({}))),
+              ),
+            );
 
         const decode = Effect.fnUntraced(function* (token: Redacted.Redacted<string>) {
-          const value = yield* codec.decode(token).pipe(
-            Effect.catchTags({
-              SessionInvalid: () => Effect.fail(InvalidToken.make({})),
-              SessionUnavailable: () => Effect.fail(Unavailable.make({})),
-            }),
-          );
+          const value = yield* codec
+            .decode(token)
+            .pipe(
+              Effect.catchCause((cause) =>
+                Effect.failCause(
+                  Cause.map(cause, (error) =>
+                    error._tag === "SessionInvalid" ? InvalidToken.make({}) : Unavailable.make({}),
+                  ),
+                ),
+              ),
+            );
 
           if (value.expiresAtMillis <= (yield* now)) return yield* InvalidToken.make({});
 
@@ -483,7 +503,13 @@ const makeServer = <
 
         const validGrant = Effect.fnUntraced(function* (record: Record) {
           const client = yield* clientFor(record.authorization.clientId).pipe(
-            Effect.catchTag("OAuthServerRejected", () => InvalidToken.make({})),
+            Effect.catchCause((cause) =>
+              Effect.failCause(
+                Cause.map(cause, (error) =>
+                  error._tag === "OAuthServerRejected" ? InvalidToken.make({}) : error,
+                ),
+              ),
+            ),
           );
 
           return (
@@ -666,12 +692,16 @@ const makeServer = <
                   headers: { ...noStore, "www-authenticate": 'Bearer realm="userinfo"' },
                 });
 
-              const access = yield* verify(Redacted.make(authorization.slice(7))).pipe(
-                Effect.result,
-              );
+              const access = yield* verify(Redacted.make(authorization.slice(7))).pipe(Effect.exit);
 
-              if (Result.isFailure(access)) {
-                if (access.failure._tag === "OAuthServerUnavailable") return yield* access.failure;
+              if (access._tag === "Failure") {
+                if (
+                  !access.cause.reasons.every(
+                    (reason) =>
+                      Cause.isFailReason(reason) && reason.error._tag === "OAuthServerInvalidToken",
+                  )
+                )
+                  return yield* Effect.failCause(access.cause);
 
                 return new Response(null, {
                   status: 401,
@@ -679,15 +709,17 @@ const makeServer = <
                 });
               }
 
-              const profile = yield* identity.openId.profile(access.success).pipe(
+              const profile = yield* identity.openId.profile(access.value).pipe(
                 Effect.flatMap(Schema.decodeEffect(OpenIdProfile)),
-                Effect.mapError(() => Unavailable.make({})),
+                Effect.catchCause((cause) =>
+                  Effect.failCause(Cause.map(cause, () => Unavailable.make({}))),
+                ),
               );
 
               return json(
                 UserInfo.make({
-                  sub: access.success.subjectId,
-                  ...scopedProfile(profile, access.success.scopes),
+                  sub: access.value.subjectId,
+                  ...scopedProfile(profile, access.value.scopes),
                 }),
               );
             }
@@ -1070,7 +1102,9 @@ const makeServer = <
                   .digest("SHA-256", new TextEncoder().encode(query.code_verifier))
                   .pipe(
                     Effect.map(Base64Url.encode),
-                    Effect.mapError(() => Unavailable.make({})),
+                    Effect.catchCause((cause) =>
+                      Effect.failCause(Cause.map(cause, () => Unavailable.make({}))),
+                    ),
                   );
 
                 if (
@@ -1115,7 +1149,9 @@ const makeServer = <
                         })
                         .pipe(
                           Effect.flatMap(Schema.decodeEffect(authorizationSource.Result)),
-                          Effect.mapError(() => Unavailable.make({})),
+                          Effect.catchCause((cause) =>
+                            Effect.failCause(Cause.map(cause, () => Unavailable.make({}))),
+                          ),
                         );
 
                       if (
@@ -1249,8 +1285,22 @@ const makeServer = <
 
               // Sign locally before the only commit; deliver credentials only after confirmation.
               yield* commit(token.grantId, record, next).pipe(
-                Effect.catchTag("OAuthServerRejected", (error) =>
-                  store.revoke(namespace, token.grantId).pipe(Effect.andThen(Effect.fail(error))),
+                Effect.catchCause((cause) =>
+                  Effect.gen(function* () {
+                    if (
+                      !cause.reasons.every(
+                        (reason) =>
+                          Cause.isFailReason(reason) && reason.error._tag === "OAuthServerRejected",
+                      )
+                    )
+                      return yield* Effect.failCause(cause);
+
+                    const revoked = yield* Effect.exit(store.revoke(namespace, token.grantId));
+
+                    return yield* Effect.failCause(
+                      revoked._tag === "Failure" ? Cause.combine(cause, revoked.cause) : cause,
+                    );
+                  }),
                 ),
               );
 
@@ -1280,10 +1330,22 @@ const makeServer = <
               }).pipe(Effect.mapError(() => reject()));
 
               const token = yield* decode(Redacted.make(query.token)).pipe(
-                Effect.catchTag("OAuthServerInvalidToken", () =>
-                  decodeAccess(Redacted.make(query.token)),
+                Effect.catchCause((cause) =>
+                  cause.reasons.every(
+                    (reason) =>
+                      Cause.isFailReason(reason) && reason.error._tag === "OAuthServerInvalidToken",
+                  )
+                    ? decodeAccess(Redacted.make(query.token))
+                    : Effect.failCause(cause),
                 ),
-                Effect.catchTag("OAuthServerInvalidToken", () => Effect.succeed(undefined)),
+                Effect.catchCause((cause) =>
+                  cause.reasons.every(
+                    (reason) =>
+                      Cause.isFailReason(reason) && reason.error._tag === "OAuthServerInvalidToken",
+                  )
+                    ? Effect.void
+                    : Effect.failCause(cause),
+                ),
               );
 
               if (token && (token.kind === "access" || token.kind === "refresh")) {
@@ -1300,30 +1362,50 @@ const makeServer = <
           },
           (effect, web) =>
             effect.pipe(
-              Effect.timeout("30 seconds"),
-              Effect.catchTags({
-                OAuthServerRejected: ({ error }) => {
-                  const response = json(
-                    { error },
-                    error === "invalid_client" && web.headers.has("authorization") ? 401 : 400,
+              timeoutWithCause("30 seconds"),
+              Effect.catchCause((cause) =>
+                Effect.gen(function* () {
+                  const unexpected = Cause.fromReasons(
+                    cause.reasons.filter(
+                      (reason) =>
+                        Cause.isDieReason(reason) ||
+                        (Cause.isFailReason(reason) &&
+                          reason.error._tag !== "OAuthServerRejected" &&
+                          reason.error._tag !== "OAuthServerInvalidToken"),
+                    ),
                   );
 
-                  if (response.status === 401)
-                    response.headers.set("www-authenticate", 'Basic realm="oauth"');
+                  yield* reportAuthFailure("http", unexpected);
+                  if (Cause.hasInterrupts(cause))
+                    return yield* Effect.failCause(
+                      Cause.fromReasons<never>([
+                        ...cause.reasons.filter(Cause.isInterruptReason),
+                        ...(unexpected.reasons.length === 0
+                          ? []
+                          : [Cause.makeDieReason(ReportedOperationDefect.make({}))]),
+                      ]),
+                    );
+                  if (unexpected.reasons.length !== 0)
+                    return json({ error: "temporarily_unavailable" }, 503);
 
-                  return Effect.succeed(response);
-                },
-                OAuthServerInvalidToken: () =>
-                  Effect.succeed(json({ error: "invalid_grant" }, 400)),
-                OAuthServerUnavailable: () =>
-                  Effect.succeed(json({ error: "temporarily_unavailable" }, 503)),
-              }),
-              Effect.catchCause((cause) =>
-                Cause.hasInterrupts(cause)
-                  ? Effect.interrupt
-                  : reportAuthFailure("http", cause).pipe(
-                      Effect.as(json({ error: "temporarily_unavailable" }, 503)),
-                    ),
+                  for (const reason of cause.reasons) {
+                    if (!Cause.isFailReason(reason) || reason.error._tag !== "OAuthServerRejected")
+                      continue;
+                    const { error } = reason.error;
+
+                    const response = json(
+                      { error },
+                      error === "invalid_client" && web.headers.has("authorization") ? 401 : 400,
+                    );
+
+                    if (response.status === 401)
+                      response.headers.set("www-authenticate", 'Basic realm="oauth"');
+
+                    return response;
+                  }
+
+                  return json({ error: "invalid_grant" }, 400);
+                }),
               ),
             ),
         );
@@ -1390,10 +1472,38 @@ const makeServer = <
                 headers: { ...noStore, "www-authenticate": challenge() },
               });
 
-            const access = yield* server.verify(credential).pipe(
-              Effect.timeout("30 seconds"),
-              Effect.catchTag("TimeoutError", () => Effect.fail(Unavailable.make({}))),
-            );
+            const verified = yield* server
+              .verify(credential)
+              .pipe(timeoutWithCause("30 seconds"), Effect.exit);
+
+            if (verified._tag === "Failure") {
+              const unexpected = Cause.fromReasons(
+                verified.cause.reasons.filter(
+                  (reason) =>
+                    Cause.isDieReason(reason) ||
+                    (Cause.isFailReason(reason) && reason.error._tag !== "OAuthServerInvalidToken"),
+                ),
+              );
+
+              yield* reportAuthFailure("http", unexpected);
+              if (Cause.hasInterrupts(verified.cause))
+                return yield* Effect.failCause(
+                  Cause.fromReasons<never>([
+                    ...verified.cause.reasons.filter(Cause.isInterruptReason),
+                    ...(unexpected.reasons.length === 0
+                      ? []
+                      : [Cause.makeDieReason(ReportedOperationDefect.make({}))]),
+                  ]),
+                );
+
+              return unexpected.reasons.length === 0
+                ? HttpServerResponse.empty({
+                    status: 401,
+                    headers: { ...noStore, "www-authenticate": challenge("invalid_token") },
+                  })
+                : HttpServerResponse.empty({ status: 503, headers: noStore });
+            }
+            const access = verified.value;
 
             if (!requiredScopes.every((scope) => access.scopes.includes(scope)))
               return HttpServerResponse.empty({
@@ -1405,19 +1515,7 @@ const makeServer = <
               Effect.provideService(CurrentAccess, access),
               Effect.provideService(ScopedCurrentAccess, access),
             );
-          }).pipe(
-            Effect.catchTag("OAuthServerInvalidToken", () =>
-              Effect.succeed(
-                HttpServerResponse.empty({
-                  status: 401,
-                  headers: { ...noStore, "www-authenticate": challenge("invalid_token") },
-                }),
-              ),
-            ),
-            Effect.catchTag("OAuthServerUnavailable", () =>
-              Effect.succeed(HttpServerResponse.empty({ status: 503, headers: noStore })),
-            ),
-          );
+          });
       }),
     );
 

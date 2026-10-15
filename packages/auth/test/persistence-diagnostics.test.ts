@@ -1,6 +1,6 @@
 import { it } from "@effect/vitest";
 import { reportPersistenceFailure } from "@yielded/auth/Persistence";
-import { Cause, Context, Effect, Exit, Logger } from "effect";
+import { Cause, Console, Context, Effect, Exit, Logger } from "effect";
 import { AuthenticationError, ConnectionError, SqlError } from "effect/sql/SqlError";
 import { expect } from "vite-plus/test";
 
@@ -30,6 +30,15 @@ it.effect("retains SQL diagnostics without exposing private values or changing a
       },
     };
 
+    const hostilePrototype = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          throw new Error("private-prototype");
+        },
+      },
+    );
+
     const annotation = Context.Service<string>("private-annotation");
 
     const original = Cause.fromReasons<typeof expected | SqlError>([
@@ -37,6 +46,7 @@ it.effect("retains SQL diagnostics without exposing private values or changing a
       Cause.makeFailReason(connection).annotate(Context.make(annotation, "private-value")),
       Cause.makeDieReason(authentication),
       Cause.makeDieReason(hostile),
+      Cause.makeDieReason(hostilePrototype),
       Cause.makeInterruptReason(123),
     ]);
 
@@ -61,6 +71,7 @@ it.effect("retains SQL diagnostics without exposing private values or changing a
       { _tag: "Fail", error: { reason: "ConnectionError", code: "ECONNRESET" } },
       { _tag: "Die", defect: { reason: "AuthenticationError" } },
       { _tag: "Die", defect: { message: "Auth auth-persistence failed" } },
+      { _tag: "Die", defect: { message: "Auth auth-persistence failed" } },
     ]);
     expect(JSON.stringify(reported)).not.toContain("private-");
     expect(formatted.join(" ")).not.toContain("private-");
@@ -75,8 +86,37 @@ it.effect("retains SQL diagnostics without exposing private values or changing a
       }),
     ]);
 
-    const afterLoggerFailure = yield* Effect.exit(run(original).pipe(Effect.provide(brokenLogger)));
+    const fallback: Array<ReadonlyArray<unknown>> = [];
+    const currentConsole = yield* Console.Console;
+
+    const afterLoggerFailure = yield* Effect.exit(
+      run(original).pipe(
+        Effect.provide(brokenLogger),
+        Effect.provideService(Console.Console, {
+          ...currentConsole,
+          error: (...args) => {
+            fallback.push(args);
+          },
+        }),
+      ),
+    );
 
     expect(Exit.isFailure(afterLoggerFailure) && afterLoggerFailure.cause).toEqual(original);
+    expect(fallback).toHaveLength(1);
+    expect(JSON.stringify(fallback)).not.toContain("private-");
+
+    const bothBroken = yield* Effect.exit(
+      run(original).pipe(
+        Effect.provide(brokenLogger),
+        Effect.provideService(Console.Console, {
+          ...currentConsole,
+          error: () => {
+            throw new Error("private-console");
+          },
+        }),
+      ),
+    );
+
+    expect(Exit.isFailure(bothBroken) && bothBroken.cause).toEqual(original);
   }),
 );

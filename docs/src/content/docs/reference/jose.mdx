@@ -190,7 +190,9 @@ configured to reject them, and responses from a different URL are rejected.
 | `maxWaiters`       | 64 concurrent lookups | 1–1,024      |
 
 Unknown keys refresh at most once per cooldown. Concurrent lookups share a
-refresh; overflow fails immediately. Failed refreshes also consume the cooldown,
+refresh; overflow fails immediately. Cancelling the last waiting lookup aborts
+and joins its refresh; new refresh lookups receive `busy` until cleanup finishes.
+Cancellation does not retry the request. Failed refreshes also consume the cooldown,
 and expired keys are never served after a refresh failure. Scope closure aborts
 requests, releases waiting callers and discards the cache. Cache lifetime is local
 policy; server cache headers do not override it. There is no background polling.

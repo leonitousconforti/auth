@@ -1,6 +1,6 @@
 import { Signature } from "@yielded/crypto/Signature";
 import { Jwk, Jwks, Jwt } from "@yielded/jose";
-import { Clock, Effect, Redacted, Schema } from "effect";
+import { Cause, Clock, Effect, Redacted, Schema } from "effect";
 
 import { origin } from "../../internal/origin";
 import type * as OAuthScope from "../../OAuthScope";
@@ -80,8 +80,12 @@ const makeVerifier = Effect.fnUntraced(function* <Scope extends OAuthScope.OAuth
     }).pipe(
       Effect.provideService(Jwks.Jwks, keys),
       Effect.provideService(Signature, signature),
-      Effect.mapError((error) =>
-        error._tag === "CryptoUnavailable" ? Unavailable.make({}) : InvalidToken.make({}),
+      Effect.catchCause((cause) =>
+        Effect.failCause(
+          Cause.map(cause, (error) =>
+            error._tag === "CryptoUnavailable" ? Unavailable.make({}) : InvalidToken.make({}),
+          ),
+        ),
       ),
     );
 
