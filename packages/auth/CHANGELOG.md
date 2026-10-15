@@ -1,5 +1,15 @@
 # @yielded/auth
 
+## 0.1.0-beta.40
+
+### Patch Changes
+
+- [#241](https://github.com/yielded-dev/auth/pull/241) [`4ea887e`](https://github.com/yielded-dev/auth/commit/4ea887e2f77cd6e13defe1d445b892b45216b3ef) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Retain content-safe SQL failure categories and recognized driver codes in auth diagnostics without exposing provider messages or changing the original failure cause.
+- Updated dependencies []:
+  - @yielded/crypto@0.1.0-beta.40
+  - @yielded/jose@0.1.0-beta.40
+  - @yielded/oauth@0.1.0-beta.40
+
 ## 0.1.0-beta.39
 
 ### Patch Changes
