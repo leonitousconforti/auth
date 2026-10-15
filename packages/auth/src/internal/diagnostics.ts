@@ -1,4 +1,5 @@
-import { Cause, Console, Context, Effect, References, Schema, Tracer } from "effect";
+import { Cause, Console, Context, Effect, Predicate, References, Schema, Tracer } from "effect";
+import * as SqlError from "effect/sql/SqlError";
 
 export const AuthDiagnostic = Schema.Struct({
   stage: Schema.Literals([
@@ -87,10 +88,58 @@ type FailureStage =
   | "passkey-react-native"
   | "passkey-protocol";
 
-/** Fixed diagnostic text only; never includes the reported cause or caller data. */
+const SqlReason = Schema.Union(SqlError.SqlErrorReason.members.map(({ fields }) => fields._tag));
+
+const SqlCode = Schema.Literals([
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "ECONNABORTED",
+  "EPIPE",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "08001",
+  "08003",
+  "08006",
+  "08P01",
+  "28P01",
+  "23505",
+  "42501",
+  "42P01",
+  "42703",
+  "40001",
+  "40P01",
+  "55P03",
+  "53300",
+  "57014",
+]);
+
+const isSqlReason = Schema.is(SqlReason);
+const isSqlCode = Schema.is(SqlCode);
+
+/** Fixed text and finite classifications only; never retains the reported value. */
 class AuthReportedFailure extends Schema.TaggedError<AuthReportedFailure>()("AuthReportedFailure", {
   message: Schema.String,
+  reason: Schema.optionalKey(SqlReason),
+  code: Schema.optionalKey(SqlCode),
 }) {}
+
+const sqlFailureFields = (error: unknown) => {
+  try {
+    if (!SqlError.isSqlError(error)) return {};
+    const { _tag: reason, cause } = error.reason;
+
+    if (!isSqlReason(reason)) return {};
+    const code = Predicate.hasProperty(cause, "code") ? cause.code : undefined;
+
+    return { reason, ...(isSqlCode(code) ? { code } : {}) };
+  } catch {
+    // Reporting must not invoke untrusted error accessors at authentication's expense.
+    return {};
+  }
+};
 
 /** Keep Effect's content-free frames, never failure values or arbitrary annotations. */
 export const reportAuthFailure = Effect.fn("AuthDiagnostics.reportFailure")(function* <E>(
@@ -101,7 +150,16 @@ export const reportAuthFailure = Effect.fn("AuthDiagnostics.reportFailure")(func
 
   const diagnostic = Cause.fromReasons(
     cause.reasons.map((reason) => {
-      const error = AuthReportedFailure.make({ message: `Auth ${stage} failed` });
+      const error = AuthReportedFailure.make({
+        message: `Auth ${stage} failed`,
+        ...sqlFailureFields(
+          Cause.isFailReason(reason)
+            ? reason.error
+            : Cause.isDieReason(reason)
+              ? reason.defect
+              : undefined,
+        ),
+      });
 
       const safe = Cause.isDieReason(reason)
         ? Cause.makeDieReason(error)
