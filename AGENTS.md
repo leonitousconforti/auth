@@ -156,6 +156,10 @@ framework package only for a new concern agreed with the repository owner.
   must not be imported by `@yielded/auth`.
 - Before handoff, run `vp run ready`.
 
+Keep shared Dev Kit skills identical to their published source. Put
+repository-specific commands, gates, and constraints in this file or linked
+guidance. Keep contributor skills committed so fresh checkouts are self-contained.
+
 ## Change discipline
 
 - Add or update Effect Schema definitions before implementing new wire or persisted values.
@@ -215,10 +219,16 @@ API does not imply a new test file.
 ## Repository boundaries
 
 `main` requires a pull request and the `ready` check. Use
-[open-pull-request](.agents/skills/open-pull-request/SKILL.md) for concise PR descriptions.
+[pull-requests](.agents/skills/pull-requests/SKILL.md) for concise PR descriptions.
 Include diagrams only for meaningful architecture changes and code examples only
 when they clarify the change. When green and approved for landing, squash and delete the branch without
 bypassing checks. Bring main into a branch only to resolve a real conflict.
+
+This is a public library. Keep PR descriptions self-contained and follow any
+required PR template. Omit private tracker links and issue IDs, including Linear
+references; link to public code or guides when useful. Keep company/customer
+names, account identifiers, and private workspace links out of PR text and linked
+evidence unless the user explicitly requests them.
 
 Keep package READMEs to purpose, ownership, and non-obvious constraints. Code, schemas,
 configuration, and command help own implementation details; investigations belong in issues or
