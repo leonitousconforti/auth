@@ -8,9 +8,16 @@ export {
 
 export type { IdentitySigningKeys } from "./oauth/server/openid";
 export { ConsentRenderer, OpenIdConsent, type Consent } from "./oauth/server/consent";
+export { OpenIdAuthorizationResult } from "./oauth/server/authorization";
+
+export {
+  makeAccessTokenVerifier,
+  type AccessTokenVerifierOptions,
+} from "./oauth/server/access-token";
 
 export {
   Access,
+  AccessClaims,
   Authentication,
   OpenIdProfile,
   AssertionReceipt,

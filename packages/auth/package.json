@@ -67,6 +67,7 @@
     "./Roblox": "./src/Roblox.ts",
     "./Operations": "./src/Operations.ts",
     "./Schema": "./src/Schema.ts",
+    "./OAuthScope": "./src/OAuthScope.ts",
     "./WebCrypto": "./src/WebCrypto.ts",
     "./WorkerdServices": "./src/WorkerdServices.ts",
     "./WorkerdPasswordlessServices": "./src/WorkerdPasswordlessServices.ts",

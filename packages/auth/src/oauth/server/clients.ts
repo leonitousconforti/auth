@@ -13,6 +13,7 @@ import {
   Persistence,
   RedirectUri,
   Text,
+  maximumClientAssertionLength,
   Unavailable,
   Url,
   reject,
@@ -427,7 +428,7 @@ export const makeClients = Effect.fnUntraced(function* (
       if (secret !== undefined || header !== null) return yield* reject();
       if (
         assertion === undefined ||
-        assertion.length > 8192 ||
+        assertion.length > maximumClientAssertionLength ||
         body.client_assertion_type !== "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
       )
         return yield* reject("invalid_client");
