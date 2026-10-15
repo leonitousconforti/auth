@@ -30,9 +30,11 @@ export const OAuthRegistrationCredential = Schema.RedactedFromValue(
 );
 
 export const OAuthRegistrationPolicy = Schema.Struct({
+  /** Registration intent lifetime, from one second to 30 minutes. */
   lifetimeMillis: Schema.Int.check(Schema.isBetween({ minimum: 1000, maximum: 1800000 })),
+  /** Verification age, including original OIDC authentication time; one second to 24 hours. */
   maximumVerificationAgeMillis: Schema.Int.check(
-    Schema.isBetween({ minimum: 1000, maximum: 1800000 }),
+    Schema.isBetween({ minimum: 1000, maximum: 86400000 }),
   ),
   retentionMillis: Schema.Int.check(Schema.isBetween({ minimum: 120000, maximum: 2592000000 })),
 });

@@ -204,6 +204,13 @@ its registration payload. `RegistrationAuthority` owns admission and provisionin
 By default, registration returns `RegistrationAccepted`; start a fresh sign-in to
 establish a session.
 
+`registrationPolicy.maximumVerificationAgeMillis` accepts one second to 24 hours
+and bounds the age of provider verification, including the original OpenID
+`auth_time`. It is independent of `lifetimeMillis`, the registration intent's
+one-second to 30-minute lifetime. To reuse OpenID sessions, set this limit and your
+account's `AuthenticationRequirement.maximumAgeMillis` to the accepted authentication
+age. Omit the provider's `maxAgeSeconds` unless you require recent authentication.
+
 To continue authentication after registration, enable `authenticate` on both the
 strategy and its shared action:
 
