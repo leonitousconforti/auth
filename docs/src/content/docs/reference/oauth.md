@@ -218,12 +218,30 @@ authenticated revocation form exceed their size limits. ID tokens retain the cli
 claims only. When `resource` differs from UserInfo, discovery omits UserInfo and
 the UserInfo route rejects those access tokens.
 
-For a resource server, construct `OAuthServer.makeAccessTokenVerifier({ issuer,
-resource, publicKeys })` with trusted keys from the issuer's JWKS and provide
+For a resource server, construct `OAuthServer.makeAccessTokenVerifierWithKeySet({
+issuer, resource })` and supply `Jwks.Jwks` from `@yielded/jose` plus
 `@yielded/crypto/Signature`. Its `verify(Redacted.make(token))` Effect checks RS256,
 the `at+jwt` type, issuer, audience, expiry, and scope encoding, then returns
 `OAuthServer.Access` with the subject, client, grant, resource, scopes, and optional
-application claims. Refresh the trusted keys when the issuer rotates keys.
+application claims. It captures the two services while using the caller's clock.
+
+For remote keys, build `Jwks.layerRemote({ url: "https://issuer.example/keys" })`
+once in the application's runtime and provide an Effect HttpClient. The configured
+URL is trusted application policy; tokens cannot select it. JOSE owns the
+[bounded cache and refresh](./jose.mdx#local-and-remote-public-key-sets).
+Keep its Scope open while using the verifier. Remote-key failures return
+`OAuthServer.Unavailable`; invalid credentials return `OAuthServer.InvalidToken`.
+
+On Workers, register the bounded verification's `runPromiseExit` promise with
+`ctx.waitUntil`, then await it natively in each request before protected work.
+Do not abort that retained verification on client disconnect: other requests may
+still need its refresh. Keep the refresh deadline within the platform's lifetime
+extension; the default is five seconds. The
+[minimal Worker fixture](https://github.com/yielded-dev/auth/blob/main/packages/auth/test/fixtures/workers-access-token.ts)
+shows the composition. Cookies, application claims and permissions stay with the host.
+
+For preloaded keys, `OAuthServer.makeAccessTokenVerifier({ issuer, resource,
+publicKeys })` needs only `Signature`. Reacquire it when the trusted keys rotate.
 
 Pass `scopes: [ReadDocuments, OAuthScope.make("openid")]` to restrict verified access
 to those branded literals, including every accepted standard scope. Without this

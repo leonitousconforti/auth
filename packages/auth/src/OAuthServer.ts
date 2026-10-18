@@ -12,7 +12,9 @@ export { OpenIdAuthorizationResult } from "./oauth/server/authorization";
 
 export {
   makeAccessTokenVerifier,
+  makeAccessTokenVerifierWithKeySet,
   type AccessTokenVerifierOptions,
+  type AccessTokenVerifierWithKeySetOptions,
 } from "./oauth/server/access-token";
 
 export {

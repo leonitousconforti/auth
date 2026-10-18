@@ -180,6 +180,10 @@ be application-configured HTTPS without credentials or a fragment. The supplied
 client owns egress policy and must not follow redirects; the fetch client is
 configured to reject them, and responses from a different URL are rejected.
 
+On Workers, retain bounded verification with `ctx.waitUntil` at the request
+boundary. Native shared completion preserves waiting request contexts; it does
+not keep the initiating request's I/O alive after a client disconnect.
+
 | Remote option      | Default               | Range        |
 | ------------------ | --------------------- | ------------ |
 | `cacheTimeMs`      | 600,000               | 1–86,400,000 |
