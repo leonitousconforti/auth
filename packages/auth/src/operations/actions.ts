@@ -1,6 +1,7 @@
-import type { Effect } from "effect";
-import { Schema, SchemaAST } from "effect";
-import type { Rpc } from "effect/rpc";
+import type * as Effect from "effect/Effect";
+import type * as Rpc from "effect/rpc/Rpc";
+import * as Schema from "effect/Schema";
+import * as SchemaAST from "effect/SchemaAST";
 
 import { HookDenied } from "../hooks/models";
 import { makeSessionContract } from "../sessions/contract";

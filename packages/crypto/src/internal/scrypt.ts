@@ -1,7 +1,9 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Native scrypt is not exposed by Effect Crypto or WebCrypto.
 import * as crypto from "node:crypto";
 
-import { Effect, Layer, Result } from "effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Result from "effect/Result";
 
 import { CryptoUnavailable, UnsupportedAlgorithm } from "../Errors";
 import { ScryptBackend, type ScryptParameters } from "./scrypt-backend";

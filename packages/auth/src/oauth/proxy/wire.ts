@@ -1,5 +1,9 @@
-import { Cause, Crypto, Effect, Schema, Stream } from "effect";
-import { Base64Url } from "effect/encoding";
+import * as Cause from "effect/Cause";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
+import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 
 import { Rejected, Unavailable } from "./models";
 

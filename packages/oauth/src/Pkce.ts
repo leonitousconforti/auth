@@ -1,5 +1,8 @@
-import { Cause, Crypto, Effect, Redacted } from "effect";
-import { Base64Url } from "effect/encoding";
+import * as Cause from "effect/Cause";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
+import * as Redacted from "effect/Redacted";
 
 import { Unavailable } from "./Errors";
 import * as V from "./internal/validation";

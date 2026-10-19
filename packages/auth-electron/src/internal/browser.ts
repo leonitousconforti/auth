@@ -1,6 +1,9 @@
 import * as BrowserLogin from "@yielded/auth/BrowserLogin";
 import { markAuthFailureReported, reportAuthFailure } from "@yielded/auth/Persistence";
-import { Cause, Effect, Layer, Schema } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import { app, shell, type Event } from "electron";
 
 const unavailable = () => BrowserLogin.PlatformError.make({ reason: "unavailable" });

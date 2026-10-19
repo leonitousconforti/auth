@@ -1,7 +1,10 @@
 import type { Hmac } from "@yielded/crypto/Hmac";
 import type { Signature } from "@yielded/crypto/Signature";
 import { Jwk, Jwt } from "@yielded/jose";
-import { Cause, Effect, Redacted, Schema } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 
 import { AccessTokenClaims } from "./access-token";
 import type { Authentication } from "./models";

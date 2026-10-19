@@ -2,8 +2,10 @@ import { it } from "@effect/vitest";
 import { Aead } from "@yielded/crypto/Aead";
 import { Hmac } from "@yielded/crypto/Hmac";
 import { Kdf } from "@yielded/crypto/Kdf";
-import { Effect, Redacted, Schema } from "effect";
-import { Hex } from "effect/encoding";
+import * as Effect from "effect/Effect";
+import * as Hex from "effect/encoding/Hex";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 import { describe, expect } from "vite-plus/test";
 
 import { backends } from "./backends";

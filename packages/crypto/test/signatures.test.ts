@@ -2,8 +2,10 @@ import { generateKeyPairSync, verify } from "node:crypto";
 
 import { it } from "@effect/vitest";
 import { Signature } from "@yielded/crypto/Signature";
-import { Effect, Redacted, Schema } from "effect";
-import { Hex } from "effect/encoding";
+import * as Effect from "effect/Effect";
+import * as Hex from "effect/encoding/Hex";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 import { describe, expect } from "vite-plus/test";
 
 import { backends, utf8 } from "./backends";

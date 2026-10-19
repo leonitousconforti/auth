@@ -1,19 +1,17 @@
-import {
-  Array as EffectArray,
-  Cause,
-  Context,
-  Crypto,
-  DateTime,
-  Effect,
-  Layer,
-  Option,
-  Redacted,
-  Result,
-  Schema,
-  type Scope,
-  type Types,
-} from "effect";
-import { Base64Url } from "effect/encoding";
+import * as EffectArray from "effect/Array";
+import * as Cause from "effect/Cause";
+import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
+import type * as Types from "effect/Types";
 
 import { hooksLayer } from "../auth/defaults";
 import { type PreparedCommit, hasCommitScope } from "../hooks/commit";

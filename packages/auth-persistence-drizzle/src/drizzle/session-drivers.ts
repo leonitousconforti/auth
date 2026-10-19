@@ -23,7 +23,9 @@ import {
   type SessionStepUpPersistence,
 } from "@yielded/auth/Sessions";
 import type { Table } from "drizzle-orm";
-import { Cause, Effect, type Context } from "effect";
+import * as Cause from "effect/Cause";
+import type * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
 
 import type { NativeDriverDatabase, NativeDriverTransaction } from "./driver-types";
 import { nativeClock, type MappedClock } from "./native-clock";

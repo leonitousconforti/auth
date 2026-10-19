@@ -1,9 +1,12 @@
 import type { LifecycleHooks } from "@yielded/auth/Hooks";
 import * as M from "@yielded/auth/OAuth";
 import { SessionInvalidationWindow } from "@yielded/auth/Sessions";
-import { Crypto, Effect, Option, Schema } from "effect";
-import type { SqlClient } from "effect/sql/SqlClient";
-import type { Fragment } from "effect/sql/Statement";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import type * as SqlClient from "effect/sql/SqlClient";
+import type * as Statement from "effect/sql/Statement";
 
 import { type OAuthAccountsMapping, OAuthEligibilityFact } from "../models/oauth-model";
 import type { NativeSqlTables } from "../native-sql-table";
@@ -35,7 +38,7 @@ export const makeNativeOAuthAccountsServices = Effect.fnUntraced(function* (
 ): Effect.fn.Return<
   { readonly oauthAccountsPersistence: M.OAuthAccountsPersistence["Service"] },
   M.OAuthUnavailable,
-  SqlClient | LifecycleHooks | Crypto.Crypto
+  SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto
 > {
   const conditionalInsert = yield* makeConditionalSqlInsert();
   const executor = yield* makeSqlCommitExecutor(unavailable);
@@ -409,7 +412,7 @@ export const makeNativeOAuthAccountsServices = Effect.fnUntraced(function* (
 
           const eligible = new Map<
             string,
-            { readonly fact: OAuthEligibilityFact; readonly conditions: Array<Fragment> }
+            { readonly fact: OAuthEligibilityFact; readonly conditions: Array<Statement.Fragment> }
           >();
 
           if (!(mapping.eligibility.length <= 32)) return yield* invalidState();

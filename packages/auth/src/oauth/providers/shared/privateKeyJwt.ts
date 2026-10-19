@@ -3,20 +3,18 @@ import { Signature } from "@yielded/crypto/Signature";
 import { Jwk, Jwt } from "@yielded/jose";
 import type { PrivateKey } from "@yielded/jose/Jwk";
 import { Unavailable } from "@yielded/oauth/Errors";
-import {
-  Cause,
-  Clock,
-  Context,
-  Effect,
-  Exit,
-  Layer,
-  Redacted,
-  Result,
-  Schema,
-  Scope,
-  Semaphore,
-} from "effect";
-import { Base64 } from "effect/encoding";
+import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Base64 from "effect/encoding/Base64";
+import * as Exit from "effect/Exit";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
+import * as Semaphore from "effect/Semaphore";
 
 import { makeScopedOperation } from "../../../internal/scoped-operation";
 import {

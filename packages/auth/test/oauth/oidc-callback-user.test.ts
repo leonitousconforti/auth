@@ -11,9 +11,14 @@ import { layerWebCrypto } from "@yielded/auth/WebCrypto";
 import * as Admission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
 import { Jwk, Jwt } from "@yielded/jose";
-import { Context, DateTime, Effect, Layer, Redacted, Schema } from "effect";
-import { FetchHttpClient } from "effect/http";
-import { TestClock } from "effect/testing";
+import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import { describe, expect } from "vite-plus/test";
 
 import { discoveryProfile } from "../../src/oauth/providers/shared/discovery";

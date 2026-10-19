@@ -1,7 +1,8 @@
 import { CurrentCommitJournal, type LifecycleHooks } from "@yielded/auth/Hooks";
 import * as M from "@yielded/auth/OAuth";
-import { Crypto, Effect } from "effect";
-import type { SqlClient } from "effect/sql/SqlClient";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import type * as SqlClient from "effect/sql/SqlClient";
 
 import type { NativeSqlTables } from "../native-sql-table";
 import { makeSqlCommitExecutor, registerSqlCommitReceipt, SqlBatchCommit } from "../sql-commit";
@@ -33,7 +34,7 @@ export const makeNativeOAuthSignInServices = Effect.fnUntraced(function* (
 ): Effect.fn.Return<
   { readonly oauthSignInPersistence: M.OAuthSignInPersistence["Service"] },
   M.OAuthUnavailable,
-  SqlClient | LifecycleHooks | Crypto.Crypto
+  SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto
 > {
   const executor = yield* makeSqlCommitExecutor(unavailable);
   const crypto = yield* Crypto.Crypto;

@@ -1,5 +1,5 @@
 import type { OperationError as CryptoError } from "@yielded/crypto/Errors";
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 
 /** Fixed diagnostics never include a token, claims, key, URL, or native cause. */
 export class InvalidToken extends Schema.TaggedError<InvalidToken>()("JoseInvalidToken", {

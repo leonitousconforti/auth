@@ -1,6 +1,9 @@
 import { it } from "@effect/vitest";
 import { Email, OAuth } from "@yielded/auth";
-import { Effect, type Context, type Layer, type Unify } from "effect";
+import type * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import type * as Layer from "effect/Layer";
+import type * as Unify from "effect/Unify";
 import { expect } from "vite-plus/test";
 
 // Shared-domain task: exact return authority is independent of cookie/CSRF admission.

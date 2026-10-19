@@ -1,7 +1,11 @@
 import { Aead } from "@yielded/crypto/Aead";
 import { Hmac, type Key } from "@yielded/crypto/Hmac";
-import { Cause, Crypto, Effect, Redacted, Schema } from "effect";
-import { Base64Url } from "effect/encoding";
+import * as Cause from "effect/Cause";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 
 import { equalBytes } from "../internal/equalBytes";
 import { TokenDigest } from "../Schema";

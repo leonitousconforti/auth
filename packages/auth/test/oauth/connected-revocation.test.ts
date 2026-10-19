@@ -1,5 +1,9 @@
 import { it } from "@effect/vitest";
-import { Effect, Exit, Redacted, Schema, Scope } from "effect";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
 import { expect } from "vite-plus/test";
 
 import { OAuthConnectedProfile } from "../../src/oauth/permissionProfile";

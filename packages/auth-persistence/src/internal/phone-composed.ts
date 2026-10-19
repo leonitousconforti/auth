@@ -1,6 +1,6 @@
 import { PhoneSignInTargets, PhoneOtpUnavailable } from "@yielded/auth/PhoneOtp";
-import { Effect } from "effect";
-import { SqlClient } from "effect/sql/SqlClient";
+import * as Effect from "effect/Effect";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import type { MappingInput } from "./configuration";
 import type { AnyPhoneMapping } from "./models/phone-model";
@@ -16,7 +16,7 @@ export const makeComposedPhoneTargets = Effect.fnUntraced(function* (
   proofs: AnyProofPersistenceMapping,
   modules: ReadonlyArray<string>,
 ) {
-  const sql = yield* SqlClient;
+  const sql = yield* SqlClient.SqlClient;
   const s = storage.subjects;
   const subject = tables(s.table);
   const identifier = tables(storage.tables.identifiers!);

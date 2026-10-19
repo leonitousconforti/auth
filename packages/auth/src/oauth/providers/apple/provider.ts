@@ -1,6 +1,10 @@
 import { Jwk } from "@yielded/jose";
-import { Cause, Effect, Redacted, Result, Schema } from "effect";
-import { Base64 } from "effect/encoding";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Base64 from "effect/encoding/Base64";
+import * as Redacted from "effect/Redacted";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 
 import type { ProviderDefinition } from "../../providerDefinition";
 import { type OAuthUnavailable } from "../../signInErrors";

@@ -1,20 +1,19 @@
 import { Signature } from "@yielded/crypto/Signature";
-import {
-  Cause,
-  Clock,
-  Context,
-  Effect,
-  Exit,
-  Fiber,
-  Layer,
-  Option,
-  Schema,
-  Scope,
-  Semaphore,
-  Stream,
-  SynchronizedRef,
-} from "effect";
-import { FetchHttpClient, HttpClient } from "effect/http";
+import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import * as HttpClient from "effect/http/HttpClient";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
+import * as Semaphore from "effect/Semaphore";
+import * as Stream from "effect/Stream";
+import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import { AmbiguousKey, InvalidKey, JwksUnavailable, KeyNotFound, type KeyError } from "./Errors";
 import { json } from "./internal/encoding";

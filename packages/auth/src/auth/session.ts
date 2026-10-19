@@ -1,4 +1,12 @@
-import { Cause, Context, DateTime, Effect, Layer, Option, Redacted, Schema, Scope } from "effect";
+import * as Cause from "effect/Cause";
+import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
 
 import type { HookDenied } from "../hooks/models";
 import {

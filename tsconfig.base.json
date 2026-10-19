@@ -69,6 +69,15 @@
         },
         "overrides": [
           {
+            "include": ["packages/**/*", "../packages/**/*", "../../packages/**/*"],
+            "options": {
+              "namespaceImportPackages": ["effect", "@effect/*"],
+              "diagnosticSeverity": {
+                "preferNamespaceImport": "error"
+              }
+            }
+          },
+          {
             "include": ["**/src/**/*.ts"],
             "options": {
               "diagnosticSeverity": {

@@ -1,7 +1,13 @@
-import { Cause, Clock, Crypto, Duration, Effect, Layer, Schema } from "effect";
-import { Base64Url } from "effect/encoding";
+import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
+import * as Crypto from "effect/Crypto";
+import * as Duration from "effect/Duration";
+import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
+import * as Layer from "effect/Layer";
 import * as KeyValueStore from "effect/persistence/KeyValueStore";
 import * as RateLimiter from "effect/persistence/RateLimiter";
+import * as Schema from "effect/Schema";
 
 import { defaultLayer } from "./defaults";
 

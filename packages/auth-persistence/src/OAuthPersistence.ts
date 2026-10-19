@@ -11,8 +11,13 @@ import {
   OAuthUnavailable,
 } from "@yielded/auth/OAuth";
 import { reportAuthDiagnostic, reportPersistenceFailure } from "@yielded/auth/Persistence";
-import { Cause, Context, type Crypto, Effect, Predicate, Schema } from "effect";
-import { SqlClient } from "effect/sql";
+import * as Cause from "effect/Cause";
+import * as Context from "effect/Context";
+import type * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Predicate from "effect/Predicate";
+import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { PersistenceConfigurationError } from "./internal/configuration";
 import { makeNativeSqlTables } from "./internal/native-sql-table";

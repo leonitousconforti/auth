@@ -2,8 +2,13 @@ import type { LifecycleHooks } from "@yielded/auth/Hooks";
 import { PasswordUnavailable } from "@yielded/auth/Password";
 import { reportPersistenceFailure } from "@yielded/auth/Persistence";
 import { SecurityRevision } from "@yielded/auth/Sessions";
-import { type Context, Crypto, Effect, Schema, Option, Cause } from "effect";
-import { SqlClient } from "effect/sql/SqlClient";
+import * as Cause from "effect/Cause";
+import type * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { PersistenceConfigurationError, type SubjectProvisioning } from "./configuration";
 import { randomId } from "./crypto";
@@ -29,9 +34,9 @@ export const makeRegistrationAuthority = Effect.fnUntraced(function* <R>(
 ): Effect.fn.Return<
   PasswordRegistrationAuthority<unknown>,
   PersistenceConfigurationError,
-  LifecycleHooks | SqlClient | Crypto.Crypto | SqlBatchCommit | R
+  LifecycleHooks | SqlClient.SqlClient | Crypto.Crypto | SqlBatchCommit | R
 > {
-  const sql = (yield* SqlClient).withoutTransforms();
+  const sql = (yield* SqlClient.SqlClient).withoutTransforms();
   const crypto = yield* Crypto.Crypto;
   const executor = yield* makeSqlCommitExecutor(() => PasswordUnavailable.make({}));
   const parent = yield* Effect.serviceOption(CurrentSqlCommit);

@@ -1,5 +1,5 @@
-import { Result } from "effect";
-import { Base64 } from "effect/encoding";
+import * as Base64 from "effect/encoding/Base64";
+import * as Result from "effect/Result";
 
 /** Web platform Layers live in the crypto package; these exports preserve Auth composition. */
 export { layerCryptoWeb, layerWebCrypto } from "@yielded/crypto/WebCrypto";

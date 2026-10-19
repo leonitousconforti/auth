@@ -2,10 +2,21 @@ import { it } from "@effect/vitest";
 import * as AuthAtom from "@yielded/auth/Atom";
 import * as AuthContract from "@yielded/auth/AuthContract";
 import * as Client from "@yielded/auth/Client";
-import { Context, Deferred, Effect, Fiber, Layer, Option, Scheduler, Schema, Tracer } from "effect";
-import { HttpClient, HttpClientResponse } from "effect/http";
-import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
-import { TestClock } from "effect/testing";
+import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import * as Atom from "effect/reactivity/Atom";
+import * as AtomRegistry from "effect/reactivity/AtomRegistry";
+import * as Scheduler from "effect/Scheduler";
+import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
+import * as Tracer from "effect/Tracer";
 import { expect, test } from "vite-plus/test";
 
 // d1f2799 retires the SSR seed between confirming its subject and publishing the

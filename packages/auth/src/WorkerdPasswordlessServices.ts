@@ -3,8 +3,10 @@ import type { Hmac } from "@yielded/crypto/Hmac";
 import * as Portable from "@yielded/crypto/Portable";
 import type { Signature } from "@yielded/crypto/Signature";
 import { layerCryptoWeb } from "@yielded/crypto/WebCrypto";
-import { type Crypto, Layer } from "effect";
-import { FetchHttpClient, type HttpClient } from "effect/http";
+import type * as Crypto from "effect/Crypto";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import type * as HttpClient from "effect/http/HttpClient";
+import * as Layer from "effect/Layer";
 
 /** Runtime services for OAuth, sessions, passkeys and proofs on Cloudflare Workers. */
 export type WorkerdPasswordlessServices =

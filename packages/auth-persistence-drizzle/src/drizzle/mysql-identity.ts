@@ -14,7 +14,9 @@ import type { SubjectId } from "@yielded/auth/Schema";
 import { and, eq } from "drizzle-orm";
 import type { EffectMysql2Database } from "drizzle-orm/effect-mysql2";
 import type { AnyMySqlTable, MySqlColumn } from "drizzle-orm/mysql-core";
-import { Cause, Effect, Schema } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import {
   column,

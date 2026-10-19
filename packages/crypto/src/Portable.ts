@@ -1,4 +1,4 @@
-import { Layer } from "effect";
+import * as Layer from "effect/Layer";
 
 import { argon2 } from "./internal/argon2";
 import { makeCryptoLayer, makeLayer } from "./internal/layer";

@@ -9,8 +9,16 @@ import {
   Proofs,
   Sessions,
 } from "@yielded/auth";
-import { Context, Effect, Layer, Option, Redacted, Schema } from "effect";
-import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as HttpRouter from "effect/http/HttpRouter";
+import * as HttpServer from "effect/http/HttpServer";
+import * as HttpServerRequest from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 import { expect } from "vite-plus/test";
 
 const origin = "https://example.test";

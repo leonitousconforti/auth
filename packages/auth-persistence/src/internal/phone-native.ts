@@ -12,9 +12,14 @@ import {
   SecurityRevision,
   snapshotAuthenticationEvidence,
 } from "@yielded/auth/Sessions";
-import { Cause, Crypto, DateTime, Effect, Option, Schema } from "effect";
-import { SqlClient } from "effect/sql/SqlClient";
-import type { Fragment } from "effect/sql/Statement";
+import * as Cause from "effect/Cause";
+import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
+import type * as Statement from "effect/sql/Statement";
 
 import { randomId } from "./crypto";
 import { sqlBatchAssertion } from "./d1-planning";
@@ -63,10 +68,10 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
     readonly phoneSignInTargets: P.PhoneSignInTargets["Service"];
   },
   P.PhoneOtpUnavailable,
-  SqlClient | LifecycleHooks | Crypto.Crypto | SqlBatchCommit
+  SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto | SqlBatchCommit
 > {
   const batch = yield* SqlBatchCommit;
-  const sql = (yield* SqlClient).withoutTransforms();
+  const sql = (yield* SqlClient.SqlClient).withoutTransforms();
   const executor = yield* makeSqlCommitExecutor(unavailable);
   const crypto = yield* Crypto.Crypto;
   const external = yield* Effect.serviceOption(CurrentSqlCommit);
@@ -103,7 +108,7 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
           .batch(work.pipe(Effect.provideService(Crypto.Crypto, crypto)))
           .pipe(Effect.provideService(SqlBatchCommit, batch));
 
-  const stage = Effect.fnUntraced(function* (statement: Fragment) {
+  const stage = Effect.fnUntraced(function* (statement: Statement.Fragment) {
     if (batch === undefined) {
       if (!((yield* executeSqlChange(sql, statement)) === 1)) return yield* invalidState();
     } else {
@@ -389,7 +394,7 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
             (input.action === "change" && binding._tag !== "IdentifierChange")
           )
             return yield* rejected();
-          const freshness: Fragment[] = [];
+          const freshness: Statement.Fragment[] = [];
 
           if (input.action !== "register") {
             const authorization = input.authorization;
@@ -518,7 +523,7 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
             subjectRow = inserted;
           }
           if (!(subjectRow !== undefined)) return yield* invalidState();
-          const finalConditions: Fragment[] = [...freshness];
+          const finalConditions: Statement.Fragment[] = [...freshness];
 
           if (target.source !== null) {
             const source = target.source;

@@ -1,6 +1,16 @@
-import { Cause, Effect, Layer, Predicate, Redacted, Result, Schema, Stream, Tracer } from "effect";
-import { Base64 } from "effect/encoding";
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Base64 from "effect/encoding/Base64";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
+import * as Layer from "effect/Layer";
+import * as Predicate from "effect/Predicate";
+import * as Redacted from "effect/Redacted";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
+import * as Tracer from "effect/Tracer";
 
 import { timeoutOrElseWithCause } from "../../../internal/timeout";
 import { OAuthConnectedProfile } from "../../permissionProfile";

@@ -7,19 +7,17 @@ import { Aead } from "@yielded/crypto/Aead";
 import { Kdf } from "@yielded/crypto/Kdf";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
-import {
-  Context,
-  Crypto,
-  Deferred,
-  Effect,
-  Exit,
-  Fiber,
-  Layer,
-  Redacted,
-  Schema,
-  Scope,
-} from "effect";
-import { TestClock } from "effect/testing";
+import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
+import * as TestClock from "effect/testing/TestClock";
 import { expect } from "vite-plus/test";
 
 import fixtures from "./crypto-fixtures";

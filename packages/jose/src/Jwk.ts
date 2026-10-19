@@ -1,6 +1,9 @@
 import * as Signature from "@yielded/crypto/Signature";
-import { Cause, Effect, Redacted, Schema } from "effect";
-import { Base64Url } from "effect/encoding";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 
 import { InvalidKey } from "./Errors";
 import { algorithms } from "./internal/algorithms";

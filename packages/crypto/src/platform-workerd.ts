@@ -1,4 +1,4 @@
-import { Layer } from "effect";
+import * as Layer from "effect/Layer";
 
 import { makeArgon2 } from "./internal/argon2-wasm";
 import module from "./internal/argon2.wasm";

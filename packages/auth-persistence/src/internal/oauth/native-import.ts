@@ -1,6 +1,7 @@
 import { snapshotOAuth } from "@yielded/auth/OAuth";
 import { SecurityRevision } from "@yielded/auth/Sessions";
-import { Crypto, Effect } from "effect";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
 
 import type {
   OAuthAuthorityTable,

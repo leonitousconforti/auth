@@ -7,9 +7,17 @@ import { createHash } from "node:crypto";
 
 import { it } from "@effect/vitest";
 import { Signature } from "@yielded/crypto/Signature";
-import { Cause, DateTime, Deferred, Effect, Fiber, Redacted, Scope, Exit, Struct } from "effect";
-import { HttpClient } from "effect/http";
-import { TestClock } from "effect/testing";
+import * as Cause from "effect/Cause";
+import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
+import * as HttpClient from "effect/http/HttpClient";
+import * as Redacted from "effect/Redacted";
+import * as Scope from "effect/Scope";
+import * as Struct from "effect/Struct";
+import * as TestClock from "effect/testing/TestClock";
 import * as jose from "jose";
 import { expect } from "vite-plus/test";
 

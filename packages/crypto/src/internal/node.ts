@@ -1,7 +1,9 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- This platform adapter needs native Argon2 and WebCrypto, which Effect Crypto does not expose.
 import * as crypto from "node:crypto";
 
-import { Effect, Layer, Result } from "effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Result from "effect/Result";
 
 import { CryptoUnavailable, UnsupportedAlgorithm } from "../Errors";
 import type { Limits } from "../Kdf";

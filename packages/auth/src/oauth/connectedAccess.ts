@@ -1,16 +1,14 @@
-import {
-  Result,
-  Cause,
-  Context,
-  Crypto,
-  DateTime,
-  Effect,
-  Exit,
-  Layer,
-  Redacted,
-  Schema,
-} from "effect";
-import { Base64Url } from "effect/encoding";
+import * as Cause from "effect/Cause";
+import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
+import * as Exit from "effect/Exit";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 
 import { hasCommitScope, type PreparedCommit } from "../hooks/commit";
 import { markAuthFailureReported, reportAuthFailure } from "../internal/diagnostics";

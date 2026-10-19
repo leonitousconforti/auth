@@ -1,7 +1,9 @@
-import { NodeCrypto } from "@effect/platform-node";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as PlatformCrypto from "@yielded/crypto/platform-node";
-import { Effect, Layer, Redacted } from "effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 import * as jose from "jose";
 
 // P-256 fixture adapted from panva/jose test/jwks/remote.test.ts.

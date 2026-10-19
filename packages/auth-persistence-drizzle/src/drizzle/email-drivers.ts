@@ -2,7 +2,9 @@ import type { EmailRegistrationAuthority } from "@yielded/auth-persistence/Adapt
 import { EmailAddressPersistence, type EmailUnavailable } from "@yielded/auth/Email";
 import type { LifecycleHooks } from "@yielded/auth/Hooks";
 import type { Table } from "drizzle-orm";
-import { type Context, Effect, type Crypto } from "effect";
+import type * as Context from "effect/Context";
+import type * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
 
 import type { NativeDriverDatabase, NativeDriverTransaction } from "./driver-types";
 import type {

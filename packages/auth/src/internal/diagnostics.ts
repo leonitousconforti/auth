@@ -1,5 +1,12 @@
-import { Cause, Console, Context, Effect, Predicate, References, Schema, Tracer } from "effect";
+import * as Cause from "effect/Cause";
+import * as Console from "effect/Console";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Predicate from "effect/Predicate";
+import * as References from "effect/References";
+import * as Schema from "effect/Schema";
 import * as SqlError from "effect/sql/SqlError";
+import * as Tracer from "effect/Tracer";
 
 export const AuthDiagnostic = Schema.Struct({
   stage: Schema.Literals([

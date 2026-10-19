@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 
 const validScope = Schema.isPattern(/^[\x21\x23-\x5B\x5D-\x7E]{1,128}$/);
 const brand = Schema.brand("effect-auth/OAuthScope");

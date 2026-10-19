@@ -1,7 +1,12 @@
 import type { KdfBusy } from "@yielded/crypto/Errors";
 import { Kdf } from "@yielded/crypto/Kdf";
 import { KdfAdmission } from "@yielded/crypto/KdfAdmission";
-import { Cause, Crypto, Effect, Redacted, Schema, type Scope } from "effect";
+import * as Cause from "effect/Cause";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
 
 import { equalBytes } from "../internal/equalBytes";
 import {

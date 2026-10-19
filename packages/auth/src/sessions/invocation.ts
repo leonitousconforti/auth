@@ -1,4 +1,7 @@
-import { Context, Effect, Option, type Redacted } from "effect";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import type * as Redacted from "effect/Redacted";
 
 import type { AuthenticationAssurance, AuthInvocation } from "../operations/context";
 import type { SubjectId } from "../Schema";

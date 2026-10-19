@@ -1,5 +1,10 @@
-import { Cause, Effect, FileSystem, Path, Schema } from "effect";
-import { ChildProcess, ChildProcessSpawner } from "effect/process";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as ChildProcess from "effect/process/ChildProcess";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as Schema from "effect/Schema";
 
 const drizzleVersion = "1.0.0-rc.4";
 const dependency = `drizzle-orm@${drizzleVersion}`;

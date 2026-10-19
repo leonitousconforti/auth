@@ -18,8 +18,10 @@ import {
 } from "@yielded/auth/Totp";
 import { sql } from "drizzle-orm";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import { DateTime, Effect, Redacted } from "effect";
-import { SqlClient } from "effect/sql/SqlClient";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { requiredTotpConstraints, type TotpMapping } from "../../src/drizzle/totp-model";
 
@@ -108,7 +110,7 @@ export const mapping = {
 } satisfies TotpMapping<typeof subjects, typeof factors, typeof credentials, string>;
 
 export const migrate = Effect.gen(function* () {
-  const client = yield* SqlClient;
+  const client = yield* SqlClient.SqlClient;
 
   yield* client`create table totp_example_subjects (id text primary key, revision text not null, active integer not null, totpEnabled integer not null)`;
   yield* client`create table totp_example_factors (scope text primary key, state text not null, version text not null)`;

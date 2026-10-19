@@ -1,6 +1,10 @@
 import { Signature } from "@yielded/crypto/Signature";
 import { Jwk, Jwks, Jwt } from "@yielded/jose";
-import { Cause, Clock, Effect, Redacted, Schema } from "effect";
+import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
+import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 
 import { origin } from "../../internal/origin";
 import type * as OAuthScope from "../../OAuthScope";

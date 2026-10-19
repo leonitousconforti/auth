@@ -1,10 +1,14 @@
 import { CurrentCommitJournal, type LifecycleHooks } from "@yielded/auth/Hooks";
 import * as P from "@yielded/auth/Proofs";
-import { Crypto, Effect, Option, Schema, type PlatformError } from "effect";
-import { Base64Url } from "effect/encoding";
-import { SqlClient } from "effect/sql/SqlClient";
-import type { SqlError } from "effect/sql/SqlError";
-import type { Fragment } from "effect/sql/Statement";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
+import * as Option from "effect/Option";
+import type * as PlatformError from "effect/PlatformError";
+import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
+import type * as SqlError from "effect/sql/SqlError";
+import type * as Statement from "effect/sql/Statement";
 
 import { sqlBatchAssertion } from "./d1-planning";
 import { PersistenceMappingError } from "./mapping-error";
@@ -55,7 +59,7 @@ export const makeNativeProofStore = Effect.fnUntraced(function* (
   batch = false,
 ) {
   const externalOwner = yield* Effect.serviceOption(CurrentSqlCommit);
-  const sql = (yield* SqlClient).withoutTransforms();
+  const sql = (yield* SqlClient.SqlClient).withoutTransforms();
   const crypto = yield* Crypto.Crypto;
   const p = mapping.proof;
   const proof = tables(p.table);
@@ -65,7 +69,9 @@ export const makeNativeProofStore = Effect.fnUntraced(function* (
   const rowLocks = !batch && sql.onDialectOrElse({ sqlite: () => false, orElse: () => true });
   const now = tables.expression(mapping.clock.engineNowMillis);
   const millis = (key: string) => tables.expression(mapping.clock.toMillis(proof.column(key)));
-  const instant = (value: Fragment) => tables.expression(mapping.clock.fromMillis(sql`(${value})`));
+
+  const instant = (value: Statement.Fragment) =>
+    tables.expression(mapping.clock.fromMillis(sql`(${value})`));
 
   const exact = (key: string, value: unknown) =>
     exactSqlText(sql, proof.column(key), proof.value(key, value));
@@ -133,7 +139,7 @@ export const makeNativeProofStore = Effect.fnUntraced(function* (
     input: Parameters<P.ProofPersistence["Service"]["issue"]>[0],
   ): Effect.fn.Return<
     P.ProofIssueDecision,
-    | SqlError
+    | SqlError.SqlError
     | Schema.SchemaError
     | PlatformError.PlatformError
     | PersistenceMappingError
@@ -384,7 +390,7 @@ export const makeNativeProofServices = Effect.fnUntraced(function* (
 ): Effect.fn.Return<
   { readonly proofPersistence: P.ProofPersistence["Service"] },
   P.ProofUnavailable,
-  SqlClient | LifecycleHooks | Crypto.Crypto | SqlBatchCommit
+  SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto | SqlBatchCommit
 > {
   const batch = yield* SqlBatchCommit;
   const executor = yield* makeSqlCommitExecutor(unavailable);

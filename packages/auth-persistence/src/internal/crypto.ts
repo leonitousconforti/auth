@@ -1,6 +1,7 @@
 import { TokenDigest } from "@yielded/auth/Schema";
-import { Crypto, Effect } from "effect";
-import { Base64Url } from "effect/encoding";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
 
 const encoder = new TextEncoder();
 

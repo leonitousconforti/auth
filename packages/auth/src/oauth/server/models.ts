@@ -1,5 +1,7 @@
 import { Jwk, Jwks } from "@yielded/jose";
-import { Context, type Effect, Schema } from "effect";
+import * as Context from "effect/Context";
+import type * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import * as OAuthScope from "../../OAuthScope";
 import { SubjectId } from "../../Schema";

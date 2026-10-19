@@ -1,5 +1,11 @@
 import type { Hmac } from "@yielded/crypto/Hmac";
-import { Context, type Crypto, Duration, Effect, Layer, type Schema, type Scope } from "effect";
+import * as Context from "effect/Context";
+import type * as Crypto from "effect/Crypto";
+import * as Duration from "effect/Duration";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import type * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
 
 import type { AuthConfigurationError } from "../auth/AuthConfigurationError";
 import { hooksLayer } from "../auth/defaults";

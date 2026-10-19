@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 
 /** Diagnostics contain only fixed classifications, never native causes or input. */
 export class InvalidInput extends Schema.TaggedError<InvalidInput>()("CryptoInvalidInput", {

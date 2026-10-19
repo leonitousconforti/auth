@@ -2,8 +2,13 @@ import { Hmac } from "@yielded/crypto/Hmac";
 import { Signature } from "@yielded/crypto/Signature";
 import type * as OAuth from "@yielded/oauth/OAuth";
 import * as Oidc from "@yielded/oauth/Oidc";
-import { Cause, Context, Crypto, Effect, type Redacted } from "effect";
-import { FetchHttpClient, HttpClient } from "effect/http";
+import * as Cause from "effect/Cause";
+import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import * as HttpClient from "effect/http/HttpClient";
+import type * as Redacted from "effect/Redacted";
 
 import { OAuthUnavailable } from "../../signInErrors";
 import { installProvider, prepareConfigurations, type InstalledProvider } from "./configuration";

@@ -2,7 +2,9 @@ import { generateKeyPairSync } from "node:crypto";
 
 import { it } from "@effect/vitest";
 import { Jwe, Jwk, Jwks, Jws } from "@yielded/jose";
-import { Effect, Layer, Redacted } from "effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 import * as jose from "jose";
 import { expect } from "vite-plus/test";
 

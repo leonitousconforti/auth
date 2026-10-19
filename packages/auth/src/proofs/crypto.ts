@@ -1,6 +1,13 @@
 import { Hmac, type Key } from "@yielded/crypto/Hmac";
-import { Cause, Context, Crypto, Effect, Layer, Redacted, Result, Schema } from "effect";
-import { Base64Url } from "effect/encoding";
+import * as Cause from "effect/Cause";
+import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 
 import { TokenDigest } from "../Schema";
 import { ProofConfigurationError, ProofUnavailable } from "./errors";

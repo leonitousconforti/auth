@@ -1,5 +1,11 @@
-import { Context, Effect, Layer, Option, Scope, Semaphore } from "effect";
-import { FetchHttpClient, type HttpClient } from "effect/http";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import type * as HttpClient from "effect/http/HttpClient";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Scope from "effect/Scope";
+import * as Semaphore from "effect/Semaphore";
 
 import type { AnyAuthAction, AuthActions } from "../operations/actions";
 import {

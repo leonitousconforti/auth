@@ -29,8 +29,12 @@ import type {
   AuthenticationRequirement,
   make as makeSessions,
 } from "@yielded/auth/Sessions";
-import { type Context, type Crypto, type Effect, type Layer, Schema } from "effect";
-import type { SqlClient } from "effect/sql";
+import type * as Context from "effect/Context";
+import type * as Crypto from "effect/Crypto";
+import type * as Effect from "effect/Effect";
+import type * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
+import type * as SqlClient from "effect/sql/SqlClient";
 
 import type { PersistenceMappingError } from "./mapping-error";
 import type { IdentityImports } from "./oauth/identity-import";

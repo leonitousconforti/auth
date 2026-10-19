@@ -1,4 +1,7 @@
-import { Context, Effect, Schema, type Types } from "effect";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import type * as Types from "effect/Types";
 
 import * as OAuthScope from "../../OAuthScope";
 import { AccessClaims, type Authentication, Scope, type Unavailable } from "./models";

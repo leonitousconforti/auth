@@ -6,18 +6,25 @@ import * as WebCrypto from "@yielded/auth/WebCrypto";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as CryptoBackend from "@yielded/crypto/WebCrypto";
 import { Jwk, Jwt } from "@yielded/jose";
-import { Clock, Effect, Exit, Fiber, Layer, Redacted, Schema } from "effect";
-import { McpProtocol, McpServer, Tool, Toolkit } from "effect/ai";
-import { Base64Url } from "effect/encoding";
-import {
-  FetchHttpClient,
-  HttpClient,
-  HttpClientResponse,
-  HttpRouter,
-  HttpServerRequest,
-} from "effect/http";
-import { SqlClient } from "effect/sql";
-import { TestClock } from "effect/testing";
+import * as McpProtocol from "effect/ai/McpProtocol";
+import * as McpServer from "effect/ai/McpServer";
+import * as Tool from "effect/ai/Tool";
+import * as Toolkit from "effect/ai/Toolkit";
+import * as Clock from "effect/Clock";
+import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
+import * as HttpRouter from "effect/http/HttpRouter";
+import * as HttpServerRequest from "effect/http/HttpServerRequest";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
+import * as TestClock from "effect/testing/TestClock";
 import { expect } from "vite-plus/test";
 
 import { OAuthServerPersistence } from "../src/internal/oauth-server";

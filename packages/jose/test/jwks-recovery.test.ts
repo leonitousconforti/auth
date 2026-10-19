@@ -1,19 +1,19 @@
 import { it } from "@effect/vitest";
 import { Jwks, Jws } from "@yielded/jose";
-import {
-  Clock,
-  Context,
-  Deferred,
-  Effect,
-  Exit,
-  Fiber,
-  Layer,
-  Redacted,
-  Scheduler,
-  Scope,
-} from "effect";
-import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
-import { TestClock } from "effect/testing";
+import * as Clock from "effect/Clock";
+import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientError from "effect/http/HttpClientError";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import * as Scheduler from "effect/Scheduler";
+import * as Scope from "effect/Scope";
+import * as TestClock from "effect/testing/TestClock";
 import * as jose from "jose";
 import { expect } from "vite-plus/test";
 

@@ -1,5 +1,7 @@
-import { Crypto, DateTime, Effect } from "effect";
-import { Base64Url } from "effect/encoding";
+import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
 
 import { SecurityRevision } from "../sessions/models";
 import { OAuthAccountRevision } from "./accountsModels";

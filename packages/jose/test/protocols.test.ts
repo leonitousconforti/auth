@@ -1,6 +1,9 @@
 import { it } from "@effect/vitest";
 import { Jwe, Jwk, Jws } from "@yielded/jose";
-import { Crypto, Effect, PlatformError, Redacted } from "effect";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as PlatformError from "effect/PlatformError";
+import * as Redacted from "effect/Redacted";
 import * as jose from "jose";
 import { expect } from "vite-plus/test";
 

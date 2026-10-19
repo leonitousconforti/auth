@@ -2,8 +2,11 @@ import { it } from "@effect/vitest";
 import { Kdf } from "@yielded/crypto/Kdf";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
-import { Effect, Layer, Redacted, Schema } from "effect";
-import { Hex } from "effect/encoding";
+import * as Effect from "effect/Effect";
+import * as Hex from "effect/encoding/Hex";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 import { expect } from "vite-plus/test";
 
 import { argon2Vectors, nativeArgon2Vectors } from "./fixtures/argon2-vectors";

@@ -1,4 +1,4 @@
-import { D1Client } from "@effect/sql-d1/D1Client";
+import * as D1Client from "@effect/sql-d1/D1Client";
 import {
   PersistenceConfigurationError,
   PersistenceMappingError,
@@ -7,7 +7,12 @@ import { reportPersistenceFailure } from "@yielded/auth/Persistence";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { formatToMillis, getMigrationsToRun } from "drizzle-orm/migrator.utils";
-import { Cause, Crypto, DateTime, Effect, Layer, Schema } from "effect";
+import * as Cause from "effect/Cause";
+import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 
 const MigrationFiles = Schema.Record(Schema.String, Schema.NonEmptyString);
 const MigrationName = Schema.String.check(Schema.isPattern(/^\d{14}_.+$/));
@@ -41,7 +46,7 @@ export const d1MigrationsLayer = (options: {
   Layer.effectDiscard(
     Effect.gen(function* () {
       const files = yield* Schema.decodeEffect(MigrationFiles)(options.migrations);
-      const client = yield* D1Client;
+      const client = yield* D1Client.D1Client;
       const crypto = yield* Crypto.Crypto;
       const appliedAt = DateTime.formatIso(yield* DateTime.now);
 

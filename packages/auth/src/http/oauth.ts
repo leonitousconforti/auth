@@ -1,4 +1,8 @@
-import { Context, Effect, Layer, Result, Schema } from "effect";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 
 import type { AnyRoute } from "../http-operation/contract";
 import { OperationHttpConfigurationError, OperationHttpError } from "../http-operation/errors";

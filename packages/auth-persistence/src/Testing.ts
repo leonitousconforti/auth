@@ -41,20 +41,18 @@ import {
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
 import { layerCryptoWeb } from "@yielded/crypto/WebCrypto";
-import {
-  Cause,
-  Clock,
-  Context,
-  Crypto,
-  DateTime,
-  Effect,
-  Layer,
-  Option,
-  Random,
-  Redacted,
-  Schema,
-  Semaphore,
-} from "effect";
+import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
+import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Random from "effect/Random";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 
 import {
   PersistenceConfigurationError,

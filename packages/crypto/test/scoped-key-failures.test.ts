@@ -1,7 +1,13 @@
 import { it } from "@effect/vitest";
 import { Hmac } from "@yielded/crypto/Hmac";
 import * as WebCrypto from "@yielded/crypto/WebCrypto";
-import { Cause, Deferred, Effect, Exit, Fiber, Redacted, Scope } from "effect";
+import * as Cause from "effect/Cause";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
+import * as Redacted from "effect/Redacted";
+import * as Scope from "effect/Scope";
 import { expect } from "vite-plus/test";
 
 // 536a76b6c introduced availability checks and interrupt-only joining that

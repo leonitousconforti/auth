@@ -23,8 +23,14 @@ import {
 import { PhoneSignInTargets, PhoneOtpUnavailable } from "@yielded/auth/PhoneOtp";
 import { ProofPersistence, ProofUnavailable } from "@yielded/auth/Proofs";
 import { AuthenticationAuthority, SessionUnavailable } from "@yielded/auth/Sessions";
-import { Cause, Context, type Crypto, Effect, Layer, Ref, Schema } from "effect";
-import { SqlClient } from "effect/sql";
+import * as Cause from "effect/Cause";
+import * as Context from "effect/Context";
+import type * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import {
   PersistenceConfigurationError,

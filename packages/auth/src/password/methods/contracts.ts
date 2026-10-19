@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import * as Schema from "effect/Schema";
 
 import { action } from "../../operations/actions";
 import { Email } from "../../Schema";

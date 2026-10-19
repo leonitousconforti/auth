@@ -11,8 +11,9 @@ import {
 } from "@yielded/auth-persistence/Adapter";
 import { LifecycleHooks } from "@yielded/auth/Hooks";
 import { PasskeyConfigurationError, PasskeyUnavailable } from "@yielded/auth/Passkey";
-import { type Crypto, Effect } from "effect";
-import type { SqlClient } from "effect/sql";
+import type * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import type * as SqlClient from "effect/sql/SqlClient";
 
 import type { D1BatchStatements } from "../D1BatchStatements";
 import type { PersistenceMappingError } from "../model";

@@ -1,4 +1,8 @@
-import { Context, Effect, Redacted, Result, Schema } from "effect";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 
 import type { AuthInvocation } from "./context";
 import { OperationOutputError } from "./errors";

@@ -4,8 +4,13 @@ import { Kdf } from "@yielded/crypto/Kdf";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
 import * as WebCrypto from "@yielded/crypto/WebCrypto";
-import { Deferred, Effect, Fiber, Layer, Redacted, Scheduler } from "effect";
-import { TestClock } from "effect/testing";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import * as Scheduler from "effect/Scheduler";
+import * as TestClock from "effect/testing/TestClock";
 import { expect } from "vite-plus/test";
 
 import { utf8 } from "./backends";

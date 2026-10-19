@@ -15,8 +15,14 @@ import {
   SessionCredentialVersion,
   type StatefulSessionRecord,
 } from "@yielded/auth/Sessions";
-import { Cause, Crypto, DateTime, Effect, Redacted, Schema, Struct } from "effect";
-import { SqlClient } from "effect/sql";
+import * as Cause from "effect/Cause";
+import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
+import * as Struct from "effect/Struct";
 
 import type { MappingInput } from "./configuration";
 import { randomId } from "./crypto";

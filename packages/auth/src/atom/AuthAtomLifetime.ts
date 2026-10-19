@@ -1,5 +1,9 @@
-import { Context, Effect, Semaphore, SubscriptionRef } from "effect";
-import { Atom, AtomRegistry } from "effect/reactivity";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Atom from "effect/reactivity/Atom";
+import * as AtomRegistry from "effect/reactivity/AtomRegistry";
+import * as Semaphore from "effect/Semaphore";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import {
   Client,

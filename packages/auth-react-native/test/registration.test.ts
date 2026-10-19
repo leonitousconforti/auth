@@ -1,7 +1,7 @@
 import { it } from "@effect/vitest";
 import * as ReactNativePasskey from "@yielded/auth-react-native";
 import { PasskeyRegistrationStarted } from "@yielded/auth/Passkey";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import type { Passkey } from "react-native-passkey";
 import { afterEach, expect, vi } from "vite-plus/test";
 

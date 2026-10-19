@@ -1,7 +1,9 @@
 import type { LifecycleHooks } from "@yielded/auth/Hooks";
 import { PasskeyManagementPersistence, PasskeyPersistence } from "@yielded/auth/Passkey";
 import type { Table } from "drizzle-orm";
-import { type Crypto, Context, Effect } from "effect";
+import * as Context from "effect/Context";
+import type * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
 
 import type { D1BatchStatements } from "./D1BatchStatements";
 import { NativeDatabase, nativeDatabase } from "./native-database";

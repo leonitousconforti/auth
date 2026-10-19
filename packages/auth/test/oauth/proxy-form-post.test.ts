@@ -2,7 +2,10 @@ import { it } from "@effect/vitest";
 import { OAuth, OAuthProxy, WebCrypto } from "@yielded/auth";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
-import { Effect, Layer, Redacted, Schema } from "effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 import { expect } from "vite-plus/test";
 
 // Regression at f1da141a: an admitted form_post provider could not complete its

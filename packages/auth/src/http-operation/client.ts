@@ -1,18 +1,18 @@
-import {
-  Cause,
-  Context,
-  DateTime,
-  Duration,
-  Effect,
-  Function,
-  Layer,
-  Option,
-  Redacted,
-  Schema,
-  Semaphore,
-  Stream,
-} from "effect";
-import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http";
+import * as Cause from "effect/Cause";
+import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
+import * as Duration from "effect/Duration";
+import * as Effect from "effect/Effect";
+import * as Function from "effect/Function";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
+import type * as HttpClientResponse from "effect/http/HttpClientResponse";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
+import * as Stream from "effect/Stream";
 
 import {
   markAuthFailureReported,

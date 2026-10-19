@@ -14,9 +14,12 @@ import { reportPersistenceFailure } from "@yielded/auth/Persistence";
 import { ProofRedemptionInput, type ProofRedemptionPlan } from "@yielded/auth/Proofs";
 import type { TokenDigest } from "@yielded/auth/Schema";
 import { SecurityRevision } from "@yielded/auth/Sessions";
-import { Cause, Crypto, Effect, Schema } from "effect";
-import { SqlClient } from "effect/sql/SqlClient";
-import type { Fragment } from "effect/sql/Statement";
+import * as Cause from "effect/Cause";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
+import type * as Statement from "effect/sql/Statement";
 
 import { sqlBatchAssertion } from "./d1-planning";
 import {
@@ -70,9 +73,9 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
 ): Effect.fn.Return<
   { readonly registrationAuthority: EmailRegistrationAuthority<Registration> },
   never,
-  SqlClient | LifecycleHooks | Crypto.Crypto
+  SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto
 > {
-  const sql = (yield* SqlClient).withoutTransforms(),
+  const sql = (yield* SqlClient.SqlClient).withoutTransforms(),
     executor = yield* makeSqlCommitExecutor(unavailable),
     crypto = yield* Crypto.Crypto;
 
@@ -109,7 +112,7 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
           .batch(work.pipe(Effect.provideService(Crypto.Crypto, crypto)))
           .pipe(Effect.provideService(SqlBatchCommit, batch));
 
-  const stage = Effect.fnUntraced(function* (statement: Fragment) {
+  const stage = Effect.fnUntraced(function* (statement: Statement.Fragment) {
     if (batch === undefined) {
       if (!((yield* executeSqlChange(sql, statement)) === 1)) return yield* invalidState();
     } else {
@@ -345,7 +348,7 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
               ),
             );
 
-            const conditions: Fragment[] = [
+            const conditions: Statement.Fragment[] = [
               redeemed.validUntil,
               sql`exists(select 1 from ${subject.name} where ${id(subject, s.id, native)} and ${exact(subject, s.securityRevision, securityRevision)} and ${id(subject, s.status, s.activeStatusValue)})`,
               sql`exists(select 1 from ${identifier.name} where ${identifierKey(input.identifier)} and ${id(identifier, i.subjectId, native)} and ${exact(identifier, i.bindingRevision, identifierRevision)} and ${id(identifier, i.verifiedAt, mapping.clock.encodeInstant(verifiedAt))})`,

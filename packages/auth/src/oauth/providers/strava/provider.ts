@@ -1,5 +1,6 @@
-import { Effect, type Crypto } from "effect";
-import type { HttpClient } from "effect/http";
+import type * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import type * as HttpClient from "effect/http/HttpClient";
 
 import { selectCallback } from "../../callback";
 import { wipeConnectedMaterial } from "../../grantTokens";

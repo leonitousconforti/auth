@@ -15,7 +15,9 @@ import { and, eq } from "drizzle-orm";
 import type { EffectDrizzleQueryError, QueryEffectHKTBase } from "drizzle-orm/effect-core";
 import type { AnySQLiteTable, SQLiteColumn } from "drizzle-orm/sqlite-core";
 import type { SQLiteEffectDatabase } from "drizzle-orm/sqlite-core/effect/db";
-import { Cause, Effect, Schema } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import {
   column,

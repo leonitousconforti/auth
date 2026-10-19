@@ -16,7 +16,8 @@ import {
 import type { LifecycleHooks } from "@yielded/auth/Hooks";
 import { OAuthUnavailable } from "@yielded/auth/OAuth";
 import { reportAuthDiagnostic } from "@yielded/auth/Persistence";
-import { Cause, Effect } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
 
 import type { D1BatchStatements } from "./D1BatchStatements";
 import type { NativeDatabaseHandle } from "./native-database";

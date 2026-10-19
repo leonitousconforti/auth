@@ -1,6 +1,7 @@
 import { OAuthScope, OAuthServer } from "@yielded/auth";
-import type { Layer } from "effect";
-import { Effect, Redacted } from "effect";
+import * as Effect from "effect/Effect";
+import type * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 import { expectTypeOf } from "vite-plus/test";
 
 // Compile-only contract for literal scope inference. Runtime proofs

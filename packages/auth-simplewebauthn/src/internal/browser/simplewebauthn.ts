@@ -12,8 +12,14 @@ import {
   snapshotPasskey,
 } from "@yielded/auth/Passkey";
 import { markAuthFailureReported, reportAuthFailure } from "@yielded/auth/Persistence";
-import type { Context } from "effect";
-import { Cause, DateTime, Effect, Layer, Predicate, Redacted, Schema } from "effect";
+import * as Cause from "effect/Cause";
+import type * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Predicate from "effect/Predicate";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 
 import {
   PasskeyBrowserAuthentication,

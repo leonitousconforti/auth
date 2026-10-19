@@ -1,7 +1,11 @@
 import * as OAuth from "@yielded/oauth/OAuth";
 import type * as Oidc from "@yielded/oauth/Oidc";
-import { Cause, type Crypto, Effect, type Redacted, type Scope } from "effect";
-import type { HttpClient } from "effect/http";
+import * as Cause from "effect/Cause";
+import type * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import type * as HttpClient from "effect/http/HttpClient";
+import type * as Redacted from "effect/Redacted";
+import type * as Scope from "effect/Scope";
 
 import { OAuthUnavailable } from "../../signInErrors";
 import { makeEmailEnrichment } from "../github/email";

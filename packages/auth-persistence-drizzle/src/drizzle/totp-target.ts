@@ -7,7 +7,11 @@ import {
   TotpPersistence,
 } from "@yielded/auth/Totp";
 import type { Table } from "drizzle-orm";
-import { Cause, Effect, Schema, type Context, type Crypto } from "effect";
+import * as Cause from "effect/Cause";
+import type * as Context from "effect/Context";
+import type * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import type { D1BatchStatements } from "./D1BatchStatements";
 import type { NativeDriverDatabase, NativeDriverTransaction } from "./driver-types";

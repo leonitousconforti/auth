@@ -2,7 +2,8 @@ import { createCipheriv, createHmac, createPrivateKey, sign } from "node:crypto"
 
 import { it } from "@effect/vitest";
 import { Jwe, Jwk, Jws } from "@yielded/jose";
-import { Effect, Redacted } from "effect";
+import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
 import * as jose from "jose";
 import { expect } from "vite-plus/test";
 

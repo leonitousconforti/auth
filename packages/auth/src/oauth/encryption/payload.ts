@@ -1,6 +1,12 @@
 import { Aead } from "@yielded/crypto/Aead";
-import { Cause, Crypto, Effect, Redacted, Result, Schema, type Scope } from "effect";
-import { Base64Url } from "effect/encoding";
+import * as Cause from "effect/Cause";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
+import * as Redacted from "effect/Redacted";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
 
 import { makeScopedOperation } from "../../internal/scoped-operation";
 import { OAuthConfigurationError, OAuthUnavailable } from "../signInErrors";

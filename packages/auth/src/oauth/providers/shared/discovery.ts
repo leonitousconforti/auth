@@ -1,5 +1,6 @@
 import type { Metadata } from "@yielded/oauth/OAuth";
-import { Effect, Schema } from "effect";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import { OpenIdConnectConfigurationError } from "./models";
 

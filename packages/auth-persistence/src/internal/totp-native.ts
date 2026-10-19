@@ -9,9 +9,14 @@ import {
   type TotpDecision,
   type TotpPersistence,
 } from "@yielded/auth/Totp";
-import { Cause, Crypto, DateTime, Effect, Option, Schema } from "effect";
-import { SqlClient } from "effect/sql/SqlClient";
-import type { Fragment } from "effect/sql/Statement";
+import * as Cause from "effect/Cause";
+import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
+import type * as Statement from "effect/sql/Statement";
 
 import { digest, randomId } from "./crypto";
 import { sqlBatchAssertion } from "./d1-planning";
@@ -55,12 +60,12 @@ export const makeNativeTotpServices = Effect.fnUntraced(function* (
 ): Effect.fn.Return<
   { readonly totpPersistence: TotpPersistence["Service"] },
   never,
-  SqlClient | LifecycleHooks | Crypto.Crypto | SqlBatchCommit
+  SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto | SqlBatchCommit
 > {
   const batch = yield* SqlBatchCommit;
   const conditionalInsert = yield* makeConditionalSqlInsert();
 
-  const sql = (yield* SqlClient).withoutTransforms(),
+  const sql = (yield* SqlClient.SqlClient).withoutTransforms(),
     crypto = yield* Crypto.Crypto,
     executor = yield* makeSqlCommitExecutor(unavailable),
     external = yield* Effect.serviceOption(CurrentSqlCommit);
@@ -111,7 +116,7 @@ export const makeNativeTotpServices = Effect.fnUntraced(function* (
       ? executor.run(provide(work))
       : executor.batch(provide(work)).pipe(Effect.provideService(SqlBatchCommit, batch));
 
-  const stage = Effect.fnUntraced(function* (statement: Fragment, expected = 1) {
+  const stage = Effect.fnUntraced(function* (statement: Statement.Fragment, expected = 1) {
     if (batch !== undefined) {
       yield* appendSqlBatchStatement(sql`${statement}`);
       yield* appendSqlBatchStatement(sqlBatchAssertion(sql, sql`changes() = ${expected}`));
@@ -255,9 +260,9 @@ export const makeNativeTotpServices = Effect.fnUntraced(function* (
     let expectedCount: number | undefined,
       countGuardIndex = -1;
 
-    const guards: Fragment[] = [],
-      timeGuards: Fragment[] = [],
-      credentialGuards: { credentialId: string; condition: Fragment }[] = [];
+    const guards: Statement.Fragment[] = [],
+      timeGuards: Statement.Fragment[] = [],
+      credentialGuards: { credentialId: string; condition: Statement.Fragment }[] = [];
 
     const timeBound = (start: number, end: number) => {
       timeGuards.push(sql`${engineNow} >= ${start} and ${engineNow} < ${end}`);

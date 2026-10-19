@@ -6,7 +6,10 @@ import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
 import { Signature } from "@yielded/crypto/Signature";
 import * as WebCrypto from "@yielded/crypto/WebCrypto";
-import { Effect, Layer, Redacted, Schema } from "effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 import { describe, expect } from "vite-plus/test";
 
 import { backends, utf8 } from "./backends";

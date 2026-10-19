@@ -1,7 +1,13 @@
 import type * as OAuth from "@yielded/oauth/OAuth";
 import type * as Oidc from "@yielded/oauth/Oidc";
 import * as Pkce from "@yielded/oauth/Pkce";
-import { Cause, Crypto, DateTime, Effect, Redacted, Schema, type Scope } from "effect";
+import * as Cause from "effect/Cause";
+import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
 
 import { reportAuthDiagnostic, withoutObservability } from "../../../../internal/diagnostics";
 import { makeScopedOperation } from "../../../../internal/scoped-operation";

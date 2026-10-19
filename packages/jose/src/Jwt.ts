@@ -1,5 +1,8 @@
 import type { Signature } from "@yielded/crypto/Signature";
-import { Clock, Effect, Redacted, Schema } from "effect";
+import * as Clock from "effect/Clock";
+import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 
 import { ClaimValidationFailed, type VerifyError } from "./Errors";
 import {

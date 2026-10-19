@@ -36,9 +36,14 @@ import {
   snapshotPasskey,
 } from "@yielded/auth/Passkey";
 import { markAuthFailureReported, reportAuthFailure } from "@yielded/auth/Persistence";
-import type { Context } from "effect";
-import { Cause, DateTime, Effect, Layer, Redacted, Schema } from "effect";
-import { Base64Url } from "effect/encoding";
+import * as Cause from "effect/Cause";
+import type * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 
 import { captureSimpleWebAuthnProfiles, validateSimpleWebAuthnProfile } from "./configuration";
 import type { SimpleWebAuthnPasskeyProtocolOptions } from "./models";

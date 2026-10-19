@@ -1,8 +1,11 @@
 import type { LifecycleHooks } from "@yielded/auth/Hooks";
 import * as M from "@yielded/auth/OAuth";
-import { Crypto, Effect, Option, Schema } from "effect";
-import { SqlClient } from "effect/sql";
-import type { Fragment } from "effect/sql/Statement";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
+import type * as Statement from "effect/sql/Statement";
 
 import { sqlBatchAssertion } from "../d1-planning";
 import { PersistenceMappingError } from "../mapping-error";
@@ -120,7 +123,7 @@ const makeIntent = Effect.fnUntraced(function* (
     return { inspection, encoded, identityKey, engineNow };
   });
 
-  const finish = (name: string, condition: Fragment) =>
+  const finish = (name: string, condition: Statement.Fragment) =>
     batch
       ? registerSqlBatchPostcondition({ name, statement: sqlBatchAssertion(sql, condition) })
       : registerSqlPostcondition({
@@ -134,7 +137,7 @@ const makeIntent = Effect.fnUntraced(function* (
           }),
         });
 
-  const change = Effect.fnUntraced(function* (statement: Fragment) {
+  const change = Effect.fnUntraced(function* (statement: Statement.Fragment) {
     if (batch) {
       yield* appendSqlBatchStatement(sql`${statement}`);
       yield* appendSqlBatchStatement(sqlBatchAssertion(sql, sql`changes() = 1`));
@@ -409,7 +412,7 @@ export const makeNativeOAuthRegistrationServices = Effect.fnUntraced(function* <
                 inspection.eligible &&
                 (batch === undefined || (yield* sql`select 1 where ${eligible}`).length === 1);
 
-              let final: Fragment = horizon(expected);
+              let final: Statement.Fragment = horizon(expected);
               let authentication: M.OAuthRegistrationAuthentication | undefined;
 
               if (admitted) {

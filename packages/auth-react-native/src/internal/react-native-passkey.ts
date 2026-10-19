@@ -4,7 +4,13 @@ import {
   snapshotPasskey,
 } from "@yielded/auth/Passkey";
 import { markAuthFailureReported, reportAuthFailure } from "@yielded/auth/Persistence";
-import { Cause, DateTime, Effect, Layer, Predicate, Redacted, Schema } from "effect";
+import * as Cause from "effect/Cause";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Predicate from "effect/Predicate";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 import { Platform } from "react-native";
 import { Passkey, type PasskeyCreateRequest, type PasskeyGetRequest } from "react-native-passkey";
 

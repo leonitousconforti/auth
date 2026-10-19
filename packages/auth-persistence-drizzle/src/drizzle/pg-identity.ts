@@ -14,7 +14,9 @@ import type { SubjectId } from "@yielded/auth/Schema";
 import { and, eq } from "drizzle-orm";
 import type { EffectPgDatabase as PgDatabase } from "drizzle-orm/effect-postgres";
 import { type AnyPgTable, type PgColumn } from "drizzle-orm/pg-core";
-import { Cause, Effect, Schema } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import {
   column,

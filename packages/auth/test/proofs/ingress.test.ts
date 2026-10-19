@@ -1,8 +1,11 @@
 import { it } from "@effect/vitest";
 import { Auth, Email, Password, Proofs, Sessions } from "@yielded/auth";
-import { Effect, Layer, Redacted, Schema } from "effect";
-import { RateLimiter } from "effect/persistence";
-import { TestClock } from "effect/testing";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as RateLimiter from "effect/persistence/RateLimiter";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import { expect } from "vite-plus/test";
 
 export const app = Auth.make("test/proof-ingress", {

@@ -6,8 +6,13 @@ import { SubjectId } from "@yielded/auth/Schema";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
 import { getTableName } from "drizzle-orm";
-import { Context, DateTime, Effect, Layer, Redacted, Schema } from "effect";
-import { SqlClient } from "effect/sql";
+import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
 import { expect } from "vite-plus/test";
 
 import {

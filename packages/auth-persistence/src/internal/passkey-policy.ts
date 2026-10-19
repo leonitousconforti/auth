@@ -10,7 +10,10 @@ import {
   type PasskeyManagementPolicy,
   type PasskeyRequirement,
 } from "@yielded/auth/Passkey";
-import { Crypto, DateTime, Effect, Schema } from "effect";
+import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 const invalidState = () => PasskeyUnavailable.make({});
 

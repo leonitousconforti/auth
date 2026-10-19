@@ -9,9 +9,14 @@ import {
 import { reportPersistenceFailure } from "@yielded/auth/Persistence";
 import type { SubjectId } from "@yielded/auth/Schema";
 import type { SecurityRevision } from "@yielded/auth/Sessions";
-import { Effect, Redacted, Schema, Option, Cause, type Crypto } from "effect";
-import { SqlClient } from "effect/sql/SqlClient";
-import type { Fragment } from "effect/sql/Statement";
+import * as Cause from "effect/Cause";
+import type * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
+import type * as Statement from "effect/sql/Statement";
 
 import { sqlBatchAssertion } from "./d1-planning";
 import { PersistenceMappingError, isMappedConstraintConflict } from "./mapping-error";
@@ -50,7 +55,7 @@ export const makeNativePasswordRegistrationStore = Effect.fnUntraced(function* (
   mapping: BindingMapping,
   batch = false,
 ) {
-  const sql = (yield* SqlClient).withoutTransforms();
+  const sql = (yield* SqlClient.SqlClient).withoutTransforms();
 
   const s = mapping.subject,
     i = mapping.identifier,
@@ -68,7 +73,7 @@ export const makeNativePasswordRegistrationStore = Effect.fnUntraced(function* (
   const owner = (table: SqlTable, key: string, value: unknown) =>
     sql`${table.column(key)} = ${table.value(key, value)}`;
 
-  const stage = Effect.fnUntraced(function* (statement: Fragment) {
+  const stage = Effect.fnUntraced(function* (statement: Statement.Fragment) {
     if (batch) {
       yield* appendSqlBatchStatement(sql`${statement}`);
       yield* appendSqlBatchStatement(sqlBatchAssertion(sql, sql`changes() = 1`));
@@ -202,9 +207,9 @@ export const makeNativePasswordRegistrationServices = Effect.fnUntraced(function
 ): Effect.fn.Return<
   { readonly registrationAuthority: PasswordRegistrationAuthority<Registration> },
   PasswordUnavailable,
-  SqlClient | LifecycleHooks | Crypto.Crypto
+  SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto
 > {
-  const sql = (yield* SqlClient).withoutTransforms();
+  const sql = (yield* SqlClient.SqlClient).withoutTransforms();
   const executor = yield* makeSqlCommitExecutor(unavailable);
   const store = yield* makeNativePasswordRegistrationStore(tables, mapping, batch !== undefined);
   const mode = "interactive";

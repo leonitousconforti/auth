@@ -1,5 +1,5 @@
-import type { Effect } from "effect";
-import { Context } from "effect";
+import * as Context from "effect/Context";
+import type * as Effect from "effect/Effect";
 
 import type { OperationFetchClient } from "../http-operation/client";
 import type { AnyRoute, RouteFailure, RouteInput, RouteSuccess } from "../http-operation/contract";

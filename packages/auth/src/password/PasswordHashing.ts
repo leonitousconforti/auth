@@ -1,4 +1,7 @@
-import { Context, type Effect, Layer, type Redacted } from "effect";
+import * as Context from "effect/Context";
+import type * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import type * as Redacted from "effect/Redacted";
 
 import type { PasswordHashingConfig } from "./configuration";
 import type {

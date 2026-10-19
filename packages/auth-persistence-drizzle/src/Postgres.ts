@@ -7,7 +7,8 @@ import {
   makeWithDefaults,
 } from "drizzle-orm/effect-postgres";
 import type { AnyPgTable } from "drizzle-orm/pg-core";
-import { Effect, Layer } from "effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 
 import type {
   IdentityTables,

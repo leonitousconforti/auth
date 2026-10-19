@@ -1,9 +1,12 @@
 import type { LifecycleHooks, CommitJournal, PreparedCommit } from "@yielded/auth/Hooks";
 import * as M from "@yielded/auth/OAuth";
-import { Crypto, Effect, Option, Schema } from "effect";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
-import type { SqlClient } from "effect/sql/SqlClient";
-import type { Fragment } from "effect/sql/Statement";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import type * as SqlClient from "effect/sql/SqlClient";
+import type * as Statement from "effect/sql/Statement";
 
 import type { NativeSqlTables, SqlTable } from "../native-sql-table";
 import { makeConditionalSqlInsert } from "../session-native-record";
@@ -34,7 +37,7 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
 ): Effect.fn.Return<
   { readonly oauthConnectedPersistence: M.OAuthConnectedPersistence["Service"] },
   M.OAuthUnavailable,
-  SqlClient | LifecycleHooks | Crypto.Crypto
+  SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto
 > {
   const conditionalInsert = yield* makeConditionalSqlInsert();
   const executor = yield* makeSqlCommitExecutor(unavailable);
@@ -79,7 +82,7 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
     key: M.OAuthConnectedGrantKey,
     nativeId: unknown,
     encoded: string,
-    required: Fragment,
+    required: Statement.Fragment,
     upper: number,
     prepare: (
       decision: typeof M.OAuthConnectedRefreshDecision.Type,
@@ -122,7 +125,7 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
     key: M.OAuthConnectedGrantKey,
     nativeId: unknown,
     encoded: string,
-    extra?: Fragment,
+    extra?: Statement.Fragment,
   ) =>
     sql`exists(select 1 from ${grant.name} where ${state.key(key, nativeId)} and ${state.exact(g.snapshot, encoded)} ${extra === undefined ? sql`` : sql`and ${extra}`})`;
 
@@ -208,7 +211,7 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
             token.metadata.obtainedAtMillis < context.issuedAtMillis
           )
             return yield* rejected();
-          let authorization: Fragment;
+          let authorization: Statement.Fragment;
           let previous: M.OAuthConnectedTarget | undefined;
           let deadline = Math.min(context.expiresAtMillis, token.metadata.useUntilMillis);
 
@@ -762,9 +765,9 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
           const candidates: Array<{
             table: SqlTable;
             keys: readonly [string, ...string[]];
-            due: Fragment;
-            order: ReadonlyArray<Fragment>;
-            key: Fragment;
+            due: Statement.Fragment;
+            order: ReadonlyArray<Statement.Fragment>;
+            key: Statement.Fragment;
             identityKey: string;
             nativeId: unknown;
           }> = [];

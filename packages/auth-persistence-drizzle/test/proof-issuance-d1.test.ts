@@ -1,8 +1,9 @@
 import { it } from "@effect/vitest";
 import { Hooks, Proofs } from "@yielded/auth";
 import { TokenDigest } from "@yielded/auth/Schema";
-import { Effect, Schema } from "effect";
-import { SqlClient } from "effect/sql";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
 import { expect } from "vite-plus/test";
 
 import { makeProofPersistenceServices } from "../src/D1";

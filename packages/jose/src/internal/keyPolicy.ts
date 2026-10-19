@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 
 import { InvalidKey } from "../Errors";
 import type { PrivateJwk, PublicJwk, SecretJwk } from "../Jwk";

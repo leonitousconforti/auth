@@ -1,4 +1,8 @@
-import { Context, type Effect, type Redacted, Schema, type Scope } from "effect";
+import * as Context from "effect/Context";
+import type * as Effect from "effect/Effect";
+import type * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
 
 import type { OperationError } from "./Errors";
 

@@ -2,7 +2,7 @@ import type { InvalidInput } from "@yielded/crypto/Errors";
 import type { Kdf, Limits } from "@yielded/crypto/Kdf";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as WorkerdCrypto from "@yielded/crypto/platform-workerd";
-import { Layer } from "effect";
+import * as Layer from "effect/Layer";
 
 import type { PasswordHashingConfig } from "./password/configuration";
 import type { PasswordConfigurationError } from "./password/errors";

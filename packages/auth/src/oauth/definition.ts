@@ -1,4 +1,6 @@
-import { Crypto, Array, Layer } from "effect";
+import * as Array from "effect/Array";
+import * as Crypto from "effect/Crypto";
+import * as Layer from "effect/Layer";
 
 import { makeAuthStrategy } from "../auth/AuthStrategy";
 import { defaultLayer, hooksLayer } from "../auth/defaults";

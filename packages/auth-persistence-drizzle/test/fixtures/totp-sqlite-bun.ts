@@ -1,10 +1,12 @@
-import { BunCrypto, BunRuntime } from "@effect/platform-bun";
+import * as BunCrypto from "@effect/platform-bun/BunCrypto";
+import * as BunRuntime from "@effect/platform-bun/BunRuntime";
 import * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient";
 import { LifecycleHooks } from "@yielded/auth/Hooks";
 import { TotpPersistence, TotpSecretKeys, TotpCryptography } from "@yielded/auth/Totp";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
-import { Effect, Layer } from "effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 
 import * as SqliteBun from "../../src/SqliteBun";
 import { exampleKeys, mapping, migrate, useAuthenticator } from "./totp-sqlite-consumer";

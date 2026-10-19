@@ -1,7 +1,12 @@
 import { OAuthScope, OAuthServer } from "@yielded/auth";
 import * as Platform from "@yielded/auth/WorkerdPasswordlessServices";
 import { Jwks } from "@yielded/jose";
-import { Cause, Effect, Exit, Layer, ManagedRuntime, Redacted } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Layer from "effect/Layer";
+import * as ManagedRuntime from "effect/ManagedRuntime";
+import * as Redacted from "effect/Redacted";
 
 // User-requested red/green seam: real Worker HTTP disconnect during remote JWKS
 // loading, concurrent signed-token verification, timeout and subsequent recovery.

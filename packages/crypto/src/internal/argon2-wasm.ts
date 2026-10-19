@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 
 import { derive } from "./argon2";
 import { allocate, type fill } from "./argon2-core";

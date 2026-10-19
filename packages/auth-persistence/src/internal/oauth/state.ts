@@ -6,8 +6,10 @@ import {
   snapshotOAuth,
 } from "@yielded/auth/OAuth";
 import type { AuthenticationRequirement } from "@yielded/auth/Sessions";
-import { Crypto, Effect, Schema } from "effect";
-import { Base64Url } from "effect/encoding";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
+import * as Schema from "effect/Schema";
 
 import { randomId } from "../crypto";
 export { digest } from "../crypto";

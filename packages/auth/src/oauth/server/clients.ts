@@ -1,9 +1,19 @@
 import { Hmac } from "@yielded/crypto/Hmac";
 import { Signature } from "@yielded/crypto/Signature";
 import { Jwk, Jwks, Jwt } from "@yielded/jose";
-import { Cause, Clock, Crypto, Effect, Option, Redacted, Schema, Semaphore, Stream } from "effect";
-import { Base64, Base64Url } from "effect/encoding";
-import { FetchHttpClient, HttpClient } from "effect/http";
+import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Base64 from "effect/encoding/Base64";
+import * as Base64Url from "effect/encoding/Base64Url";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import * as HttpClient from "effect/http/HttpClient";
+import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
+import * as Stream from "effect/Stream";
 
 import { timeoutOrElseWithCause } from "../../internal/timeout";
 import {

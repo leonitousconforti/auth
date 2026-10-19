@@ -1,6 +1,9 @@
 import { it } from "@effect/vitest";
 import { Auth, Hooks, OAuth, Operations, Sessions, WebCrypto } from "@yielded/auth";
-import { Effect, Layer, Redacted, Schema } from "effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 import { expect } from "vite-plus/test";
 
 import { makeOAuthAccounts } from "../../src/oauth/accounts";

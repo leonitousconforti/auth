@@ -5,7 +5,8 @@ import {
   type NativePasskeyRegistrationMapping,
 } from "@yielded/auth-persistence/Adapter";
 import { PasskeyManagementPersistence } from "@yielded/auth/Passkey";
-import { Effect, Layer } from "effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 
 import type { NativeDatabaseHandle } from "../native-database";
 import type { PasskeyMappingSource } from "../passkey-model";

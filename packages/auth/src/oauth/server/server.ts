@@ -1,21 +1,23 @@
-import {
-  Cause,
-  Context,
-  Crypto,
-  DateTime,
-  Duration,
-  Effect,
-  Layer,
-  Option,
-  Redacted,
-  Result,
-  Schema,
-  Stream,
-  type Types,
-} from "effect";
-import { Base64Url } from "effect/encoding";
-import { Cookies, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
-import { HttpApiBuilder, HttpApiSecurity } from "effect/http-api";
+import * as Cause from "effect/Cause";
+import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
+import * as Duration from "effect/Duration";
+import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
+import * as HttpApiSecurity from "effect/http-api/HttpApiSecurity";
+import * as Cookies from "effect/http/Cookies";
+import * as HttpRouter from "effect/http/HttpRouter";
+import * as HttpServerRequest from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
+import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
+import type * as Types from "effect/Types";
 
 import { reportAuthFailure, ReportedOperationDefect } from "../../internal/diagnostics";
 import { origin as Origin } from "../../internal/origin";

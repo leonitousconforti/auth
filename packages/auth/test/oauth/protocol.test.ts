@@ -15,20 +15,18 @@ import { RequestBindingFlowId } from "@yielded/auth/Operations";
 import { layerWebCrypto } from "@yielded/auth/WebCrypto";
 import * as Admission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
-import {
-  Context,
-  DateTime,
-  Deferred,
-  Effect,
-  Exit,
-  Fiber,
-  Layer,
-  Redacted,
-  Schema,
-  Scope,
-} from "effect";
-import { FetchHttpClient } from "effect/http";
-import { TestClock } from "effect/testing";
+import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
+import * as TestClock from "effect/testing/TestClock";
 import { describe, expect } from "vite-plus/test";
 
 import { expectTag } from "./helpers/oauth";

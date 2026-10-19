@@ -1,8 +1,11 @@
 import { CurrentCommitJournal } from "@yielded/auth/Hooks";
 import { AuthenticationClock } from "@yielded/auth/Operations";
 import * as M from "@yielded/auth/Passkey";
-import { Crypto, Effect, Option, Schema } from "effect";
-import { SqlError } from "effect/sql/SqlError";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import * as SqlError from "effect/sql/SqlError";
 
 import { sqlBatchAssertion } from "./d1-planning";
 import { PersistenceMappingError, isMappedConstraintConflict } from "./mapping-error";
@@ -99,7 +102,8 @@ const services = Effect.fnUntraced(function* (
             Effect.catchCauseIf(
               (cause) =>
                 isMappedConstraintConflict(
-                  (error) => Schema.is(SqlError)(error) && error.reason._tag === "UniqueViolation",
+                  (error) =>
+                    Schema.is(SqlError.SqlError)(error) && error.reason._tag === "UniqueViolation",
                   cause,
                 ),
               () => Effect.succeed(0),

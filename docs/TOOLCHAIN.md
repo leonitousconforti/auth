@@ -12,6 +12,10 @@ and configure Git hooks. Run `vp run ready` before handoff.
 compiler across workspaces and scripts. Include `vp env doctor` output when
 reporting toolchain failures.
 
+Within `packages/`, Effect diagnostics require namespace imports for `effect`
+and `@effect/*`, such as `import * as Effect from "effect/Effect"`. Examples,
+documentation, and repository scripts can use named imports.
+
 Shared versions live in the root catalog. Upgrade the Effect family together and
 rerun installation. Keep the catalog's Vitest version aligned with Vite+'s bundled
 runner so Effect's test integration uses the same version.

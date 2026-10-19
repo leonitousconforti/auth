@@ -1,4 +1,4 @@
-import type { D1Client } from "@effect/sql-d1/D1Client";
+import type * as D1Client from "@effect/sql-d1/D1Client";
 import { withStorageValidation } from "@yielded/auth-persistence/Adapter";
 import {
   ExternalIdentityMutation,
@@ -24,7 +24,9 @@ import {
 } from "drizzle-orm";
 import type { EffectSQLiteD1Database } from "drizzle-orm/effect-d1";
 import type { AnySQLiteTable, SQLiteColumn } from "drizzle-orm/sqlite-core";
-import { Cause, Effect, Schema } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import { Database as DatabaseService } from "./d1-database";
 import {
@@ -38,7 +40,7 @@ import {
 import { NativeDatabase, nativeDatabase } from "./native-database";
 import { validateDrizzleStorage } from "./storage-validation";
 
-type RuntimeDatabase = EffectSQLiteD1Database<any> & { readonly $client: D1Client };
+type RuntimeDatabase = EffectSQLiteD1Database<any> & { readonly $client: D1Client.D1Client };
 const unavailable = () => IdentityUnavailable.make();
 const isIdentityFailure = Schema.is(Schema.Union([IdentityConflict, IdentityUnavailable]));
 

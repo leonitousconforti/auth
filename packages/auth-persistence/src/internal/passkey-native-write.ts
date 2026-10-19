@@ -1,9 +1,10 @@
 /* oxlint-disable no-explicit-any -- physical mapping generics are erased only at this shared adapter boundary. */
 import * as M from "@yielded/auth/Passkey";
 import { SecurityRevision } from "@yielded/auth/Sessions";
-import { Effect, Schema } from "effect";
-import { SqlClient } from "effect/sql";
-import type { Fragment } from "effect/sql/Statement";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
+import type * as Statement from "effect/sql/Statement";
 
 import { randomId } from "./crypto";
 import { sqlBatchAssertion } from "./d1-planning";
@@ -71,7 +72,7 @@ export const makePasskeyNativeWrites = (
         ),
     );
 
-  const check = (condition: Fragment) =>
+  const check = (condition: Statement.Fragment) =>
     Effect.gen(function* () {
       const current = (yield* SqlClient.SqlClient).withoutTransforms();
       const rows = yield* current`select case when ${condition} then 1 else 0 end as valid`;
@@ -83,12 +84,12 @@ export const makePasskeyNativeWrites = (
         });
     });
 
-  const postcondition = (name: string, condition: Fragment) =>
+  const postcondition = (name: string, condition: Statement.Fragment) =>
     base.batch
       ? registerSqlBatchPostcondition({ name, statement: sqlBatchAssertion(sql, condition) })
       : registerSqlPostcondition({ name, check: check(condition) });
 
-  const write = (statement: Fragment, count: number) =>
+  const write = (statement: Statement.Fragment, count: number) =>
     base.batch
       ? flow.stage(statement, count)
       : flow.change(statement).pipe(
@@ -579,7 +580,7 @@ export const makePasskeyNativeManagement = (
             invalidation: input.invalidation,
           };
 
-          const finalConditions: Array<Fragment> = [];
+          const finalConditions: Array<Statement.Fragment> = [];
 
           for (const mutation of mapping.invalidation.mutations) {
             const table = tables(mutation.table);

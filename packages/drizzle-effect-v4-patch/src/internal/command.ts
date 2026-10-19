@@ -1,5 +1,7 @@
-import { Console, Effect } from "effect";
-import { Command, Flag } from "effect/cli";
+import * as Command from "effect/cli/Command";
+import * as Flag from "effect/cli/Flag";
+import * as Console from "effect/Console";
+import * as Effect from "effect/Effect";
 
 import { configure } from "./patch.ts";
 

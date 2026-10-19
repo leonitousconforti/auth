@@ -1,5 +1,13 @@
-import { Cause, Context, Effect, Layer, Schema, SchemaAST } from "effect";
-import { AsyncResult, Atom, AtomRegistry, Reactivity } from "effect/reactivity";
+import * as Cause from "effect/Cause";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import * as Atom from "effect/reactivity/Atom";
+import * as AtomRegistry from "effect/reactivity/AtomRegistry";
+import * as Reactivity from "effect/reactivity/Reactivity";
+import * as Schema from "effect/Schema";
+import * as SchemaAST from "effect/SchemaAST";
 
 import {
   type ActionDecodeServices,

@@ -3,8 +3,12 @@ import { coordinateCommit, LifecycleHooks } from "@yielded/auth/Hooks";
 import { SubjectId, TokenDigest } from "@yielded/auth/Schema";
 import * as Sessions from "@yielded/auth/Sessions";
 import { layerWebCrypto } from "@yielded/auth/WebCrypto";
-import { DateTime, Effect, Layer, Redacted, Schema } from "effect";
-import { TestClock } from "effect/testing";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import { expect } from "vite-plus/test";
 
 const subjectId = SubjectId.make("actor-session-audience-regression");

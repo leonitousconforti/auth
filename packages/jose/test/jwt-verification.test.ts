@@ -1,7 +1,9 @@
 import { it } from "@effect/vitest";
 import { type Errors, Jwk, Jwks, Jwt } from "@yielded/jose";
-import { Effect, Redacted, Schema } from "effect";
-import { TestClock } from "effect/testing";
+import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import * as jose from "jose";
 import { expect } from "vite-plus/test";
 

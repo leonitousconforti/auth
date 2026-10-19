@@ -2,8 +2,11 @@ import { it } from "@effect/vitest";
 import { Aead } from "@yielded/crypto/Aead";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
-import { Effect, Layer, Redacted, Schema } from "effect";
-import { Hex } from "effect/encoding";
+import * as Effect from "effect/Effect";
+import * as Hex from "effect/encoding/Hex";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 import { expect } from "vite-plus/test";
 
 import { xchachaVectors } from "./fixtures/xchacha-vectors";

@@ -5,17 +5,15 @@ import { OperationHttpError } from "@yielded/auth/OperationHttp";
 import type { NativeCredentials } from "@yielded/auth/OperationHttpClient";
 import type { CredentialSlot } from "@yielded/auth/Operations";
 import { markAuthFailureReported, reportAuthFailure } from "@yielded/auth/Persistence";
-import {
-  Cause,
-  DateTime,
-  Effect,
-  FileSystem,
-  Layer,
-  Path,
-  type Redacted,
-  Schema,
-  Semaphore,
-} from "effect";
+import * as Cause from "effect/Cause";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
+import type * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 import { app, safeStorage } from "electron";
 
 const recordSchema = BrowserLogin.VaultRecord;

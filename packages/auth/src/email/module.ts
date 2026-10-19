@@ -1,15 +1,13 @@
-import {
-  Cause,
-  Context,
-  Crypto,
-  DateTime,
-  Effect,
-  Layer,
-  Option,
-  Schema,
-  type Types,
-} from "effect";
-import { Base64Url } from "effect/encoding";
+import * as Cause from "effect/Cause";
+import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import type * as Types from "effect/Types";
 
 import { makeAuthStrategy } from "../auth/AuthStrategy";
 import { defaultLayer, hooksLayer } from "../auth/defaults";

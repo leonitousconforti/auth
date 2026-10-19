@@ -6,8 +6,11 @@ import { layerCryptoWeb } from "@yielded/auth/WebCrypto";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
 import * as WebCrypto from "@yielded/crypto/WebCrypto";
-import { Effect, Layer, Redacted, Schema } from "effect";
-import { Base64Url } from "effect/encoding";
+import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 import { expect } from "vite-plus/test";
 
 import fixtures from "./crypto-fixtures";
