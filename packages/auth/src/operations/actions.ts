@@ -183,6 +183,7 @@ const bindAction = <
           SchemaAST.isUndefined(Schema.toEncoded(definition.payload).ast))
           ? ("GET" as const)
           : ("POST" as const),
+      sessionRefresh: true as const,
       credentials: Object.freeze({}),
       reveals,
     }),
@@ -210,6 +211,7 @@ export interface AnyAuthAction {
     };
     readonly path: `/${string}`;
     readonly method: "POST" | "GET";
+    readonly sessionRefresh?: true;
     readonly credentials: Readonly<Record<never, never>>;
     readonly reveals: ReadonlyArray<AuthRevealKind>;
   };

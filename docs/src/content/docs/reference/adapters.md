@@ -27,8 +27,8 @@ password and session persistence in tests. See the
 - **`PasswordHashing`**: Required Layer dependency. Hashes seed passwords without text normalization. `Testing.services()` supplies this and Effect `Crypto`; claims remain application-owned.
 - **Clock**: Uses the caller's clock. Effect's `TestClock` controls expiry.
 
-Supported session operations are issuance, verification, renewal, listing,
-revocation, and sign-out. Renewal invalidates the previous credential; retrying
+Supported session operations are issuance, verification, idle refresh, credential rotation, listing,
+revocation, and sign-out. Explicit rotation invalidates the previous credential; retrying
 with it fails. Each successful sign-in creates a new session.
 Password management, pending authentication, handoff, signed-session approval,
 and ambient transaction composition are unsupported.

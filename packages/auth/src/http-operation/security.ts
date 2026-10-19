@@ -26,6 +26,25 @@ export const mutationSecurity = Effect.fnUntraced(function* (request: Request) {
     return yield* OperationHttpError.make({ reason: "csrf" });
 });
 
+export const allowsSessionRefresh = (
+  request: Request,
+  config: { readonly trustedOrigins: ReadonlyArray<string> },
+  native: boolean,
+) => {
+  if (
+    ["HEAD", "OPTIONS"].includes(request.method) ||
+    request.headers.get("sec-purpose")?.includes("prefetch") ||
+    request.headers.get("purpose")?.includes("prefetch")
+  )
+    return false;
+  if (native) return true;
+  const origin = request.headers.get("origin");
+
+  return origin === null
+    ? request.headers.get("sec-fetch-site") !== "cross-site"
+    : config.trustedOrigins.includes(origin);
+};
+
 export const requestSecurity = Effect.fnUntraced(function* (
   request: Request,
   kind: "operation" | "callback" | "read" | "request",

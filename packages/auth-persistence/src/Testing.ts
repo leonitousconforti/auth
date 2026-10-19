@@ -37,6 +37,8 @@ import {
   snapshotSessionAuthenticationProvenance,
   StaleAuthentication,
   type StatefulSessionPersistence,
+  type StatefulSessionRecord,
+  type PrepareSessionCommit,
 } from "@yielded/auth/Sessions";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
@@ -396,6 +398,64 @@ export const layer = <C extends ClaimsCodec, const Id extends string>(
         approve: () => Effect.fail(unavailable()),
       });
 
+      const updateSession = <A>(
+        input: Parameters<StatefulSessionPersistence<C["Type"]>["rotate"]>[0],
+        prepare: PrepareSessionCommit<StatefulSessionRecord<C["Type"]>, A>,
+        refresh: boolean,
+      ) =>
+        transaction((state, journal, time) =>
+          Effect.gen(function* () {
+            const row = state.sessions.find((session) => session.digest === input.record.digest);
+            const expires = DateTime.toEpochMillis(input.nextExpiresAt);
+
+            if (
+              row === undefined ||
+              !live(state, row, time) ||
+              (!refresh && input.nextCredentialVersion === row.credentialVersion) ||
+              expires <= time ||
+              expires < DateTime.toEpochMillis(row.expiresAt) ||
+              expires > DateTime.toEpochMillis(row.absoluteExpiresAt) ||
+              state.sessions.some(
+                (session) =>
+                  session.digest === input.nextDigest &&
+                  (!refresh || session.sessionId !== row.sessionId),
+              )
+            )
+              return yield* SessionConflict.make({});
+
+            const expected = yield* Schema.encodeEffect(sessionCodec)(input.record).pipe(snapshot);
+
+            const actual = yield* Schema.encodeEffect(sessionCodec)(row).pipe(snapshot);
+
+            if (expected !== actual) return yield* SessionConflict.make({});
+
+            const next = {
+              ...row,
+              digest: input.nextDigest,
+              credentialVersion: input.nextCredentialVersion,
+              issuedAt: DateTime.makeUnsafe(time),
+              expiresAt: input.nextExpiresAt,
+            };
+
+            const encoded = yield* Schema.encodeEffect(sessionCodec)(next).pipe(snapshot);
+
+            const saved = yield* Schema.decodeEffect(sessionCodec)(encoded).pipe(snapshot);
+
+            state.sessions = state.sessions.map((session) =>
+              session.digest === row.digest ? saved : session,
+            );
+
+            return {
+              receipt: prepare(next, journal),
+              deadline: Math.min(
+                expires,
+                DateTime.toEpochMillis(row.expiresAt),
+                DateTime.toEpochMillis(row.absoluteExpiresAt),
+              ),
+            };
+          }),
+        );
+
       const sessions: StatefulSessionPersistence<C["Type"]> = {
         establish: (input, prepare) =>
           transaction((state, journal, time) =>
@@ -457,55 +517,16 @@ export const layer = <C extends ClaimsCodec, const Id extends string>(
               ? Effect.succeed(row)
               : Effect.fail(SessionInvalid.make({}));
           }),
-        rotate: (input, prepare) =>
-          transaction((state, journal, time) =>
-            Effect.gen(function* () {
-              const row = state.sessions.find((session) => session.digest === input.record.digest);
-              const expires = DateTime.toEpochMillis(input.nextExpiresAt);
-
-              if (
-                row === undefined ||
-                !live(state, row, time) ||
-                input.nextCredentialVersion === row.credentialVersion ||
-                expires <= time ||
-                expires > DateTime.toEpochMillis(row.absoluteExpiresAt) ||
-                state.sessions.some((session) => session.digest === input.nextDigest)
-              )
-                return yield* SessionConflict.make({});
-
-              const expected = yield* Schema.encodeEffect(sessionCodec)(input.record).pipe(
-                snapshot,
-              );
-
-              const actual = yield* Schema.encodeEffect(sessionCodec)(row).pipe(snapshot);
-
-              if (expected !== actual) return yield* SessionConflict.make({});
-
-              const next = {
-                ...row,
-                digest: input.nextDigest,
-                credentialVersion: input.nextCredentialVersion,
-                issuedAt: DateTime.makeUnsafe(time),
-                expiresAt: input.nextExpiresAt,
-              };
-
-              const encoded = yield* Schema.encodeEffect(sessionCodec)(next).pipe(snapshot);
-
-              const saved = yield* Schema.decodeEffect(sessionCodec)(encoded).pipe(snapshot);
-
-              state.sessions = state.sessions.map((session) =>
-                session.digest === row.digest ? saved : session,
-              );
-
-              return {
-                receipt: prepare(next, journal),
-                deadline: Math.min(
-                  expires,
-                  DateTime.toEpochMillis(row.expiresAt),
-                  DateTime.toEpochMillis(row.absoluteExpiresAt),
-                ),
-              };
-            }),
+        rotate: (input, prepare) => updateSession(input, prepare, false),
+        refresh: (input, prepare) =>
+          updateSession(
+            {
+              ...input,
+              nextDigest: input.record.digest,
+              nextCredentialVersion: input.record.credentialVersion,
+            },
+            prepare,
+            true,
           ),
         revokeDigest: (digest, prepare) =>
           transaction((state, journal) =>

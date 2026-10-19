@@ -40,7 +40,7 @@ import type { HttpCredentials, OperationHttpConfiguration } from "./models";
 import { OperationHttpInvocation } from "./OperationHttpInvocation";
 import { OperationHttpServerConfig } from "./OperationHttpServerConfig";
 import { CredentialWire, RevealWire, credentialWire, revealWire } from "./private";
-import { requestSecurity } from "./security";
+import { allowsSessionRefresh, requestSecurity } from "./security";
 import { rotationCookies, snapshotCookie } from "./session-cache-cookie";
 
 const responseSchema = Schema.Union([
@@ -508,6 +508,7 @@ export const make = Effect.fnUntraced(function* <
 
       const commands: AuthCredentialCommand[] = [];
 
+      const refreshCommands: AuthCredentialCommand[] = [];
       const reveals: AuthRevealCommand[] = [];
 
       const sink = (values: ReadonlyArray<AuthCredentialCommand>) =>
@@ -581,6 +582,14 @@ export const make = Effect.fnUntraced(function* <
               : invalidateCache.pipe(
                   Effect.mapError(() => HookDenied.make({ reason: "unavailable" })),
                 ),
+          ...(route.sessionRefresh && allowsSessionRefresh(request, config, security.native)
+            ? {
+                sessionRefresh: (values: ReadonlyArray<AuthCredentialCommand>) =>
+                  Effect.sync(() => {
+                    refreshCommands.splice(0, refreshCommands.length, ...values);
+                  }),
+              }
+            : {}),
           credentialCommandSink: sink,
           revealCommandCollector: collector,
         }),
@@ -594,6 +603,8 @@ export const make = Effect.fnUntraced(function* <
         ),
       );
 
+      if (!commands.some((command) => command.slot === "session"))
+        commands.push(...refreshCommands);
       const headers = baseHeaders();
 
       if (

@@ -4,7 +4,7 @@ import type * as Redacted from "effect/Redacted";
 
 import type { HookDenied } from "../hooks/models";
 import type { AuthInvocation } from "../operations/context";
-import type { AuthResolvedCall } from "../operations/credentials";
+import type { AuthCredentialCommandSink, AuthResolvedCall } from "../operations/credentials";
 import type { SessionCacheCommand } from "../sessions/cookieCache";
 import type { SessionUnavailable } from "../sessions/errors";
 import type { SessionApiError } from "./session";
@@ -23,6 +23,9 @@ export class AuthRequest extends Context.Service<
     readonly initializeSessionCache?: Effect.Effect<void, SessionUnavailable>;
     /** Cookie snapshots are private read responses, separate from credential issuance. */
     readonly sessionCacheCommandSink?: (command: SessionCacheCommand) => Effect.Effect<void>;
+    /** HTTP-owned delivery for routine session maintenance. Absent in read-only
+     * local contexts and requests that must not extend the session. */
+    readonly sessionRefresh?: AuthCredentialCommandSink;
     /** Host admission runs before mutation side effects; absent for trusted local callers. */
     readonly beforeMutation?: Effect.Effect<void, HookDenied>;
     /** HTTP adapters resolve caller authority only when an authentication method needs it. */

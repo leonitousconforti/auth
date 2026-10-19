@@ -31,7 +31,8 @@ http.handlers(Api, { name: "account" });
 Configure paths through `basePath` rather than prefixing the generated endpoints.
 
 `getSession` accepts `{}` or `{ "payload": { "fresh": true } }` as its JSON body.
-The fresh option bypasses the cookie cache; the call remains a read-only query.
+The fresh option bypasses the cookie cache. Both session queries participate in
+automatic HTTP session maintenance.
 
 ## Cookies and request policy
 
@@ -77,6 +78,13 @@ reject an explicitly untrusted Origin. Duplicate authority credentials are rejec
 invalid or duplicate optional cache cookies are ignored. Session responses are
 not cacheable. If you override `csrf` on the server,
 pass matching settings to `Client.make`.
+
+Session reads and authenticated actions maintain eligible sessions using the
+configured `renewAfter` interval. Responses can set the session cookie even for a
+query. HEAD, OPTIONS, prefetches, and requests identified as coming from an
+untrusted origin do not maintain sessions. Low-level `verifySession()` is read-only;
+authentication outside this HTTP boundary requires its host to own delivery.
+See [session maintenance](../guide/sessions#session-maintenance).
 
 Named mutations enforce Origin and CSRF before side effects, including local
 calls from application routes. Raw strategy methods are treated as mutations.

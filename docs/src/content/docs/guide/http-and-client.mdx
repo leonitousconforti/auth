@@ -162,7 +162,9 @@ export const currentMember = Effect.fn("app.currentMember")(function* () {
 
 `requireSession` fails with `AuthenticationRequired` when there is no valid
 session. Use `getSession()` for an optional session. Neither makes an HTTP call;
-your handler still owns authorization for the application action.
+your handler still owns authorization for the application action. The HTTP boundary
+also [maintains idle expiry](./sessions#session-maintenance) and delivers updated
+credentials automatically when needed.
 
 ### Verify credentials outside the HTTP middleware
 

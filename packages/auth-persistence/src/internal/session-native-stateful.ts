@@ -9,6 +9,7 @@ import {
   SessionId,
   snapshotSessionAuthenticationProvenance,
   type StatefulSessionPersistence,
+  type PrepareSessionCommit,
   type StatefulSessionRecord,
   type SessionRepository,
   type SessionUnavailable,
@@ -232,6 +233,92 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
     return decoded[owner.securityRevision] === record.securityRevision ? record : undefined;
   });
 
+  const updateSession = <A>(
+    input: Parameters<StatefulSessionPersistence<Claims>["rotate"]>[0],
+    project: PrepareSessionCommit<StatefulSessionRecord<Claims>, A>,
+    refresh: boolean,
+  ) =>
+    native(
+      classify(
+        Effect.gen(function* () {
+          const absolute = DateTime.toEpochMillis(input.record.absoluteExpiresAt),
+            expires = DateTime.toEpochMillis(input.nextExpiresAt),
+            preparedAt = Math.max(
+              DateTime.toEpochMillis(input.now),
+              DateTime.toEpochMillis(input.record.issuedAt),
+            );
+
+          if (
+            expires > absolute ||
+            preparedAt >= expires ||
+            expires < DateTime.toEpochMillis(input.record.expiresAt) ||
+            (!refresh &&
+              (input.nextDigest === input.record.digest ||
+                input.nextCredentialVersion === input.record.credentialVersion))
+          )
+            return yield* SessionConflict.make({});
+
+          const needsSample =
+            batch !== undefined || sql.onDialectOrElse({ mysql: () => true, orElse: () => false });
+
+          const sampled = needsSample
+            ? Number((yield* sql`select ${now} as engine_now`)[0]?.engine_now)
+            : DateTime.toEpochMillis(input.record.issuedAt);
+
+          if (!Number.isSafeInteger(sampled)) return yield* invalidSessionState();
+
+          const prepared = {
+            ...input.record,
+            digest: input.nextDigest,
+            credentialVersion: input.nextCredentialVersion,
+            expiresAt: input.nextExpiresAt,
+            issuedAt: DateTime.makeUnsafe(Math.max(sampled, preparedAt)),
+          };
+
+          const values = {
+            ...s.encodeRotation(prepared),
+            [s.digest]: prepared.digest,
+            [s.issuedAt]: tables.expression(
+              mapping.clock.fromMillis(
+                sql`case when ${now} >= ${preparedAt} then ${now} else ${preparedAt} end`,
+              ),
+            ),
+            [s.expiresAt]: s.encodeInstant(prepared.expiresAt),
+          };
+
+          const nativeSubject = yield* mapping.subjectId.toNative(input.record.subjectId);
+          const authority = sql`exists(select 1 from ${state.subject.name} where ${state.id(state.subject, owner.id, nativeSubject)} and ${state.activeSubject(state.subject)} and ${state.exact(state.subject, owner.securityRevision, input.record.securityRevision)})`;
+          const condition = sql`${yield* records.owner(input.record)} and ${authority} and ${records.millis(table, s.issuedAt)} = ${DateTime.toEpochMillis(input.record.issuedAt)} and ${records.millis(table, s.expiresAt)} = ${DateTime.toEpochMillis(input.record.expiresAt)} and ${live(table)} and ${preparedAt} <= ${now} + ${state.clockPolicy.futureToleranceMillis} and ${now} < ${expires} and ${records.millis(table, s.absoluteExpiresAt)} = ${absolute}`;
+          const update = sql`${table.update(values)} where ${condition}`;
+          let record = prepared;
+
+          if (needsSample) {
+            // Batch receipts are prepared before execution. The exact sampled time is
+            // written and checked; no speculative UPDATE result is treated as committed.
+            const statement = sql`${table.update({ ...values, [s.issuedAt]: s.encodeInstant(prepared.issuedAt) })} where ${condition} and ${now} >= ${sampled}`;
+            const changed = yield* stage(statement, 1);
+
+            if (changed !== 1) return yield* SessionConflict.make({});
+          } else {
+            const rows = yield* sql`${update} returning ${sessionFields}`;
+
+            if (rows.length !== 1) return yield* SessionConflict.make({});
+            record = yield* records.decode(table.decode(rows[0]!, "session_"));
+          }
+          yield* finalCondition(
+            "stateful-session-rotation",
+            yield* recordCondition(record, {
+              ...values,
+              [s.issuedAt]: s.encodeInstant(record.issuedAt),
+            }),
+          );
+
+          return yield* prepareNativeSession(record, project);
+        }),
+      ),
+      "statement",
+    );
+
   const persistence: StatefulSessionPersistence<Claims> = {
     establish: (input, project) =>
       native(
@@ -384,83 +471,16 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
           () => SessionInvalid.make({}),
         ),
       ),
-    rotate: (input, project) =>
-      native(
-        classify(
-          Effect.gen(function* () {
-            const absolute = DateTime.toEpochMillis(input.record.absoluteExpiresAt),
-              expires = DateTime.toEpochMillis(input.nextExpiresAt),
-              preparedAt = Math.max(
-                DateTime.toEpochMillis(input.now),
-                DateTime.toEpochMillis(input.record.issuedAt),
-              );
-
-            if (
-              expires > absolute ||
-              preparedAt >= expires ||
-              input.nextDigest === input.record.digest ||
-              input.nextCredentialVersion === input.record.credentialVersion
-            )
-              return yield* SessionConflict.make({});
-
-            const needsSample =
-              batch !== undefined ||
-              sql.onDialectOrElse({ mysql: () => true, orElse: () => false });
-
-            const sampled = needsSample
-              ? Number((yield* sql`select ${now} as engine_now`)[0]?.engine_now)
-              : DateTime.toEpochMillis(input.record.issuedAt);
-
-            if (!Number.isSafeInteger(sampled)) return yield* invalidSessionState();
-
-            const prepared = {
-              ...input.record,
-              digest: input.nextDigest,
-              credentialVersion: input.nextCredentialVersion,
-              expiresAt: input.nextExpiresAt,
-              issuedAt: DateTime.makeUnsafe(Math.max(sampled, preparedAt)),
-            };
-
-            const values = {
-              ...s.encodeRotation(prepared),
-              [s.digest]: prepared.digest,
-              [s.issuedAt]: tables.expression(
-                mapping.clock.fromMillis(
-                  sql`case when ${now} >= ${preparedAt} then ${now} else ${preparedAt} end`,
-                ),
-              ),
-              [s.expiresAt]: s.encodeInstant(prepared.expiresAt),
-            };
-
-            const condition = sql`${yield* records.owner(input.record)} and ${live(table)} and ${preparedAt} <= ${now} + ${state.clockPolicy.futureToleranceMillis} and ${now} < ${expires} and ${records.millis(table, s.absoluteExpiresAt)} = ${absolute}`;
-            const update = sql`${table.update(values)} where ${condition}`;
-            let record = prepared;
-
-            if (needsSample) {
-              // Batch receipts are prepared before execution. The exact sampled time is
-              // written and checked; no speculative UPDATE result is treated as committed.
-              const statement = sql`${table.update({ ...values, [s.issuedAt]: s.encodeInstant(prepared.issuedAt) })} where ${condition} and ${now} >= ${sampled}`;
-              const changed = yield* stage(statement, 1);
-
-              if (changed !== 1) return yield* SessionConflict.make({});
-            } else {
-              const rows = yield* sql`${update} returning ${sessionFields}`;
-
-              if (rows.length !== 1) return yield* SessionConflict.make({});
-              record = yield* records.decode(table.decode(rows[0]!, "session_"));
-            }
-            yield* finalCondition(
-              "stateful-session-rotation",
-              yield* recordCondition(record, {
-                ...values,
-                [s.issuedAt]: s.encodeInstant(record.issuedAt),
-              }),
-            );
-
-            return yield* prepareNativeSession(record, project);
-          }),
-        ),
-        "statement",
+    rotate: (input, project) => updateSession(input, project, false),
+    refresh: (input, project) =>
+      updateSession(
+        {
+          ...input,
+          nextDigest: input.record.digest,
+          nextCredentialVersion: input.record.credentialVersion,
+        },
+        project,
+        true,
       ),
     revokeDigest: (digest, project) =>
       native(

@@ -13,6 +13,7 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
+import * as TxReentrantLock from "effect/TxReentrantLock";
 
 import {
   markAuthFailureReported,
@@ -272,6 +273,7 @@ export const make = Effect.fn("OperationHttpClient.make")(function* <R = never, 
   }
   const httpClient = (yield* HttpClient.HttpClient).pipe(HttpClient.withScope);
   const gate = yield* Semaphore.make(1);
+  const requests = yield* TxReentrantLock.make();
   let generation = 0;
 
   const advance = Effect.gen(function* () {
@@ -468,13 +470,15 @@ export const make = Effect.fn("OperationHttpClient.make")(function* <R = never, 
           const raw = response.headers[native.config.responseHeaders[slot]];
 
           if (raw === undefined) continue;
-          if (!route.operation.credentials)
+          if (!route.operation.credentials && !(route.sessionRefresh && slot === "session"))
             return yield* OperationHttpError.make({ reason: "credentials" });
 
           const command = yield* Schema.decodeEffect(credentialCodec)(raw).pipe(
             Effect.mapError(() => OperationHttpError.make({ reason: "response" })),
           );
 
+          if (!route.operation.credentials && command._tag !== "Issue")
+            return yield* OperationHttpError.make({ reason: "credentials" });
           if (command._tag === "Issue" && command.expiresAtMillis <= now)
             return yield* OperationHttpError.make({ reason: "credentials" });
           commands.push(
@@ -505,14 +509,18 @@ export const make = Effect.fn("OperationHttpClient.make")(function* <R = never, 
 
     // Hold admission for every write, including middleware that delays dispatch.
     // It cannot switch accounts while waiting to send with browser cookies.
-    // Credential responses also settle before the lifetime advances.
+    // Maintenance reads can overlap, but their credential responses must settle
+    // before sign-in, sign-out or explicit rotation. A local lifetime transition
+    // only fences results; it must not wait for the reads it is retiring.
     const admitted =
       route.operation.replay !== "read-only" ||
       route.operation.credentials ||
       route.operation.reveals.length > 0 ||
       (callOptions?.replaceSubject !== undefined && callOptions.replaceSubject !== false)
-        ? gate.withPermits(1)(Effect.uninterruptible(work))
-        : work;
+        ? gate.withPermits(1)(TxReentrantLock.withWriteLock(requests, Effect.uninterruptible(work)))
+        : route.sessionRefresh
+          ? TxReentrantLock.withReadLock(requests, Effect.uninterruptible(work))
+          : work;
 
     // The complete request Scope (including body cleanup) settles before the
     // public projection. Never select one failure from a mixed Cause.

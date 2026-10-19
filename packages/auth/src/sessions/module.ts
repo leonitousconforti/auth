@@ -225,6 +225,11 @@ export const makeSessionModule = <
     readonly renew: (
       credential: Redacted.Redacted<string>,
     ) => Effect.Effect<AuthOperationResult<Session>, Failure>;
+    /** Request-driven idle extension. Stateful bearers and credential versions stay
+     * stable; signed credentials overlap until their existing expiry. */
+    readonly refresh: (
+      credential: Redacted.Redacted<string>,
+    ) => Effect.Effect<AuthOperationResult<Session>, Failure>;
     readonly signOut: (
       credential: Redacted.Redacted<string>,
     ) => Effect.Effect<AuthOperationResult<SignOutResult>, Failure>;
@@ -649,6 +654,90 @@ export const makeSessionModule = <
             .pipe(Effect.tapError(reportAuthorityFailure));
         }, withClockPolicy);
 
+        const renew = Effect.fn("StatefulSession.renew")(function* (
+          credential: Redacted.Redacted<string>,
+          refresh = false,
+        ) {
+          yield* checkNoAmbientCommit();
+          const digest = yield* secrets.digest(credential, "bearer");
+          const now = yield* DateTime.now;
+          const record = yield* store.verify({ digest, now });
+
+          const inspected = yield* inspectProvenance(
+            yield* validate(record),
+            record.provenance,
+            record.credentialVersion,
+          );
+
+          const session = inspected.session;
+
+          if (refresh)
+            yield* captureVerification(
+              credential,
+              { inspection: inspected, guard: { _tag: "Stateful", digest } },
+              now,
+            );
+
+          if (
+            refresh &&
+            (DateTime.toEpochMillis(now) <
+              DateTime.toEpochMillis(session.issuedAt) + policy.renewalIntervalMillis ||
+              DateTime.toEpochMillis(session.expiresAt) >=
+                DateTime.toEpochMillis(session.absoluteExpiresAt))
+          )
+            return issue(session, credential);
+          yield* checkRenewalDue(session, now, policy);
+          const next = refresh ? credential : yield* secrets.generate();
+          const nextDigest = refresh ? digest : yield* secrets.digest(next, "bearer");
+
+          const nextCredentialVersion = refresh
+            ? record.credentialVersion
+            : SessionCredentialVersion.make(Redacted.value(yield* secrets.generate()));
+
+          const event = yield* prepareHooks("session-creation", session).pipe(
+            Effect.provide(services),
+          );
+
+          yield* validateSessionTimeline(session, policy);
+          const commitNow = yield* DateTime.now;
+
+          const nextExpiresAt = DateTime.makeUnsafe(
+            Math.min(
+              DateTime.toEpochMillis(session.absoluteExpiresAt),
+              DateTime.toEpochMillis(now) + policy.idleLifetimeMillis,
+            ),
+          );
+
+          const receipt = yield* (refresh ? store.refresh : store.rotate)(
+            {
+              record,
+              nextDigest,
+              nextCredentialVersion,
+              nextExpiresAt,
+              now: commitNow,
+            },
+            (rotated, journal) => {
+              journal.stage(event);
+
+              return journal.prepare(issue(rotated, next));
+            },
+          );
+
+          const result = yield* readCommitted(receipt);
+
+          if (refresh)
+            yield* captureVerification(
+              credential,
+              {
+                inspection: { ...inspected, session: result.value },
+                guard: { _tag: "Stateful", digest },
+              },
+              now,
+            );
+
+          return result;
+        }, withClockPolicy);
+
         const strategy = SessionStrategy.of({
           policy,
           capabilities: {
@@ -662,61 +751,15 @@ export const makeSessionModule = <
 
             return yield* prepareEstablish(handoff.issuance, handoff.source);
           }),
-          renew: Effect.fn("StatefulSession.renew")(function* (
-            credential: Redacted.Redacted<string>,
-          ) {
-            yield* checkNoAmbientCommit();
-            const digest = yield* secrets.digest(credential, "bearer");
-            const now = yield* DateTime.now;
-            const record = yield* store.verify({ digest, now });
-
-            const inspected = yield* inspectProvenance(
-              yield* validate(record),
-              record.provenance,
-              record.credentialVersion,
-            );
-
-            const session = inspected.session;
-
-            yield* checkRenewalDue(session, now, policy);
-            const next = yield* secrets.generate();
-            const nextDigest = yield* secrets.digest(next, "bearer");
-
-            const nextCredentialVersion = SessionCredentialVersion.make(
-              Redacted.value(yield* secrets.generate()),
-            );
-
-            const event = yield* prepareHooks("session-creation", session).pipe(
-              Effect.provide(services),
-            );
-
-            yield* validateSessionTimeline(session, policy);
-            const commitNow = yield* DateTime.now;
-
-            const nextExpiresAt = DateTime.makeUnsafe(
-              Math.min(
-                DateTime.toEpochMillis(session.absoluteExpiresAt),
-                DateTime.toEpochMillis(now) + policy.idleLifetimeMillis,
+          renew: (credential) => renew(credential),
+          refresh: (credential) =>
+            renew(credential, true).pipe(
+              Effect.catchTag("SessionConflict", () =>
+                inspect(credential).pipe(
+                  Effect.map((source) => issue(source.inspection.session, credential)),
+                ),
               ),
-            );
-
-            const receipt = yield* store.rotate(
-              {
-                record,
-                nextDigest,
-                nextCredentialVersion,
-                nextExpiresAt,
-                now: commitNow,
-              },
-              (rotated, journal) => {
-                journal.stage(event);
-
-                return journal.prepare(issue(rotated, next));
-              },
-            );
-
-            return yield* readCommitted(receipt);
-          }, withClockPolicy),
+            ),
           signOut: Effect.fn("StatefulSession.signOut")(function* (
             credential: Redacted.Redacted<string>,
           ) {
@@ -984,6 +1027,58 @@ export const makeSessionModule = <
             .pipe(Effect.tapError(reportAuthorityFailure));
         }, withClockPolicy);
 
+        const renew = Effect.fn("SignedSession.renew")(function* (
+          credential: Redacted.Redacted<string>,
+          refresh = false,
+        ) {
+          yield* checkNoAmbientCommit();
+          const source = (yield* inspect(credential)).inspection;
+          const session = source.session;
+          const now = yield* DateTime.now;
+
+          if (
+            refresh &&
+            (DateTime.toEpochMillis(now) <
+              DateTime.toEpochMillis(session.issuedAt) + policy.renewalIntervalMillis ||
+              DateTime.toEpochMillis(session.expiresAt) >=
+                DateTime.toEpochMillis(session.absoluteExpiresAt))
+          )
+            return issue(session, credential);
+          yield* checkRenewalDue(session, now, policy);
+
+          const renewed = {
+            ...session,
+            issuedAt: now,
+            expiresAt: DateTime.makeUnsafe(
+              Math.min(
+                DateTime.toEpochMillis(session.absoluteExpiresAt),
+                DateTime.toEpochMillis(now) + policy.idleLifetimeMillis,
+              ),
+            ),
+          };
+
+          const next = yield* encode({
+            session: renewed,
+            provenance: source.provenance,
+            credentialVersion: refresh
+              ? source.credentialVersion
+              : SessionCredentialVersion.make(Redacted.value(yield* secrets.generate())),
+          });
+
+          const event = yield* prepareHooks("session-creation", renewed).pipe(
+            Effect.provide(services),
+          );
+
+          yield* validateSessionTimeline(session, policy);
+          yield* validateSessionTimeline(renewed, policy);
+          // Signing grants no new authority; preserve the original absolute bound.
+          const result = issue(renewed, next);
+
+          yield* hooks.after(event);
+
+          return result;
+        }, withClockPolicy);
+
         const strategy = SessionStrategy.of({
           policy,
           capabilities,
@@ -994,48 +1089,8 @@ export const makeSessionModule = <
 
             return yield* prepareEstablish(handoff.issuance, handoff.source);
           }),
-          renew: Effect.fn("SignedSession.renew")(function* (
-            credential: Redacted.Redacted<string>,
-          ) {
-            yield* checkNoAmbientCommit();
-            const source = (yield* inspect(credential)).inspection;
-            const session = source.session;
-            const now = yield* DateTime.now;
-
-            yield* checkRenewalDue(session, now, policy);
-
-            const renewed = {
-              ...session,
-              issuedAt: now,
-              expiresAt: DateTime.makeUnsafe(
-                Math.min(
-                  DateTime.toEpochMillis(session.absoluteExpiresAt),
-                  DateTime.toEpochMillis(now) + policy.idleLifetimeMillis,
-                ),
-              ),
-            };
-
-            const next = yield* encode({
-              session: renewed,
-              provenance: source.provenance,
-              credentialVersion: SessionCredentialVersion.make(
-                Redacted.value(yield* secrets.generate()),
-              ),
-            });
-
-            const event = yield* prepareHooks("session-creation", renewed).pipe(
-              Effect.provide(services),
-            );
-
-            yield* validateSessionTimeline(session, policy);
-            yield* validateSessionTimeline(renewed, policy);
-            // Signing grants no new authority; preserve the original absolute bound.
-            const result = issue(renewed, next);
-
-            yield* hooks.after(event);
-
-            return result;
-          }, withClockPolicy),
+          renew: (credential) => renew(credential),
+          refresh: (credential) => renew(credential, true),
           signOut: Effect.fn("SignedSession.signOut")(function* (
             credential: Redacted.Redacted<string>,
           ) {
@@ -1903,7 +1958,7 @@ export const makeSessionModule = <
             sameRevisions &&
             DateTime.toEpochMillis(intent.sourceAuthenticatedAt) ===
               DateTime.toEpochMillis(session.assurance.authenticatedAt) &&
-            DateTime.toEpochMillis(intent.sourceExpiresAt) ===
+            DateTime.toEpochMillis(intent.sourceExpiresAt) <=
               DateTime.toEpochMillis(session.expiresAt) &&
             DateTime.toEpochMillis(intent.sourceAbsoluteExpiresAt) ===
               DateTime.toEpochMillis(session.absoluteExpiresAt)

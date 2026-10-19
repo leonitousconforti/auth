@@ -208,6 +208,64 @@ export const SessionsLive = Layer.effectContext(
             }),
           )
           .pipe(Effect.catchTag("StoreUnavailable", () => Sessions.SessionUnavailable.make({}))),
+      refresh: (input, prepare) =>
+        store
+          .transaction((state, journal, now) =>
+            Effect.gen(function* () {
+              const row = state.sessions.find((row) => row.sessionId === input.record.sessionId);
+
+              if (
+                row === undefined ||
+                !validSession(state, row, now) ||
+                now >=
+                  Math.min(
+                    DateTime.toEpochMillis(row.expiresAt),
+                    DateTime.toEpochMillis(row.absoluteExpiresAt),
+                  ) ||
+                row.subjectId !== input.record.subjectId ||
+                row.digest !== input.record.digest ||
+                DateTime.toEpochMillis(row.issuedAt) !==
+                  DateTime.toEpochMillis(input.record.issuedAt) ||
+                DateTime.toEpochMillis(row.expiresAt) !==
+                  DateTime.toEpochMillis(input.record.expiresAt) ||
+                DateTime.toEpochMillis(input.nextExpiresAt) <
+                  DateTime.toEpochMillis(row.expiresAt) ||
+                DateTime.toEpochMillis(input.nextExpiresAt) <= now ||
+                DateTime.toEpochMillis(input.nextExpiresAt) >
+                  DateTime.toEpochMillis(row.absoluteExpiresAt) ||
+                state.sessions.some(
+                  (other) =>
+                    other.digest === input.record.digest && other.sessionId !== row.sessionId,
+                )
+              )
+                return yield* Sessions.SessionConflict.make({});
+
+              const next: Session = {
+                ...row,
+                issuedAt: DateTime.makeUnsafe(now),
+                expiresAt: input.nextExpiresAt,
+              };
+
+              const receipt = prepare(next, journal);
+
+              journal.beforeCommit(
+                (fresh) =>
+                  fresh >= now &&
+                  fresh <
+                    Math.min(
+                      DateTime.toEpochMillis(row.expiresAt),
+                      DateTime.toEpochMillis(next.expiresAt),
+                      DateTime.toEpochMillis(next.absoluteExpiresAt),
+                    ),
+              );
+              state.sessions = state.sessions.map((item) =>
+                item.sessionId === row.sessionId ? next : item,
+              );
+
+              return receipt;
+            }),
+          )
+          .pipe(Effect.catchTag("StoreUnavailable", () => Sessions.SessionUnavailable.make({}))),
       revokeDigest: (digest, prepare) =>
         store
           .transaction((state, journal) =>

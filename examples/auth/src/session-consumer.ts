@@ -168,6 +168,41 @@ export const exampleAuthority = Effect.gen(function* () {
           return Effect.succeed(receipt);
         }),
       ),
+    refresh: (input, prepare) =>
+      atomic((journal) =>
+        Effect.suspend(() => {
+          const row = rows.get(input.record.sessionId);
+
+          if (
+            row === undefined ||
+            row.securityRevision !== revision ||
+            DateTime.toEpochMillis(input.nextExpiresAt) >
+              DateTime.toEpochMillis(row.absoluteExpiresAt) ||
+            DateTime.toEpochMillis(input.nextExpiresAt) <= DateTime.toEpochMillis(input.now) ||
+            row.subjectId !== input.record.subjectId ||
+            row.digest !== input.record.digest ||
+            DateTime.toEpochMillis(row.issuedAt) !==
+              DateTime.toEpochMillis(input.record.issuedAt) ||
+            DateTime.toEpochMillis(row.expiresAt) !==
+              DateTime.toEpochMillis(input.record.expiresAt) ||
+            DateTime.toEpochMillis(input.nextExpiresAt) < DateTime.toEpochMillis(row.expiresAt) ||
+            DateTime.toEpochMillis(input.now) >= DateTime.toEpochMillis(row.expiresAt)
+          )
+            return Effect.fail(Sessions.SessionConflict.make({}));
+
+          const next = {
+            ...row,
+            issuedAt: input.now,
+            expiresAt: input.nextExpiresAt,
+          };
+
+          const receipt = prepare(next, journal);
+
+          rows.set(next.sessionId, next);
+
+          return Effect.succeed(receipt);
+        }),
+      ),
     revokeDigest: (digest, prepare) =>
       atomic((journal) =>
         Effect.sync(() => {

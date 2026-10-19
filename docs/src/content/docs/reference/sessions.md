@@ -14,7 +14,7 @@ Durations accept Effect duration inputs such as `"30 minutes"`.
 | -------------------- | --------------------------------------------------------------------------------------------- |
 | `maxAge`             | Absolute lifetime: 30 days for stateful/state-assisted; 15 minutes for stateless.             |
 | `idleTimeout`        | Shorter of 7 days and `maxAge`. Renewal extends idle expiry within the absolute lifetime.     |
-| `renewAfter`         | Shorter of 1 day and half `idleTimeout`. Reads never renew implicitly.                        |
+| `renewAfter`         | Shorter of 1 day and half `idleTimeout`. Minimum interval between HTTP idle extensions.       |
 | `maximumIssuedAge`   | `maxAge`; maximum accepted lifetime of previously issued tokens.                              |
 | `issuer`, `audience` | Stable session namespace derived from the Auth definition.                                    |
 | `generation`         | `1`; changing it invalidates signed tokens and cached snapshots.                              |
@@ -85,6 +85,11 @@ platform Layers.
 
 Without `sessions` on `Auth.make`, provide the bound `statefulLayer(policy)`,
 `statelessLayer(policy)`, `stateAssistedLayer(policy)`, or your own `SessionStrategy`.
+Custom `SessionStrategy.refresh` implementations maintain idle expiry without
+invalidating the incoming credential. Stateful persistence implements `refresh`
+as a conditional lifetime update that preserves the bearer and credential version;
+`rotate` remains the explicit credential replacement operation.
+
 Signed Layers use the same default signing service. Configure cookie caching on
 `Auth.make` with `Sessions.stateful({ cacheFor })`.
 

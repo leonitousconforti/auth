@@ -682,6 +682,8 @@ export const createPersistence = <T extends object, R, Database extends object =
               establish: (input, prepare) =>
                 Effect.flatMap(sessionMutations, (s) => s.establish(input, prepare)),
               verify: (input) => Effect.flatMap(sessions, (s) => s.verify(input)),
+              refresh: (input, prepare) =>
+                Effect.flatMap(sessionMutations, (s) => s.refresh(input, prepare)),
               rotate: (input, prepare) =>
                 Effect.flatMap(sessionMutations, (s) => s.rotate(input, prepare)),
               revokeDigest: (digest, prepare) =>

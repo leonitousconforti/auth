@@ -140,7 +140,9 @@ export interface SessionStepUpPersistence<Claims> {
   ) => Effect.Effect<PreparedCommit<A>, SessionUnavailable>;
   /** Recheck intent version/status/budget, exact source/profile/revisions and BOTH
    * requirements at the actual commit clock. Stateful: guard source digest and
-   * credential version, update in place + consume. Stored sourceKind must match
+   * credential version, update in place + consume. Routine refresh may advance
+   * source issuedAt/expiresAt without extending the intent's original deadline;
+   * all other source metadata must still match. Stored sourceKind must match
    * both the inspected guard and replacement tag, including after deployment changes.
    * Assisted: insert absent source lineage tombstone + consume. Pure signed:
    * consume only; old source remains live.

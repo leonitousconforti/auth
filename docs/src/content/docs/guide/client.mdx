@@ -95,6 +95,10 @@ Reuse an existing provider if you have one. Successful authentication supplies
 `auth.session` immediately after credential settlement; other successful mutations
 refresh it automatically.
 
+Normal authenticated HTTP requests also maintain session expiry on the server.
+You do not need to call `renewSession` or mount
+a timer; a page with no requests can still reach its idle timeout.
+
 When the server enables [cookie caching](./sessions#cache-ordinary-session-reads),
 use `auth.getSession({ fresh: true })` to bypass it. Define this atom outside React
 renders. “Fresh” applies to each server fetch; Atom retention still applies between

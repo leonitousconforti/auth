@@ -19,6 +19,7 @@ import { guest } from "../operations/context";
 import {
   AuthCredentialCommandCollector,
   AuthRevealCommandCollectorService,
+  validateCredentialCommands,
 } from "../operations/credentials";
 import { AuthenticationRequired, type OperationBoundaryError } from "../operations/errors";
 import {
@@ -60,27 +61,40 @@ const cacheFallback =
       ),
     );
 
-/** Session actions share implementations across HTTP, native and local callers. */
-export type SessionApi<Session, R = never> = SessionCacheOwner & {
-  /** Explicit credential verification; does not read a request or renew credentials. */
-  readonly verifySession: (
+/** Internal HTTP hook; explicit verification remains independent of request delivery. */
+export const maintainSession = Symbol.for("effect-auth/internal/maintainSession");
+
+/** Private transport capability, kept separate from named session operations. */
+export type SessionMaintenanceOwner<Session> = {
+  readonly [maintainSession]?: (
+    session: Session,
     credential: Redacted.Redacted<string>,
-  ) => Effect.Effect<Session, SessionApiError>;
-  /** Missing or invalid credentials are anonymous; availability failures remain failures.
-   * Set fresh to bypass the cookie cache. */
-  readonly getSession: (
-    options?: SessionReadOptions,
-  ) => Effect.Effect<Session | null, SessionApiError, AuthRequest | R>;
-  readonly requireSession: Effect.Effect<Session, SessionApiError, AuthRequest | R>;
-  /** Does not preverify. Local clearing and server invalidation have distinct outcomes. */
-  readonly signOut: Effect.Effect<
-    SessionSignOut | SessionSignOutUnavailable,
-    SessionApiError,
-    AuthRequest | R
-  >;
-  /** Explicit renewal; ordinary session reads never rotate credentials. */
-  readonly renewSession: Effect.Effect<Session, SessionApiError, AuthRequest | R>;
+  ) => Effect.Effect<Session | null, SessionApiError>;
 };
+
+/** Session actions share implementations across HTTP, native and local callers. */
+export type SessionApi<Session, R = never> = SessionCacheOwner &
+  SessionMaintenanceOwner<Session> & {
+    /** Explicit credential verification; does not read a request or renew credentials. */
+    readonly verifySession: (
+      credential: Redacted.Redacted<string>,
+    ) => Effect.Effect<Session, SessionApiError>;
+    /** Missing or invalid credentials are anonymous; availability failures remain failures.
+     * Set fresh to bypass the cookie cache. HTTP boundaries maintain idle expiry;
+     * local contexts without sessionRefresh remain read-only. */
+    readonly getSession: (
+      options?: SessionReadOptions,
+    ) => Effect.Effect<Session | null, SessionApiError, AuthRequest | R>;
+    readonly requireSession: Effect.Effect<Session, SessionApiError, AuthRequest | R>;
+    /** Does not preverify. Local clearing and server invalidation have distinct outcomes. */
+    readonly signOut: Effect.Effect<
+      SessionSignOut | SessionSignOutUnavailable,
+      SessionApiError,
+      AuthRequest | R
+    >;
+    /** Explicit renewal; ordinary session reads never rotate credentials. */
+    readonly renewSession: Effect.Effect<Session, SessionApiError, AuthRequest | R>;
+  };
 
 export const makeSessionApi = Effect.fnUntraced(function* <
   const Id extends string,
@@ -146,6 +160,49 @@ export const makeSessionApi = Effect.fnUntraced(function* <
     );
   });
 
+  const refreshDue = (session: typeof sessions.Session.Type, now: number) =>
+    now >= DateTime.toEpochMillis(session.issuedAt) + strategy.policy.renewalIntervalMillis &&
+    DateTime.toEpochMillis(session.expiresAt) < DateTime.toEpochMillis(session.absoluteExpiresAt);
+
+  const maintain = Effect.fnUntraced(function* (
+    session: typeof sessions.Session.Type | null,
+    credential: Redacted.Redacted<string> | undefined,
+  ) {
+    const context = yield* Effect.serviceOption(AuthRequest);
+
+    if (Option.isNone(context)) return session;
+    const request = context.value;
+
+    if (session === null || credential === undefined || request.sessionRefresh === undefined)
+      return session;
+    const now = DateTime.toEpochMillis(yield* DateTime.now);
+
+    if (refreshDue(session, now)) {
+      const refreshed = yield* strategy
+        .refresh(credential)
+        .pipe(Effect.catchTag("SessionInvalid", () => Effect.succeed(null)));
+
+      if (refreshed === null) return null;
+      yield* request.sessionRefresh(
+        yield* validateCredentialCommands(refreshed.credentialCommands),
+      );
+
+      return refreshed.value;
+    }
+    // Re-deliver the authoritative expiry even after a previous response was
+    // lost. This reuses the incoming bearer and creates no new credential.
+    yield* request.sessionRefresh([
+      {
+        _tag: "Issue",
+        slot: "session",
+        credential,
+        expiresAtMillis: DateTime.toEpochMillis(session.expiresAt),
+      },
+    ]);
+
+    return session;
+  });
+
   const getSession = Effect.fn("Auth.getSession")(function* (options?: SessionReadOptions) {
     const request = yield* AuthRequest;
     const credential = request.credentials.session;
@@ -191,14 +248,19 @@ export const makeSessionApi = Effect.fnUntraced(function* <
         .read(credential, cached, generation)
         .pipe(cacheFallback(null));
 
-      if (snapshot !== null) return snapshot;
+      if (
+        snapshot !== null &&
+        (request.sessionRefresh === undefined ||
+          !refreshDue(snapshot, DateTime.toEpochMillis(yield* DateTime.now)))
+      )
+        return yield* maintain(snapshot, credential);
     }
 
     // Anchor cache freshness before storage: a delayed response must not start
     // a new revocation window after the authoritative snapshot was observed.
     const checkedAt = Option.isSome(original) ? original.value.checkedAt : yield* DateTime.now;
 
-    const session = Option.isSome(original)
+    const read = Option.isSome(original)
       ? original.value.session
       : credential === undefined
         ? null
@@ -212,6 +274,8 @@ export const makeSessionApi = Effect.fnUntraced(function* <
               () => Effect.succeed(null),
             ),
           );
+
+    const session = yield* maintain(read, credential);
 
     if (cacheEnabled && request.sessionCacheCommandSink !== undefined) {
       if (cacheable && session !== null && credential !== undefined) {
@@ -283,6 +347,7 @@ export const makeSessionApi = Effect.fnUntraced(function* <
   });
 
   const api: SessionApi<typeof sessions.Session.Type> = {
+    [maintainSession]: maintain,
     ...(Option.isSome(cache) ? { [sessionCacheTransport]: cache.value.transport } : {}),
     verifySession,
     getSession,

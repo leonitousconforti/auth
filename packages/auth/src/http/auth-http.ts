@@ -22,7 +22,7 @@ import type * as Types from "effect/Types";
 import type * as Unify from "effect/Unify";
 
 import { AuthRequest } from "../auth/AuthRequest";
-import type { SessionApi, SessionApiError } from "../auth/session";
+import { maintainSession, type SessionApi, type SessionApiError } from "../auth/session";
 import { HookDenied } from "../hooks/models";
 import { OperationHttpConfigurationError, OperationHttpError } from "../http-operation/errors";
 import type { HttpCredentials, OperationHttpConfiguration } from "../http-operation/models";
@@ -32,7 +32,11 @@ import {
   cookieConfiguration,
   OperationHttpServerConfig,
 } from "../http-operation/OperationHttpServerConfig";
-import { mutationSecurity, requestSecurity } from "../http-operation/security";
+import {
+  allowsSessionRefresh,
+  mutationSecurity,
+  requestSecurity,
+} from "../http-operation/security";
 import { make as makeOperationServer } from "../http-operation/server";
 import { rotationCookies, snapshotCookie } from "../http-operation/session-cache-cookie";
 import { withoutObservability } from "../internal/diagnostics";
@@ -285,7 +289,7 @@ export const make = <
   );
 
   const resolve = Effect.fnUntraced(function* (
-    api: Pick<SessionApi<S>, "verifySession">,
+    api: Pick<SessionApi<S>, "verifySession" | typeof maintainSession>,
     credential: Redacted.Redacted<string> | undefined,
   ) {
     if (credential === undefined) return guest;
@@ -305,15 +309,19 @@ export const make = <
 
     const session =
       original ??
-      (yield* api.verifySession(credential).pipe((effect) =>
-        Effect.catchCauseIf(
-          effect,
-          (cause) =>
-            cause.reasons.every(
-              (reason) => Cause.isFailReason(reason) && reason.error._tag === "SessionInvalid",
-            ),
-          () => Effect.succeed(null),
+      (yield* api.verifySession(credential).pipe(
+        Effect.flatMap(
+          (session) => api[maintainSession]?.(session, credential) ?? Effect.succeed(session),
         ),
+        (effect) =>
+          Effect.catchCauseIf(
+            effect,
+            (cause) =>
+              cause.reasons.every(
+                (reason) => Cause.isFailReason(reason) && reason.error._tag === "SessionInvalid",
+              ),
+            () => Effect.succeed(null),
+          ),
       ));
 
     return session === null
@@ -422,6 +430,7 @@ export const make = <
       );
 
       const commands: AuthCredentialCommand[] = [];
+      const refreshCommands: AuthCredentialCommand[] = [];
       const mutationCookies: Cookies.Cookie[] = [];
       const cacheTransport = security.native ? undefined : api[sessionCacheTransport];
       let mutationAdmitted = false;
@@ -484,6 +493,14 @@ export const make = <
               : { sessionCacheGeneration: security.sessionCacheGeneration }),
             resolveInvocation,
             beforeMutation,
+            ...(allowsSessionRefresh(request, config, security.native)
+              ? {
+                  sessionRefresh: (values: ReadonlyArray<AuthCredentialCommand>) =>
+                    Effect.sync(() => {
+                      refreshCommands.splice(0, refreshCommands.length, ...values);
+                    }),
+                }
+              : {}),
             credentialCommandSink: sink,
             ...(cacheTransport === undefined
               ? {}
@@ -498,6 +515,8 @@ export const make = <
           withProofRequestContext,
         );
 
+        if (!commands.some((command) => command.slot === "session"))
+          commands.push(...refreshCommands);
         const now = DateTime.toEpochMillis(yield* DateTime.now);
 
         for (const command of commands) {

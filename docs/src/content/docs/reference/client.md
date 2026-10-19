@@ -21,8 +21,10 @@ Auth owns credential settlement, CSRF, and bounded envelope decoding. A plain
 
 Supplied transports must disable retries, redirect following, and status filtering.
 Auth decodes expected failures from their response envelopes. Writes settle in
-order within one client instance; reads can run concurrently. Account changes
-wait for admitted writes, including requests delayed by middleware.
+order within one client instance; reads can run concurrently. Credential-changing
+calls also wait for pending session-maintenance responses. Local account changes
+wait for admitted writes, including requests delayed by middleware. Requests outside
+that client, including other tabs, need host coordination around account changes.
 
 ### Fetch defaults
 

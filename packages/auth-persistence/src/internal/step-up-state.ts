@@ -102,7 +102,7 @@ export const validateStepUpPlan = Effect.fn("DrizzleStepUp.validatePlan")(functi
     intent.bindingDigest !== evidence.bindingDigest ||
     DateTime.toEpochMillis(intent.sourceAuthenticatedAt) !==
       DateTime.toEpochMillis(original.session.assurance.authenticatedAt) ||
-    DateTime.toEpochMillis(intent.sourceExpiresAt) !==
+    DateTime.toEpochMillis(intent.sourceExpiresAt) >
       DateTime.toEpochMillis(original.session.expiresAt) ||
     DateTime.toEpochMillis(intent.sourceAbsoluteExpiresAt) !==
       DateTime.toEpochMillis(original.session.absoluteExpiresAt) ||

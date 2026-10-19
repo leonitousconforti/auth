@@ -149,8 +149,7 @@ export const makeNativeSessionStepUpServices = Effect.fnUntraced(function* <Clai
         record.securityRevision !== intent.revision.securityRevision ||
         DateTime.toEpochMillis(record.assurance.authenticatedAt) !==
           DateTime.toEpochMillis(intent.sourceAuthenticatedAt) ||
-        DateTime.toEpochMillis(record.expiresAt) !==
-          DateTime.toEpochMillis(intent.sourceExpiresAt) ||
+        DateTime.toEpochMillis(record.expiresAt) < DateTime.toEpochMillis(intent.sourceExpiresAt) ||
         DateTime.toEpochMillis(record.absoluteExpiresAt) !==
           DateTime.toEpochMillis(intent.sourceAbsoluteExpiresAt)
       )
@@ -324,8 +323,15 @@ export const makeNativeSessionStepUpServices = Effect.fnUntraced(function* <Clai
             if (
               original.record === undefined ||
               original.record.digest !== plan.source.guard.digest ||
+              DateTime.toEpochMillis(original.record.issuedAt) <
+                DateTime.toEpochMillis(plan.source.inspection.session.issuedAt) ||
+              DateTime.toEpochMillis(original.record.expiresAt) <
+                DateTime.toEpochMillis(plan.source.inspection.session.expiresAt) ||
               !sameSessionRecord(original.record, {
                 ...plan.source.inspection.session,
+                // Routine maintenance preserves the source's identity and authority.
+                issuedAt: original.record.issuedAt,
+                expiresAt: original.record.expiresAt,
                 provenance: plan.source.inspection.provenance,
                 credentialVersion: plan.source.inspection.credentialVersion,
                 digest: plan.source.guard.digest,
