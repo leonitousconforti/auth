@@ -1,5 +1,18 @@
 # @yielded/auth
 
+## 0.1.0-beta.43
+
+### Minor Changes
+
+- [#256](https://github.com/yielded-dev/auth/pull/256) [`d29041b`](https://github.com/yielded-dev/auth/commit/d29041b595fe2c04a6c23dc974e3a40b49f8b307) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Verify access tokens through a supplied JOSE key-set service with `OAuthServer.makeAccessTokenVerifierWithKeySet`. Preserve shared remote-key completion across Worker requests while keeping authority and request lifetimes under application control.
+
+### Patch Changes
+
+- Updated dependencies [[`d29041b`](https://github.com/yielded-dev/auth/commit/d29041b595fe2c04a6c23dc974e3a40b49f8b307)]:
+  - @yielded/jose@0.1.0-beta.43
+  - @yielded/oauth@0.1.0-beta.43
+  - @yielded/crypto@0.1.0-beta.43
+
 ## 0.1.0-beta.42
 
 ### Patch Changes
