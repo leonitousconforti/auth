@@ -10,10 +10,6 @@ SQL driver. Supply Effect `Crypto` to persistence construction and transaction
 coordinators. Composed drivers expose `AuthPersistence`; explicit driver modules
 also expose lower-level factories.
 
-Bun consumers need the
-[@yielded/drizzle-effect-v4-patch](../drizzle-effect-v4-patch/README.md).
-Use its supported Drizzle release and commit the generated patch and lockfile.
-
 Applications own subjects, policy, claims, delivery, and database connections.
 Drizzle Kit generates migrations from managed or application-declared tables.
 Provide `AuthPersistence.migrationsLayer({ migrationsFolder })` explicitly to

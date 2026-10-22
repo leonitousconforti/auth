@@ -20,9 +20,7 @@ Shared versions live in the root catalog. Upgrade the Effect family together and
 rerun installation. Keep the catalog's Vitest version aligned with Vite+'s bundled
 runner so Effect's test integration uses the same version.
 
-The Drizzle compatibility patch comes from `@yielded/drizzle-effect-v4-patch`;
-remove it when Drizzle publishes a compatible release. Drizzle examples use
-`scripts/db-generate.ts` to generate SQL and compact JSON snapshots.
+Drizzle examples use `scripts/db-generate.ts` to generate SQL and compact JSON snapshots.
 
 When changing the workerd Argon2 compression routine, regenerate the checked-in
 Wasm with `vp run @yielded/crypto#build:wasm`. This requires LLVM Clang with the

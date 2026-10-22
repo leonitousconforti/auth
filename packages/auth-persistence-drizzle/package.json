@@ -74,7 +74,7 @@
     "@effect/sql-sqlite-do": ">=4.0.0",
     "@effect/sql-sqlite-node": ">=4.0.0",
     "@effect/sql-sqlite-wasm": ">=4.0.0",
-    "drizzle-orm": ">=1.0.0-rc.4",
+    "drizzle-orm": ">=1.0.0-rc.5",
     "effect": "^4.0.3"
   },
   "peerDependenciesMeta": {

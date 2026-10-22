@@ -6,7 +6,6 @@
 "@yielded/auth-react-native": patch
 "@yielded/auth-simplewebauthn": patch
 "@yielded/crypto": patch
-"@yielded/drizzle-effect-v4-patch": patch
 "@yielded/jose": patch
 "@yielded/oauth": patch
 ---

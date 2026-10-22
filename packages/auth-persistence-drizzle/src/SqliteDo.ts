@@ -34,7 +34,7 @@ export const databaseLayer = Layer.effect(
         reason: "SqliteDo requires a SQL client configured with Durable Object storage",
       });
 
-    return yield* makeDatabase(yield* makeWithDefaults({ storage }));
+    return yield* makeDatabase(yield* makeWithDefaults({}));
   }),
 );
 

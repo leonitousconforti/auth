@@ -320,9 +320,8 @@ delivery, and secret keys remain application responsibilities.
 and D1. MySQL and Durable Object SQLite expose explicit persistence services.
 
 Install the driver's declared Effect SQL and Drizzle peers and import it directly.
-Bun consumers also need the [Drizzle Effect patch](https://github.com/yielded-dev/auth/tree/main/packages/drizzle-effect-v4-patch);
-follow its installation instructions and commit the generated patch and lockfile.
 Shared mapping types live in `@yielded/auth-persistence-drizzle`.
+Keep Drizzle's `paramsInErrors` option disabled to omit bound values from its query errors.
 
 Use `databaseLayer` to acquire `Database` from the platform SQL client. Most drivers
 also accept `Layer.succeed(Database, db)`. Durable Object SQLite uses

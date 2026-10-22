@@ -418,18 +418,19 @@ export const makeStudioLive = (binding: Operations.RequestBindingConfiguration) 
         Layer.provide(
           hook.layer({
             after: (event) =>
-              event.snapshot.action === "registration"
-                ? db
-                    .insert(registrationEvents)
-                    .values({
-                      id: event.id,
-                      snapshot: Schema.encodeSync(Schema.fromJsonString(Hooks.LifecycleSnapshot))(
-                        event.snapshot,
-                      ),
-                    })
-                    .onConflictDoNothing()
-                    .pipe(Effect.asVoid)
-                : Effect.void,
+              Effect.gen(function* () {
+                if (event.snapshot.action !== "registration") return;
+
+                yield* db
+                  .insert(registrationEvents)
+                  .values({
+                    id: event.id,
+                    snapshot: Schema.encodeSync(Schema.fromJsonString(Hooks.LifecycleSnapshot))(
+                      event.snapshot,
+                    ),
+                  })
+                  .onConflictDoNothing();
+              }),
           }),
         ),
       );
