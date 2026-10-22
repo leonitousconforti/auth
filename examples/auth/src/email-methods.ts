@@ -154,7 +154,7 @@ const program = Effect.gen(function* () {
 
         const registerBase = {
           ...registerFlow,
-          email: addressEmail,
+          email: "registration@example.invalid",
           registration: { team: "staff", number: "42" },
         };
 
@@ -176,6 +176,9 @@ const program = Effect.gen(function* () {
           commands.some((c) => c._tag === "Issue" && c.slot === "session")
         )
           return yield* Effect.die("registration must not issue a session");
+
+        // The code strategy creates this new account from application defaults
+        // when the code is redeemed, then establishes its first session.
         const signInFlow = yield* begin("code-sign-in");
         const signInBase = { ...signInFlow, email: addressEmail, returnTarget: "/account" };
 
@@ -220,6 +223,29 @@ const program = Effect.gen(function* () {
         };
 
         const firstSessionToken = yield* latest("session");
+
+        // Returning users complete the same flow without another registration.
+        const returningFlow = yield* begin("returning-code-sign-in");
+        const returningBase = { ...returningFlow, email: addressEmail, returnTarget: "/account" };
+
+        const returningRequest = yield* auth.signIn({
+          ...returningBase,
+          requestId: "returning-code-request",
+          locale: "en",
+        });
+
+        const returning = yield* auth.completeSignIn({
+          ...returningBase,
+          reference: returningRequest.reference,
+          secret: Redacted.value((yield* delivered).text).match(/code is ([0-9]+)/)?.[1] ?? "",
+        });
+
+        if (
+          returning.completion._tag !== "Authenticated" ||
+          returning.completion.session.subjectId !== session.subjectId
+        )
+          return yield* Effect.die("returning email sign-in changed account ownership");
+
         const linkFlow = yield* begin("link-sign-in");
         const linkBase = { ...linkFlow, email: addressEmail, returnTarget: "/account" };
 

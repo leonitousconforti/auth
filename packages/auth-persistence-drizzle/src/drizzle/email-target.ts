@@ -2,6 +2,7 @@ import {
   makeNativeEmailAddressServices,
   makeNativeEmailSignInServices,
   makeNativeEmailRegistrationServices,
+  makeNativeEmailCodeRegistrationServices,
   requireStandalone,
   type AnyEmailAddressMapping as SharedEmailMapping,
   type EmailRegistrationAuthority,
@@ -66,7 +67,7 @@ export const makeTargetEmailAddressServices = Effect.fnUntraced(function* (
   );
 });
 
-export const makeTargetEmailRegistrationServices = Effect.fnUntraced(function* <Registration>(
+const emailRegistrationTarget = Effect.fnUntraced(function* <Registration>(
   mapping: AnyEmailRegistrationMapping<Registration>,
   configuration: NativeTargetConfiguration,
   proofs: AnyProofPersistenceMapping,
@@ -82,10 +83,39 @@ export const makeTargetEmailRegistrationServices = Effect.fnUntraced(function* <
     (mapping.d1?.primary !== true || proofs.d1?.primary !== true)
   )
     return yield* unavailable();
-  const target = yield* nativeTarget(configuration);
+
+  return yield* nativeTarget(configuration);
+});
+
+export const makeTargetEmailRegistrationServices = Effect.fnUntraced(function* <Registration>(
+  mapping: AnyEmailRegistrationMapping<Registration>,
+  configuration: NativeTargetConfiguration,
+  proofs: AnyProofPersistenceMapping,
+) {
+  const target = yield* emailRegistrationTarget(mapping, configuration, proofs);
 
   return yield* target.provide(
     makeNativeEmailRegistrationServices(
+      target.tables,
+      {
+        ...mapping,
+        clock: nativeClock(mapping.clock),
+      },
+      nativeProofMapping(proofs),
+      target.batch,
+    ),
+  );
+});
+
+export const makeTargetEmailCodeRegistrationServices = Effect.fnUntraced(function* (
+  mapping: AnyEmailRegistrationMapping<void>,
+  configuration: NativeTargetConfiguration,
+  proofs: AnyProofPersistenceMapping,
+) {
+  const target = yield* emailRegistrationTarget(mapping, configuration, proofs);
+
+  return yield* target.provide(
+    makeNativeEmailCodeRegistrationServices(
       target.tables,
       {
         ...mapping,

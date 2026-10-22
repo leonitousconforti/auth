@@ -1,4 +1,7 @@
 import {
+  EmailRegistrationAuthentication,
+  type EmailCodeRegistrationAuthority,
+  type EmailCodeRegistrationDecision,
   type EmailUnavailable,
   type EmailCommandId,
   type EmailRegistrationDecision,
@@ -42,7 +45,7 @@ import {
   SqlBatchCommit,
 } from "./sql-commit";
 
-export interface EmailRegistrationAuthority<Registration> {
+interface RegistrationAuthority<Registration, Decision> {
   readonly inspect: (input: {
     readonly identifier: LoginIdentifier;
     readonly registration: Registration;
@@ -60,18 +63,28 @@ export interface EmailRegistrationAuthority<Registration> {
       readonly fingerprint: TokenDigest;
       readonly redemption: ProofRedemptionPlan;
     },
-    prepare: PrepareEmailCommit<EmailRegistrationDecision, A>,
+    prepare: PrepareEmailCommit<Decision, A>,
   ) => Effect.Effect<PreparedCommit<A>, EmailUnavailable>;
 }
 
-/** Proof redemption, SQL provisioning, and verified ownership commit together. No registration receipt survives the proof. */
-export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <Registration>(
+export type EmailRegistrationAuthority<Registration> = RegistrationAuthority<
+  Registration,
+  EmailRegistrationDecision
+>;
+
+const makeNativeRegistrationServices = Effect.fnUntraced(function* <Registration>(
   tables: NativeSqlTables,
   mapping: AnyEmailRegistrationMapping<Registration>,
   proofs: AnyProofPersistenceMapping,
+  flow: "registration" | "code-sign-in",
   batch?: SqlBatchCommit["Service"],
 ): Effect.fn.Return<
-  { readonly registrationAuthority: EmailRegistrationAuthority<Registration> },
+  {
+    readonly registrationAuthority: RegistrationAuthority<
+      Registration,
+      EmailCodeRegistrationDecision
+    >;
+  },
   never,
   SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto
 > {
@@ -122,8 +135,8 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
   });
 
   const prepare = <A>(
-    decision: EmailRegistrationDecision,
-    project: PrepareEmailCommit<EmailRegistrationDecision, A>,
+    decision: EmailCodeRegistrationDecision,
+    project: PrepareEmailCommit<EmailCodeRegistrationDecision, A>,
   ) =>
     Effect.gen(function* () {
       const receipt = project(decision, yield* CurrentCommitJournal);
@@ -133,7 +146,7 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
       return receipt;
     });
 
-  const registrationAuthority: EmailRegistrationAuthority<Registration> = {
+  const registrationAuthority = {
     inspect: (input) => executor.read(mapping.inspect(input)),
     registerWithProof: (original, project) =>
       Effect.gen(function* () {
@@ -164,8 +177,10 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
             if (
               !inspection.eligible ||
               inspection.fingerprint !== input.fingerprint ||
-              redemption.moduleId !== `${input.moduleId}/registration` ||
-              redemption.purpose !== "email-code-registration" ||
+              redemption.moduleId !== `${input.moduleId}/${flow}` ||
+              redemption.purpose !==
+                (flow === "registration" ? "email-code-registration" : "email-code-sign-in") ||
+              (flow === "code-sign-in" && input.commandId !== String(redemption.proofId)) ||
               binding._tag !== "Identifier" ||
               binding.identifier.namespace !== input.identifier.namespace ||
               binding.identifier.value !== input.identifier.value ||
@@ -396,7 +411,17 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
             if (!((yield* mapping.subjectId.toSubject(native)) === subjectId))
               return yield* invalidState();
 
-            return yield* prepare({ _tag: "Registered" }, project);
+            const authentication = yield* Schema.decodeEffect(EmailRegistrationAuthentication)({
+              credentialId,
+              credentialRevision,
+              revision: {
+                subjectId,
+                securityRevision,
+                credentials: [{ credentialId, revision: credentialRevision }],
+              },
+            });
+
+            return yield* prepare({ _tag: "Registered", authentication }, project);
           }),
         );
       }).pipe(
@@ -406,7 +431,67 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
           }),
         Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, unavailable))),
       ),
-  };
+  } satisfies RegistrationAuthority<Registration, EmailCodeRegistrationDecision>;
 
   return { registrationAuthority };
+});
+
+/** Proof redemption, SQL provisioning, and verified ownership commit together. No registration receipt survives the proof. */
+export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <Registration>(
+  tables: NativeSqlTables,
+  mapping: AnyEmailRegistrationMapping<Registration>,
+  proofs: AnyProofPersistenceMapping,
+  batch?: SqlBatchCommit["Service"],
+): Effect.fn.Return<
+  { readonly registrationAuthority: EmailRegistrationAuthority<Registration> },
+  never,
+  SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto
+> {
+  const { registrationAuthority: authority } = yield* makeNativeRegistrationServices(
+    tables,
+    mapping,
+    proofs,
+    "registration",
+    batch,
+  );
+
+  return {
+    registrationAuthority: {
+      inspect: authority.inspect,
+      registerWithProof: (input, project) =>
+        authority.registerWithProof(input, (decision, journal) =>
+          project({ _tag: decision._tag }, journal),
+        ),
+    },
+  };
+});
+
+/** Provision an email-only account when its sign-in code is redeemed. The private
+ * authentication evidence is readable only after the atomic commit is confirmed.
+ */
+export const makeNativeEmailCodeRegistrationServices = Effect.fnUntraced(function* (
+  tables: NativeSqlTables,
+  mapping: AnyEmailRegistrationMapping<void>,
+  proofs: AnyProofPersistenceMapping,
+  batch?: SqlBatchCommit["Service"],
+): Effect.fn.Return<
+  { readonly registrationAuthority: EmailCodeRegistrationAuthority },
+  never,
+  SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto
+> {
+  const { registrationAuthority: authority } = yield* makeNativeRegistrationServices(
+    tables,
+    mapping,
+    proofs,
+    "code-sign-in",
+    batch,
+  );
+
+  return {
+    registrationAuthority: {
+      inspect: (input) => authority.inspect({ ...input, registration: undefined }),
+      registerWithProof: (input, project) =>
+        authority.registerWithProof({ ...input, registration: undefined }, project),
+    },
+  };
 });

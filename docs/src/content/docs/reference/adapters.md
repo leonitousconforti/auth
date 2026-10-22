@@ -400,8 +400,11 @@ are permanent and are never removed by cleanup.
 
 ## Email
 
-`makeEmailSignInServices` supplies lookup. `makeEmailRegistrationServices` and
-`makeEmailAddressServices` supply account creation and address changes. For explicit
+`makeEmailSignInServices` supplies lookup. `makeEmailCodeRegistrationServices`
+supplies a code strategy's `RegistrationAuthority` for one-code sign-up and sign-in;
+its `EmailRegistrationMapping<void, ...>` uses application-owned account defaults.
+`makeEmailRegistrationServices` supplies separate registration with application data,
+and `makeEmailAddressServices` supplies address changes. For explicit
 mappings over an existing layout, use `.emails()` and `.proofs()` from
 `yield* makeStorageMappings(storage)`.
 
@@ -415,6 +418,11 @@ sessions retain their configured lifetime.
 Provisioning, identifier ownership, and proof consumption share one transaction or
 D1 batch. Provisioning is synchronous and receives a stable `requestId` for
 application idempotence. See [mailbox registration](../guide/codes#register-a-mailbox-owner).
+Supply the code registration authority explicitly alongside the sign-in and proof
+services; composed `AuthPersistence.layer` does not install it. Its mapping and
+`makeEmailSignInServices` must address the same subject, identifier, and credential
+tables. Session issuance follows the registration commit and requires a fresh code
+if it fails or the outcome is unknown. D1 requires application-allocated subject IDs.
 
 Confirming an existing unverified address for the same subject preserves sessions
 and omits `invalidation`. Application policy may allow confirmation with a valid

@@ -28,6 +28,8 @@ export const AppAuth = Auth.make("app/Auth", {
 
 Codes default to six digits and five minutes. Override `digits` or `policy` when
 needed. Supply shared `ProofKeys` through [AuthDependencies](../reference/adapters#compose-the-application-layer).
+By default, codes sign in existing accounts. To create an account after its first
+verified code, supply the strategy's [registration authority](#register-a-mailbox-owner).
 
 ## Start the flow and send a code
 
@@ -169,7 +171,42 @@ and overrides.
 
 ## Register a mailbox owner
 
-Compose `Email.makeRegistration({ namespace, registration: Registration })` with
+For one-code sign-up and sign-in, supply `AppAuth.strategies.email.RegistrationAuthority`.
+The same `beginSignIn` → `signIn` → `completeSignIn` flow then serves new and existing
+accounts. Requesting a code creates no account; redeeming it creates the new subject
+and verified email credential before completing authentication.
+
+With Drizzle, construct this Layer from an email registration mapping and the same
+proof mapping used for issuance:
+
+```ts title="apps/server/email-registration.ts"
+import { Effect, Layer } from "effect";
+import * as Sqlite from "@yielded/auth-persistence-drizzle/SqliteNode";
+
+import { AppAuth } from "./auth";
+import { emailRegistrationMapping, proofMapping } from "./auth-persistence";
+
+export const EmailRegistrationLive = Layer.effect(
+  AppAuth.strategies.email.RegistrationAuthority,
+  Sqlite.makeEmailCodeRegistrationServices(emailRegistrationMapping, proofMapping).pipe(
+    Effect.map((services) => services.registrationAuthority),
+  ),
+);
+```
+
+Provide this Layer alongside `EmailServicesLive`. The registration mapping uses
+`void` as its registration type: the application supplies account defaults from the
+verified email, with no registration form payload. The factory requires the driver's
+database and normal crypto/hook services. See [email persistence](../reference/adapters#email)
+and the [runnable email example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/email-methods.ts).
+
+Account creation and proof redemption commit together. Session issuance follows;
+if it fails or the outcome is unknown, request a fresh code. Provisioning never
+adopts a verified owner or re-enables a disabled account. Magic links remain
+existing-account sign-in only.
+
+For a separate registration form with application data and no automatic sign-in,
+compose `Email.makeRegistration({ namespace, registration: Registration })` with
 `Email.makeCode({ namespace })` using the same namespace. A guest calls
 `beginRegistration` → `register` → `completeRegistration`. The
 [login contract](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/login-contract.ts)
@@ -187,7 +224,7 @@ reservation for a new account. It never transfers the earlier account's data or
 credentials, or replaces verified ownership. See
 [email persistence](../reference/adapters#email) for mapping and invalidation requirements.
 
-Registration does not issue a session. Start a fresh email sign-in afterward;
+This separate registration flow does not issue a session. Start a fresh email sign-in afterward;
 an authenticated user can then call `addPassword` when password management is enabled.
 
 Use `Email.makeAddresses` for authenticated address management. Confirming an

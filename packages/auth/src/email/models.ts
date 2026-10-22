@@ -33,6 +33,22 @@ export const EmailCredentialSnapshot = Schema.Struct({
 });
 
 export type EmailCredentialSnapshot = typeof EmailCredentialSnapshot.Type;
+
+/** Private evidence returned only by the owner of a confirmed registration commit. */
+export const EmailRegistrationAuthentication = Schema.Struct({
+  credentialId: EmailCredentialSnapshot.fields.credentialId,
+  credentialRevision: EmailCredentialSnapshot.fields.credentialRevision,
+  revision: AuthenticationRevision,
+});
+
+export type EmailRegistrationAuthentication = typeof EmailRegistrationAuthentication.Type;
+
+export const EmailCodeRegistrationDecision = Schema.Union([
+  Schema.TaggedStruct("Registered", { authentication: EmailRegistrationAuthentication }),
+  Schema.TaggedStruct("Rejected", {}),
+]);
+
+export type EmailCodeRegistrationDecision = typeof EmailCodeRegistrationDecision.Type;
 export const EmailAction = Schema.Literals(["verify-address", "change-address"]);
 export type EmailAction = typeof EmailAction.Type;
 

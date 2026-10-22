@@ -416,55 +416,87 @@ export const makeEmailConsumer = Effect.gen(function* () {
       }),
   });
 
-  const registrations = registration.RegistrationAuthority.of({
-    inspect: Effect.fn("ExampleEmail.registrationIntent")(function* (input) {
-      const text = yield* Schema.encodeEffect(
-        Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.Finite])),
-      )([input.registration.team, input.registration.number]).pipe(
-        Effect.mapError(() => Email.EmailUnavailable.make({})),
-      );
+  const inspectRegistration = Effect.fn("ExampleEmail.registrationIntent")(function* (input: {
+    readonly identifier: Identity.LoginIdentifier;
+    readonly registration: typeof Claims.Type;
+  }) {
+    const text = yield* Schema.encodeEffect(
+      Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.Finite])),
+    )([input.registration.team, input.registration.number]).pipe(
+      Effect.mapError(() => Email.EmailUnavailable.make({})),
+    );
 
-      const digest = yield* crypto
-        .digest("SHA-256", new TextEncoder().encode(text))
-        .pipe(Effect.mapError(() => Email.EmailUnavailable.make({})));
+    const digest = yield* crypto
+      .digest("SHA-256", new TextEncoder().encode(text))
+      .pipe(Effect.mapError(() => Email.EmailUnavailable.make({})));
 
-      return {
-        fingerprint: AuthSchema.TokenDigest.make(Base64Url.encode(digest)),
-        eligible: !state.identifiers.has(input.identifier.value),
-      };
-    }),
-    registerWithProof: (input, prepare) =>
-      own(function* (s, journal, now) {
-        const valid =
-          !s.identifiers.has(input.identifier.value) &&
-          validBinding(s, input.redemption.input.binding) &&
-          redeemProof(s.proofs, input.redemption.input, now) === "redeemed";
-
-        input.redemption.prepare(valid ? "redeemed" : "rejected", journal, (v) => v);
-        const result = prepare(valid ? { _tag: "Registered" } : { _tag: "Rejected" }, journal);
-
-        if (valid) {
-          const id = AuthSchema.SubjectId.make(`email-subject:${++sequence}`);
-
-          s.subjects.set(id, {
-            id,
-            security: "1",
-            team: input.registration.team,
-            number: input.registration.number,
-            mfa: false,
-          });
-          s.identifiers.set(input.identifier.value, {
-            subjectId: id,
-            email: input.identifier.value,
-            credentialId: `email:${++sequence}`,
-            revision: "1",
-            verifiedAt: now,
-          });
-        }
-
-        return result;
-      }),
+    return {
+      fingerprint: AuthSchema.TokenDigest.make(Base64Url.encode(digest)),
+      eligible: !state.identifiers.has(input.identifier.value),
+    };
   });
+
+  const registerWithProof = <A>(
+    input: Parameters<Email.EmailCodeRegistrationAuthority["registerWithProof"]>[0] & {
+      readonly registration: typeof Claims.Type;
+    },
+    prepare: Email.PrepareEmailCommit<Email.EmailCodeRegistrationDecision, A>,
+  ) =>
+    own(function* (s, journal, now) {
+      const valid =
+        !s.identifiers.has(input.identifier.value) &&
+        validBinding(s, input.redemption.input.binding) &&
+        redeemProof(s.proofs, input.redemption.input, now) === "redeemed";
+
+      input.redemption.prepare(valid ? "redeemed" : "rejected", journal, (v) => v);
+      if (!valid) return prepare({ _tag: "Rejected" }, journal);
+      const id = AuthSchema.SubjectId.make(`email-subject:${++sequence}`);
+
+      s.subjects.set(id, {
+        id,
+        security: "1",
+        team: input.registration.team,
+        number: input.registration.number,
+        mfa: false,
+      });
+
+      const identifier: Identifier = {
+        subjectId: id,
+        email: input.identifier.value,
+        credentialId: `email:${++sequence}`,
+        revision: "1",
+        verifiedAt: now,
+      };
+
+      s.identifiers.set(input.identifier.value, identifier);
+      const created = snapshot(s, identifier);
+
+      return prepare(
+        {
+          _tag: "Registered",
+          authentication: {
+            credentialId: created.credentialId,
+            credentialRevision: created.credentialRevision,
+            revision: created.revision,
+          },
+        },
+        journal,
+      );
+    });
+
+  const registrations = registration.RegistrationAuthority.of({
+    inspect: inspectRegistration,
+    registerWithProof: (input, prepare) =>
+      registerWithProof(input, (decision, journal) => prepare({ _tag: decision._tag }, journal)),
+  });
+
+  const defaults = { team: "staff", number: 42 };
+
+  const codeRegistrations: Email.EmailCodeRegistrationAuthority = {
+    inspect: (input) => inspectRegistration({ ...input, registration: defaults }),
+    registerWithProof: (input, prepare) =>
+      registerWithProof({ ...input, registration: defaults }, prepare),
+  };
 
   const stateful = sessions.StatefulSessionPersistence.of({
     establish: (input, prepare) =>
@@ -529,6 +561,7 @@ export const makeEmailConsumer = Effect.gen(function* () {
       Layer.succeed(Email.EmailAddressPersistence, addressStore),
       Layer.succeed(Email.EmailActionEvidence, actions),
       Layer.succeed(registration.RegistrationAuthority, registrations),
+      Layer.succeed(email.RegistrationAuthority, codeRegistrations),
       Layer.succeed(Email.EmailSignInTargets, {
         lookup: (input) =>
           Effect.sync(() => {

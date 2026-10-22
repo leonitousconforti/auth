@@ -6,13 +6,20 @@ import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import type * as Types from "effect/Types";
 
 import { makeAuthStrategy } from "../auth/AuthStrategy";
 import { defaultLayer, hooksLayer } from "../auth/defaults";
-import { hasCommitScope, type PreparedCommit } from "../hooks/commit";
-import { HookDenied } from "../hooks/models";
+import { hasCommitScope, prepareCommit, type PreparedCommit } from "../hooks/commit";
+import { LifecycleHooks } from "../hooks/LifecycleHooks";
+import {
+  HookDenied,
+  LifecycleEventId,
+  lifecycleEventEffect,
+  lifecycleSnapshotEffect,
+} from "../hooks/models";
 import { LoginIdentifier } from "../identity/models";
 import type { AuthOperationResult } from "../operations/credentials";
 import { makeOperation, operationGroup } from "../operations/operation";
@@ -40,6 +47,7 @@ import type { AuthenticationEvidence } from "../sessions/models";
 import { AuthenticationFlowId } from "../sessions/models";
 import type { makeSessionModule } from "../sessions/module";
 import { makeEmailAddresses, type EmailAddressPolicy } from "./addresses";
+import type { EmailCodeRegistrationAuthority } from "./EmailCodeRegistrationAuthority";
 import { EmailReturnTargets } from "./EmailReturnTargets";
 import { EmailSignInTargets } from "./EmailSignInTargets";
 import {
@@ -50,9 +58,14 @@ import {
   EmailRejected,
   EmailUnavailable,
 } from "./errors";
-import { SafeReturnTarget, type EmailCredentialSnapshot } from "./models";
+import {
+  EmailCodeRegistrationDecision,
+  EmailCommandId,
+  SafeReturnTarget,
+  type EmailCredentialSnapshot,
+} from "./models";
 import { makeEmailRegistration } from "./registration";
-import { snapshotEmailCredential } from "./snapshot";
+import { snapshotEmailCredential, snapshotEmailRevision } from "./snapshot";
 
 const EmailInput = Schema.String.check(Schema.isMaxLength(320)).pipe(Schema.decodeTo(Email));
 const Secret = Schema.RedactedFromValue(Schema.String.check(Schema.isMaxLength(4096)));
@@ -97,6 +110,13 @@ const read = <A>(receipt: PreparedCommit<A>) =>
 
 const tupleCodec = Schema.fromJsonString(Schema.Array(Schema.String));
 
+const RegistrationInspection = Schema.Struct({
+  fingerprint: TokenDigest.check(Schema.isMaxLength(256)),
+  eligible: Schema.Boolean,
+});
+
+const decodeRegistrationDecision = Schema.decodeUnknownResult(EmailCodeRegistrationDecision);
+
 export interface EmailModule<Id extends string, Kind extends string, Claims> {
   readonly moduleId: Id;
   readonly kind: Kind;
@@ -131,6 +151,19 @@ export const makeEmailSignInModule = <
 ) => {
   const sessions = options.sessions;
   const binding = makeRequestBinding(moduleId, "email-entry");
+
+  /** Opt in to email-only account creation for code sign-in by supplying this service.
+   * The default declines new accounts. Magic-link sign-in does not use this service.
+   */
+  const RegistrationAuthority = Context.Service<
+    EmailModule<Id, "code-registration", Claims["Type"]>,
+    EmailCodeRegistrationAuthority
+  >(`effect-auth/email/${moduleId}/CodeRegistrationAuthority`);
+
+  const registrationLayer = Layer.succeed(RegistrationAuthority, {
+    inspect: () => Effect.succeed({ fingerprint: TokenDigest.make("disabled"), eligible: false }),
+    registerWithProof: () => Effect.fail(EmailUnavailable.make({})),
+  });
 
   /** Supply application session claims for the verified email's subject. */
   const SessionClaims = Context.Service<
@@ -214,6 +247,26 @@ export const makeEmailSignInModule = <
         const claims = yield* SessionClaims;
         const completion = yield* sessions.AuthenticationCompletion;
         const crypto = yield* Crypto.Crypto;
+        const registrations = yield* RegistrationAuthority;
+        const hooks = yield* LifecycleHooks;
+
+        const lookup = Effect.fnUntraced(function* (identifier: LoginIdentifier) {
+          const candidate = yield* targets.lookup({ moduleId, identifier });
+
+          if (Option.isNone(candidate)) return Option.none<EmailCredentialSnapshot>();
+          const snapshot = yield* snapshotEmailCredential(candidate.value);
+
+          return snapshot.moduleId === moduleId &&
+            snapshot.identifier.namespace === "email" &&
+            snapshot.identifier.value === identifier.value &&
+            snapshot.revision.credentials.some(
+              (item) =>
+                item.credentialId === snapshot.credentialId &&
+                item.revision === snapshot.credentialRevision,
+            )
+            ? Option.some(snapshot)
+            : Option.none<EmailCredentialSnapshot>();
+        });
 
         const bound = Effect.fn("Email.signInBinding")(function* (
           request: typeof SignInBindingInput.Type,
@@ -233,25 +286,20 @@ export const makeEmailSignInModule = <
             );
 
           const returnTarget = yield* returns.resolve(request.returnTarget);
-          const identifier = LoginIdentifier.make({ namespace: "email", value: request.email });
-          const candidate = yield* targets.lookup({ moduleId, identifier });
-          let target: Option.Option<EmailCredentialSnapshot> = Option.none();
 
-          if (Option.isSome(candidate)) {
-            const snapshot = yield* snapshotEmailCredential(candidate.value);
+          const identifier = Object.freeze(
+            LoginIdentifier.make({ namespace: "email", value: request.email }),
+          );
 
-            if (
-              snapshot.moduleId === moduleId &&
-              snapshot.identifier.namespace === "email" &&
-              snapshot.identifier.value === identifier.value &&
-              snapshot.revision.credentials.some(
-                (item) =>
-                  item.credentialId === snapshot.credentialId &&
-                  item.revision === snapshot.credentialRevision,
-              )
-            )
-              target = Option.some(snapshot);
-          }
+          const target = yield* lookup(identifier);
+
+          const registration =
+            mode === "code" && Option.isNone(target)
+              ? yield* registrations.inspect({ identifier }).pipe(
+                  Effect.flatMap(Schema.decodeEffect(RegistrationInspection)),
+                  Effect.mapError(() => EmailUnavailable.make({})),
+                )
+              : undefined;
 
           const message = yield* Schema.encodeEffect(tupleCodec)([
             "effect-auth/email-sign-in/v1",
@@ -261,6 +309,7 @@ export const makeEmailSignInModule = <
             verified.verifier,
             identifier.value,
             returnTarget,
+            ...(registration === undefined ? [] : [registration.fingerprint]),
           ]).pipe(Effect.mapError(() => EmailUnavailable.make({})));
 
           const bytes = yield* crypto
@@ -281,7 +330,7 @@ export const makeEmailSignInModule = <
             ? { _tag: "Subject", ...base, revision: target.value.revision }
             : { _tag: "Identifier", ...base };
 
-          return { target, binding: proofBinding, returnTarget };
+          return { target, binding: proofBinding, returnTarget, registration };
         });
 
         return SignIn.of({
@@ -294,7 +343,7 @@ export const makeEmailSignInModule = <
                 requestId: request.requestId,
                 binding: current.binding,
                 locale: request.locale,
-                eligible: Option.isSome(current.target),
+                eligible: Option.isSome(current.target) || current.registration?.eligible === true,
               })
               .pipe(
                 Effect.flatMap(readProofCommit),
@@ -319,30 +368,124 @@ export const makeEmailSignInModule = <
             // later claims/crypto/session work, or refresh the captured semantic revision.
             const verifiedAt = yield* DateTime.now;
 
-            const consumed = yield* proofs
-              .prepareRedeem({
-                binding: current.binding,
-                reference: request.reference,
-                credential: request.secret,
-              })
-              .pipe(
+            const redeem = {
+              binding: current.binding,
+              reference: request.reference,
+              credential: request.secret,
+            };
+
+            let target = current.target;
+
+            if (Option.isNone(target) && current.registration?.eligible === true) {
+              const redemption = yield* proofs
+                .planRedeem(redeem)
+                .pipe(
+                  Effect.catchCause((cause) =>
+                    Effect.failCause(Cause.map(cause, emailCompletionFailure)),
+                  ),
+                );
+
+              const snapshot = yield* lifecycleSnapshotEffect({
+                action: "registration",
+                operation: `${moduleId}/email-code-registration`,
+                method: "email-code",
+                identifiers: [current.binding.identifier],
+              }).pipe(Effect.orDie);
+
+              yield* hooks.before(snapshot);
+
+              const bytes = yield* crypto
+                .randomBytes(32)
+                .pipe(
+                  Effect.catchCause((cause) =>
+                    Effect.failCause(Cause.map(cause, () => EmailUnavailable.make({}))),
+                  ),
+                );
+
+              const event = yield* lifecycleEventEffect({
+                id: LifecycleEventId.make(Base64Url.encode(bytes)),
+                occurredAtMillis: DateTime.toEpochMillis(yield* DateTime.now),
+                snapshot,
+              }).pipe(Effect.orDie);
+
+              const receipt = yield* registrations.registerWithProof(
+                {
+                  moduleId,
+                  commandId: EmailCommandId.make(request.reference.proofId),
+                  requestId: `email-registration:${moduleId}:${request.reference.proofId}`,
+                  identifier: current.binding.identifier,
+                  fingerprint: current.registration.fingerprint,
+                  redemption,
+                },
+                prepareCommit((raw, journal) =>
+                  decodeRegistrationDecision(raw).pipe(
+                    Result.map((decision) => {
+                      const captured =
+                        decision._tag === "Registered"
+                          ? Object.freeze({
+                              _tag: decision._tag,
+                              authentication: Object.freeze({
+                                ...decision.authentication,
+                                revision: snapshotEmailRevision(decision.authentication.revision),
+                              }),
+                            })
+                          : Object.freeze(decision);
+
+                      if (captured._tag === "Registered") journal.stage(event);
+
+                      return journal.prepare(captured);
+                    }),
+                    Result.mapError(() => EmailUnavailable.make({})),
+                  ),
+                ),
+              );
+
+              const decision = yield* read(receipt);
+
+              if (decision._tag === "Rejected") return yield* EmailRejected.make({});
+              const authentication = decision.authentication;
+              const revision = authentication.revision;
+              const registered = yield* lookup(current.binding.identifier);
+
+              if (
+                Option.isNone(registered) ||
+                registered.value.credentialId !== authentication.credentialId ||
+                registered.value.credentialRevision !== authentication.credentialRevision ||
+                registered.value.revision.subjectId !== revision.subjectId ||
+                registered.value.revision.securityRevision !== revision.securityRevision ||
+                registered.value.revision.credentials.length !== revision.credentials.length ||
+                new Set(revision.credentials.map((item) => item.credentialId)).size !==
+                  revision.credentials.length ||
+                !revision.credentials.every((item) =>
+                  registered.value.revision.credentials.some(
+                    (expected) =>
+                      expected.credentialId === item.credentialId &&
+                      expected.revision === item.revision,
+                  ),
+                )
+              )
+                return yield* EmailRejected.make({});
+              target = registered;
+            } else {
+              const consumed = yield* proofs.prepareRedeem(redeem).pipe(
                 Effect.flatMap(readProofCommit),
                 Effect.catchCause((cause) =>
                   Effect.failCause(Cause.map(cause, emailCompletionFailure)),
                 ),
               );
 
-            if (consumed !== "redeemed" || Option.isNone(current.target))
-              return yield* EmailRejected.make({});
+              if (consumed !== "redeemed" || Option.isNone(target))
+                return yield* EmailRejected.make({});
+            }
 
             const evidence: AuthenticationEvidence = {
               flowId: AuthenticationFlowId.make(request.flowId),
               bindingDigest: current.binding.contextDigest,
-              revision: current.target.value.revision,
+              revision: target.value.revision,
               proofs: [
                 {
                   method: mode === "code" ? "email-code" : "magic-link",
-                  credentialId: current.target.value.credentialId,
+                  credentialId: target.value.credentialId,
                   factors: ["possession"],
                   userVerified: false,
                   phishingResistant: false,
@@ -351,7 +494,7 @@ export const makeEmailSignInModule = <
               ],
             };
 
-            const credential = yield* snapshotEmailCredential(current.target.value);
+            const credential = yield* snapshotEmailCredential(target.value);
 
             const applicationClaims = yield* claims.resolve({
               subjectId: credential.revision.subjectId,
@@ -363,7 +506,7 @@ export const makeEmailSignInModule = <
             const established = yield* completion
               .prepare({
                 evidence,
-                requirement: current.target.value.requirement,
+                requirement: credential.requirement,
                 claims: applicationClaims,
               })
               .pipe(
@@ -433,6 +576,7 @@ export const makeEmailSignInModule = <
           Layer.provide(defaultLayer(SignIn, layer)),
           Layer.provide(defaultLayer(proof.Proofs, proof.emailLayer)),
           Layer.provide(defaultLayer(binding.RequestBinding, binding.layer)),
+          Layer.provide(defaultLayer(RegistrationAuthority, registrationLayer)),
           Layer.provide(hooksLayer),
           Layer.merge(defaultIngressLayer),
         ),
@@ -452,6 +596,7 @@ export const makeEmailSignInModule = <
     Begin,
     beginLayer,
     SessionClaims,
+    RegistrationAuthority,
   });
 };
 

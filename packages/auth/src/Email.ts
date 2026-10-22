@@ -10,6 +10,8 @@ export {
   EmailCommandId,
   SafeReturnTarget,
   EmailCredentialSnapshot,
+  EmailRegistrationAuthentication,
+  EmailCodeRegistrationDecision,
   EmailAction,
   EmailActionChallenge,
   type EmailAddressDecision,
@@ -17,6 +19,7 @@ export {
 } from "./email/models";
 
 export { EmailSignInTargets } from "./email/EmailSignInTargets";
+export type { EmailCodeRegistrationAuthority } from "./email/EmailCodeRegistrationAuthority";
 
 export {
   EmailAddressPersistence,
