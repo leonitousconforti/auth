@@ -50,7 +50,6 @@ export const {
   makeEmailSignInServices,
   makeEmailAddressServices,
   makeEmailRegistrationServices,
-  makeEmailCodeRegistrationServices,
   coordinateEmailAddress,
   coordinateEmailRegistration,
 } = makeEmailTarget(Database, {

@@ -493,7 +493,7 @@ export const makeEmailConsumer = Effect.gen(function* () {
   const defaults = { team: "staff", number: 42 };
 
   const codeRegistrations: Email.EmailCodeRegistrationAuthority = {
-    inspect: (input) => inspectRegistration({ ...input, registration: defaults }),
+    enabled: true,
     registerWithProof: (input, prepare) =>
       registerWithProof({ ...input, registration: defaults }, prepare),
   };

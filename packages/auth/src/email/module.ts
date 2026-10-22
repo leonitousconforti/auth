@@ -110,11 +110,6 @@ const read = <A>(receipt: PreparedCommit<A>) =>
 
 const tupleCodec = Schema.fromJsonString(Schema.Array(Schema.String));
 
-const RegistrationInspection = Schema.Struct({
-  fingerprint: TokenDigest.check(Schema.isMaxLength(256)),
-  eligible: Schema.Boolean,
-});
-
 const decodeRegistrationDecision = Schema.decodeUnknownResult(EmailCodeRegistrationDecision);
 
 export interface EmailModule<Id extends string, Kind extends string, Claims> {
@@ -161,7 +156,7 @@ export const makeEmailSignInModule = <
   >(`effect-auth/email/${moduleId}/CodeRegistrationAuthority`);
 
   const registrationLayer = Layer.succeed(RegistrationAuthority, {
-    inspect: () => Effect.succeed({ fingerprint: TokenDigest.make("disabled"), eligible: false }),
+    enabled: false,
     registerWithProof: () => Effect.fail(EmailUnavailable.make({})),
   });
 
@@ -248,6 +243,7 @@ export const makeEmailSignInModule = <
         const completion = yield* sessions.AuthenticationCompletion;
         const crypto = yield* Crypto.Crypto;
         const registrations = yield* RegistrationAuthority;
+        const registrationEnabled = mode === "code" && registrations.enabled === true;
         const hooks = yield* LifecycleHooks;
 
         const lookup = Effect.fnUntraced(function* (identifier: LoginIdentifier) {
@@ -293,14 +289,6 @@ export const makeEmailSignInModule = <
 
           const target = yield* lookup(identifier);
 
-          const registration =
-            mode === "code" && Option.isNone(target)
-              ? yield* registrations.inspect({ identifier }).pipe(
-                  Effect.flatMap(Schema.decodeEffect(RegistrationInspection)),
-                  Effect.mapError(() => EmailUnavailable.make({})),
-                )
-              : undefined;
-
           const message = yield* Schema.encodeEffect(tupleCodec)([
             "effect-auth/email-sign-in/v1",
             moduleId,
@@ -309,7 +297,6 @@ export const makeEmailSignInModule = <
             verified.verifier,
             identifier.value,
             returnTarget,
-            ...(registration === undefined ? [] : [registration.fingerprint]),
           ]).pipe(Effect.mapError(() => EmailUnavailable.make({})));
 
           const bytes = yield* crypto
@@ -330,7 +317,7 @@ export const makeEmailSignInModule = <
             ? { _tag: "Subject", ...base, revision: target.value.revision }
             : { _tag: "Identifier", ...base };
 
-          return { target, binding: proofBinding, returnTarget, registration };
+          return { target, binding: proofBinding, returnTarget };
         });
 
         return SignIn.of({
@@ -343,7 +330,7 @@ export const makeEmailSignInModule = <
                 requestId: request.requestId,
                 binding: current.binding,
                 locale: request.locale,
-                eligible: Option.isSome(current.target) || current.registration?.eligible === true,
+                eligible: Option.isSome(current.target) || registrationEnabled,
               })
               .pipe(
                 Effect.flatMap(readProofCommit),
@@ -376,7 +363,7 @@ export const makeEmailSignInModule = <
 
             let target = current.target;
 
-            if (Option.isNone(target) && current.registration?.eligible === true) {
+            if (Option.isNone(target) && registrationEnabled) {
               const redemption = yield* proofs
                 .planRedeem(redeem)
                 .pipe(
@@ -414,7 +401,6 @@ export const makeEmailSignInModule = <
                   commandId: EmailCommandId.make(request.reference.proofId),
                   requestId: `email-registration:${moduleId}:${request.reference.proofId}`,
                   identifier: current.binding.identifier,
-                  fingerprint: current.registration.fingerprint,
                   redemption,
                 },
                 prepareCommit((raw, journal) =>

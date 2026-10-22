@@ -31,7 +31,7 @@ import {
 } from "./email-native-state";
 import { allocateEmailValue } from "./email-policy";
 import { PersistenceMappingError } from "./mapping-error";
-import type { AnyEmailRegistrationMapping } from "./models/email-model";
+import type { AnyEmailAddressMapping, AnyEmailRegistrationMapping } from "./models/email-model";
 import type { AnyProofPersistenceMapping } from "./models/proof-model";
 import type { NativeSqlTables, SqlTable } from "./native-sql-table";
 import { makeNativeProofStore } from "./proof-native";
@@ -45,7 +45,7 @@ import {
   SqlBatchCommit,
 } from "./sql-commit";
 
-interface RegistrationAuthority<Registration, Decision> {
+export interface EmailRegistrationAuthority<Registration> {
   readonly inspect: (input: {
     readonly identifier: LoginIdentifier;
     readonly registration: Registration;
@@ -63,31 +63,45 @@ interface RegistrationAuthority<Registration, Decision> {
       readonly fingerprint: TokenDigest;
       readonly redemption: ProofRedemptionPlan;
     },
-    prepare: PrepareEmailCommit<Decision, A>,
+    prepare: PrepareEmailCommit<EmailRegistrationDecision, A>,
   ) => Effect.Effect<PreparedCommit<A>, EmailUnavailable>;
 }
 
-export type EmailRegistrationAuthority<Registration> = RegistrationAuthority<
-  Registration,
-  EmailRegistrationDecision
->;
+type CreateFromEmail = (
+  email: string,
+) => Effect.Effect<Readonly<Record<string, unknown>>, EmailUnavailable>;
+
+interface NativeRegistrationWriter<Registration> {
+  readonly registerWithProof: <A>(
+    input: Parameters<EmailCodeRegistrationAuthority["registerWithProof"]>[0] & {
+      readonly registration?: {
+        readonly value: Registration;
+        readonly fingerprint: TokenDigest;
+      };
+    },
+    prepare: PrepareEmailCommit<EmailCodeRegistrationDecision, A>,
+  ) => Effect.Effect<PreparedCommit<A>, EmailUnavailable>;
+}
+
+const SubjectValues = Schema.Record(Schema.String, Schema.Unknown);
 
 const makeNativeRegistrationServices = Effect.fnUntraced(function* <Registration>(
   tables: NativeSqlTables,
-  mapping: AnyEmailRegistrationMapping<Registration>,
+  options:
+    | {
+        readonly flow: "registration";
+        readonly mapping: AnyEmailRegistrationMapping<Registration>;
+      }
+    | {
+        readonly flow: "code-sign-in";
+        readonly mapping: AnyEmailAddressMapping;
+        readonly createFromEmail: CreateFromEmail;
+      },
   proofs: AnyProofPersistenceMapping,
-  flow: "registration" | "code-sign-in",
   batch?: SqlBatchCommit["Service"],
-): Effect.fn.Return<
-  {
-    readonly registrationAuthority: RegistrationAuthority<
-      Registration,
-      EmailCodeRegistrationDecision
-    >;
-  },
-  never,
-  SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto
-> {
+) {
+  const mapping = options.mapping;
+
   const sql = (yield* SqlClient.SqlClient).withoutTransforms(),
     executor = yield* makeSqlCommitExecutor(unavailable),
     crypto = yield* Crypto.Crypto;
@@ -147,14 +161,34 @@ const makeNativeRegistrationServices = Effect.fnUntraced(function* <Registration
     });
 
   const registrationAuthority = {
-    inspect: (input) => executor.read(mapping.inspect(input)),
     registerWithProof: (original, project) =>
       Effect.gen(function* () {
-        const registration = yield* mapping.snapshotRegistration(original.registration);
+        const plan = yield* Effect.gen(function* () {
+          if (options.flow === "code-sign-in")
+            return {
+              _tag: "Code" as const,
+              createFromEmail: options.createFromEmail,
+              eligible: true,
+            };
+          if (original.registration === undefined) return yield* invalidState();
 
-        const inspection = yield* mapping.inspect({
-          identifier: original.identifier,
-          registration: yield* mapping.snapshotRegistration(registration),
+          const registration = yield* options.mapping.snapshotRegistration(
+            original.registration.value,
+          );
+
+          const inspection = yield* options.mapping.inspect({
+            identifier: original.identifier,
+            registration: yield* options.mapping.snapshotRegistration(registration),
+          });
+
+          return {
+            _tag: "Registration" as const,
+            registration,
+            fingerprint: original.registration.fingerprint,
+            provisioning: options.mapping.provisioning,
+            eligible:
+              inspection.eligible && inspection.fingerprint === original.registration.fingerprint,
+          };
         });
 
         const redemption = yield* Schema.decodeEffect(Schema.toCodecIso(ProofRedemptionInput))(
@@ -166,7 +200,6 @@ const makeNativeRegistrationServices = Effect.fnUntraced(function* <Registration
         const input = {
           ...original,
           identifier: { ...original.identifier },
-          registration,
           redemption,
         };
 
@@ -175,12 +208,13 @@ const makeNativeRegistrationServices = Effect.fnUntraced(function* <Registration
             const binding = redemption.binding;
 
             if (
-              !inspection.eligible ||
-              inspection.fingerprint !== input.fingerprint ||
-              redemption.moduleId !== `${input.moduleId}/${flow}` ||
+              !plan.eligible ||
+              redemption.moduleId !== `${input.moduleId}/${options.flow}` ||
               redemption.purpose !==
-                (flow === "registration" ? "email-code-registration" : "email-code-sign-in") ||
-              (flow === "code-sign-in" && input.commandId !== String(redemption.proofId)) ||
+                (options.flow === "registration"
+                  ? "email-code-registration"
+                  : "email-code-sign-in") ||
+              (options.flow === "code-sign-in" && input.commandId !== String(redemption.proofId)) ||
               binding._tag !== "Identifier" ||
               binding.identifier.namespace !== input.identifier.namespace ||
               binding.identifier.value !== input.identifier.value ||
@@ -285,43 +319,70 @@ const makeNativeRegistrationServices = Effect.fnUntraced(function* <Registration
                 mapping.allocateCredentialIdSync,
               );
 
-            const provisioning = mapping.provisioning;
+            let native: unknown;
 
-            if (batch !== undefined && provisioning.idMode === "generated")
-              return yield* unavailable();
-
-            let native =
-              provisioning.idMode === "generated"
-                ? undefined
-                : yield* allocateEmailValue(
-                    mode,
-                    provisioning.allocateSubjectId,
-                    provisioning.allocateSubjectIdSync,
-                  );
-
-            const insertion = sql`${subject.insert(provisioning.encodeSubjectInsert(input, { nativeSubjectId: native, securityRevision }))}`;
-
-            if (provisioning.idMode === "generated") {
-              const rows = yield* sql.onDialectOrElse({
-                mysql: () =>
-                  insertion.raw.pipe(
-                    Effect.flatMap(
-                      Schema.decodeUnknownEffect(
-                        Schema.Struct({ insertId: Schema.Union([Schema.Int, Schema.String]) }),
-                      ),
-                    ),
-                    Effect.map((header) => [{ [s.id]: header.insertId }]),
-                  ),
-                orElse: () =>
-                  sql`${insertion} returning ${subject.fields("email_registration_generated_")}`.pipe(
-                    Effect.map((rows) =>
-                      rows.map((row) => subject.decode(row, "email_registration_generated_")),
-                    ),
-                  ),
+            if (plan._tag === "Code") {
+              const row = Object.freeze({
+                ...(yield* Schema.decodeEffect(SubjectValues)(
+                  yield* plan.createFromEmail(input.identifier.value),
+                )),
               });
 
-              native = yield* provisioning.decodeGeneratedId(rows);
-            } else yield* stage(insertion);
+              const subjectId = yield* mapping.subjectId.toSubject(row[s.id]);
+
+              native = yield* mapping.subjectId.toNative(subjectId);
+              yield* stage(
+                subject.insert({
+                  ...row,
+                  [s.id]: native,
+                  [s.status]: s.activeStatusValue,
+                  [s.securityRevision]: securityRevision,
+                }),
+              );
+            } else {
+              const provisioning = plan.provisioning;
+
+              if (batch !== undefined && provisioning.idMode === "generated")
+                return yield* unavailable();
+
+              native =
+                provisioning.idMode === "generated"
+                  ? undefined
+                  : yield* allocateEmailValue(
+                      mode,
+                      provisioning.allocateSubjectId,
+                      provisioning.allocateSubjectIdSync,
+                    );
+
+              const insertion = sql`${subject.insert(
+                provisioning.encodeSubjectInsert(
+                  { ...input, registration: plan.registration, fingerprint: plan.fingerprint },
+                  { nativeSubjectId: native, securityRevision },
+                ),
+              )}`;
+
+              if (provisioning.idMode === "generated") {
+                const rows = yield* sql.onDialectOrElse({
+                  mysql: () =>
+                    insertion.raw.pipe(
+                      Effect.flatMap(
+                        Schema.decodeUnknownEffect(
+                          Schema.Struct({ insertId: Schema.Union([Schema.Int, Schema.String]) }),
+                        ),
+                      ),
+                      Effect.map((header) => [{ [s.id]: header.insertId }]),
+                    ),
+                  orElse: () =>
+                    sql`${insertion} returning ${subject.fields("email_registration_generated_")}`.pipe(
+                      Effect.map((rows) =>
+                        rows.map((row) => subject.decode(row, "email_registration_generated_")),
+                      ),
+                    ),
+                });
+
+                native = yield* provisioning.decodeGeneratedId(rows);
+              } else yield* stage(insertion);
+            }
             if (!(native !== undefined)) return yield* invalidState();
             const subjectId = yield* mapping.subjectId.toSubject(native);
             const clock = yield* sql`select ${now} as engine_now`;
@@ -431,9 +492,9 @@ const makeNativeRegistrationServices = Effect.fnUntraced(function* <Registration
           }),
         Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, unavailable))),
       ),
-  } satisfies RegistrationAuthority<Registration, EmailCodeRegistrationDecision>;
+  } satisfies NativeRegistrationWriter<Registration>;
 
-  return { registrationAuthority };
+  return { registrationAuthority, read: executor.read };
 });
 
 /** Proof redemption, SQL provisioning, and verified ownership commit together. No registration receipt survives the proof. */
@@ -447,20 +508,20 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
   never,
   SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto
 > {
-  const { registrationAuthority: authority } = yield* makeNativeRegistrationServices(
+  const { registrationAuthority: authority, read } = yield* makeNativeRegistrationServices(
     tables,
-    mapping,
+    { flow: "registration", mapping },
     proofs,
-    "registration",
     batch,
   );
 
   return {
     registrationAuthority: {
-      inspect: authority.inspect,
-      registerWithProof: (input, project) =>
-        authority.registerWithProof(input, (decision, journal) =>
-          project({ _tag: decision._tag }, journal),
+      inspect: (input) => read(mapping.inspect(input)),
+      registerWithProof: ({ registration, fingerprint, ...input }, project) =>
+        authority.registerWithProof(
+          { ...input, registration: { value: registration, fingerprint } },
+          (decision, journal) => project({ _tag: decision._tag }, journal),
         ),
     },
   };
@@ -471,8 +532,9 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
  */
 export const makeNativeEmailCodeRegistrationServices = Effect.fnUntraced(function* (
   tables: NativeSqlTables,
-  mapping: AnyEmailRegistrationMapping<void>,
+  mapping: AnyEmailAddressMapping,
   proofs: AnyProofPersistenceMapping,
+  createFromEmail: CreateFromEmail,
   batch?: SqlBatchCommit["Service"],
 ): Effect.fn.Return<
   { readonly registrationAuthority: EmailCodeRegistrationAuthority },
@@ -481,17 +543,15 @@ export const makeNativeEmailCodeRegistrationServices = Effect.fnUntraced(functio
 > {
   const { registrationAuthority: authority } = yield* makeNativeRegistrationServices(
     tables,
-    mapping,
+    { flow: "code-sign-in", mapping, createFromEmail },
     proofs,
-    "code-sign-in",
     batch,
   );
 
   return {
     registrationAuthority: {
-      inspect: (input) => authority.inspect({ ...input, registration: undefined }),
-      registerWithProof: (input, project) =>
-        authority.registerWithProof({ ...input, registration: undefined }, project),
+      enabled: true,
+      registerWithProof: authority.registerWithProof,
     },
   };
 });

@@ -129,7 +129,8 @@ recover an earlier receipt or delivery.
 
 ## Supply the services
 
-Your application supplies lookup, claims, storage, delivery, and
+Your persistence Layer supplies lookup and proof storage. Your application supplies
+claims, delivery, and
 [crypto Layers](../reference/crypto#use-with-auth). The return-target allowlist
 restricts where sign-in can send the user:
 
@@ -139,13 +140,12 @@ import { Email } from "@yielded/auth";
 
 import { AppAuth } from "./auth";
 import { AuthDependencies } from "./auth-dependencies";
-import { lookupEmail, resolveEmailClaims } from "./auth-accounts";
-import { ProofPersistenceLive } from "./auth-persistence";
+import { resolveEmailClaims } from "./auth-accounts";
+import { PersistenceLive } from "./auth-persistence";
 import { EmailLive } from "./email";
 
 export const EmailServicesLive = Layer.mergeAll(
-  ProofPersistenceLive,
-  Layer.succeed(Email.EmailSignInTargets, { lookup: lookupEmail }),
+  PersistenceLive,
   Layer.succeed(AppAuth.strategies.email.SessionClaims, { resolve: resolveEmailClaims }),
   Email.EmailReturnTargets.exactRoutes(["/account"]),
   EmailLive,
@@ -171,41 +171,36 @@ and overrides.
 
 ## Register a mailbox owner
 
-For one-code sign-up and sign-in, add an email entry to `Persistence.Provisioning`.
-The same `beginSignIn` → `signIn` → `completeSignIn` flow then serves new and existing
-accounts. Requesting a code creates no account; redeeming it creates the new subject
-and verified email credential before completing authentication.
+For one-code sign-up and sign-in, add `createFromEmail` to your existing
+[subject mapping](./storage). The same `beginSignIn` → `signIn` → `completeSignIn`
+flow then serves new and existing accounts.
 
-Use your [managed or mapped persistence](./storage) configuration:
-
-```ts title="apps/server/account-defaults.ts"
-import { Effect, Layer } from "effect";
-
-import { Persistence } from "./schema";
-
-export const AccountDefaultsLive = Layer.succeed(Persistence.Provisioning, {
-  email: {
-    values: ({ identifier }) =>
+```ts title="apps/server/schema.ts"
+const storage = Persistence.managed({
+  prefix: "app_auth",
+  subjects: {
+    ...subjectMapping,
+    createFromEmail: (email) =>
       Effect.sync(() => ({
         id: crypto.randomUUID(),
-        displayName: identifier.value,
+        displayName: email,
       })),
   },
 });
 ```
 
-Provide `AccountDefaultsLive` to `Persistence.layer`. The key `email` matches the
-strategy name in `AppAuth`; include any other strategies' provisioning entries in
-the same Layer. The library wires lookup, proofs, and registration from the configured
-storage. Keep claims, email delivery, and return targets in your application Layers.
+`subjectMapping` is your existing table, ID codec, status, revision, and requirements
+configuration. Supply `storage` through `Persistence.Config.layer(storage)` as usual;
+no additional registration Layer is needed. The
+[runnable example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/email-registration.ts)
+shows the complete setup.
 
-Return your subject table's native ID and application columns. Auth supplies active
-status and the initial security revision. Values use the current account defaults
-at redemption and may be evaluated for failed attempts: allocate IDs, but do not
-insert rows, reserve accounts, or perform external side effects. Omitting the email
-entry keeps sign-in limited to existing accounts. Composed email persistence uses
-stateful sessions; see [email persistence](../reference/adapters#email) for explicit
-adapters and the [runnable example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/email-registration.ts).
+The callback returns the subject table's native ID and application columns, using
+logical column names. Auth supplies active status and the initial security revision.
+Prepare values only: do not insert rows, reserve accounts, or perform external side
+effects. Requesting a code creates no account. Omit `createFromEmail` to keep sign-in
+limited to existing accounts. It applies to all email-code strategies in this
+persistence configuration, which requires stateful sessions.
 
 Account creation and proof redemption commit together. Session issuance follows;
 if it fails or the outcome is unknown, request a fresh code. Provisioning never

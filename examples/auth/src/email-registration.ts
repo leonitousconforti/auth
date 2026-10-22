@@ -44,6 +44,8 @@ const storage = Persistence.managed({
     activeValue: true,
     securityRevision: "revision",
     idCodec: AuthSchema.SubjectId,
+    createFromEmail: (email) =>
+      Effect.sync(() => ({ id: crypto.randomUUID(), displayName: email })),
     requirements: () =>
       Effect.succeed({
         alternatives: [
@@ -59,18 +61,7 @@ const storage = Persistence.managed({
   },
 });
 
-const ProvisioningLive = Layer.succeed(Persistence.Provisioning, {
-  email: {
-    // Application-owned defaults; Auth writes the active status and revision.
-    values: ({ identifier, requestId }) =>
-      Effect.succeed({ id: `member:${requestId}`, displayName: identifier.value }),
-  },
-});
-
-const PersistenceLive = Persistence.layer.pipe(
-  Layer.provide(Persistence.Config.layer(storage)),
-  Layer.provide(ProvisioningLive),
-);
+const PersistenceLive = Persistence.layer.pipe(Layer.provide(Persistence.Config.layer(storage)));
 
 const ClaimsLive = Layer.effect(
   AppAuth.strategies.email.SessionClaims,

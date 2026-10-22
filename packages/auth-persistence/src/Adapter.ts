@@ -300,7 +300,6 @@ export {
 
 export {
   makeNativeEmailRegistrationServices,
-  makeNativeEmailCodeRegistrationServices,
   type EmailRegistrationAuthority,
 } from "./internal/email-registration-native";
 

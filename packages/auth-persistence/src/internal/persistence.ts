@@ -33,7 +33,6 @@ import * as Context from "effect/Context";
 import type * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -48,8 +47,7 @@ import {
   type Ports,
   type Roles,
   type Provisioning,
-  type ProvisioningId,
-  type EmailSubjectProvisioning,
+  type ProvisioningRequirement,
   type StorageLayout,
   type SubjectMapping,
   type SubjectOptions,
@@ -57,8 +55,8 @@ import {
   type PasskeyRequirement,
   type OAuthFeature,
 } from "./configuration";
-import { makeComposedEmailRegistrationAuthority } from "./email-composed";
 import { makeNativeEmailAddressServices, makeNativeEmailSignInServices } from "./email-native";
+import { makeNativeEmailCodeRegistrationServices } from "./email-registration-native";
 import { PersistenceMappingError } from "./mapping-error";
 import type { NativeSqlTables } from "./native-sql-table";
 import { makeManagedOAuth } from "./oauth-managed";
@@ -189,7 +187,7 @@ export const createPersistence = <T extends object, R, Database extends object =
       layer: (value: StorageLayout<T, Roles<C, Id, A>>) => Layer.succeed(ConfigKey, value),
     });
 
-    const ProvisioningKey = Context.Service<ProvisioningId<A["namespace"]>, Provisioning<A>>()(
+    const ProvisioningKey = Context.Service<ProvisioningRequirement<A>, Provisioning<A>>()(
       `@yielded/auth-persistence/${auth.namespace}/Provisioning`,
     );
 
@@ -289,6 +287,7 @@ export const createPersistence = <T extends object, R, Database extends object =
         status: subject.status,
         securityRevision: subject.securityRevision,
         activeValue: subject.activeValue,
+        createFromEmail: subject.createFromEmail,
         requirements: subject.requirements,
         actionRequirements: subject.actionRequirements ?? subject.requirements,
         toSubject: (id) =>
@@ -327,7 +326,6 @@ export const createPersistence = <T extends object, R, Database extends object =
         Effect.gen(function* () {
           const storage = yield* ConfigKey;
           const client = yield* SqlClient.SqlClient;
-          const provisioning = yield* Effect.serviceOption(ProvisioningKey);
 
           const dialect = client.onDialectOrElse({
             pg: () => "pg" as const,
@@ -477,7 +475,7 @@ export const createPersistence = <T extends object, R, Database extends object =
               continue;
             const key = strategy.RegistrationAuthority;
 
-            if (key === undefined || Option.isNone(provisioning))
+            if (key === undefined)
               return yield* configError(`Missing subject provisioning for ${name}`);
 
             const registration = yield* makeRegistrationAuthority(
@@ -485,7 +483,7 @@ export const createPersistence = <T extends object, R, Database extends object =
               yield* mappings.passwords(),
               ProvisioningKey,
               name,
-            ).pipe(Effect.provideService(ProvisioningKey, provisioning.value));
+            );
 
             context = Context.add(context, key, registration);
           }
@@ -514,21 +512,23 @@ export const createPersistence = <T extends object, R, Database extends object =
               if (key === undefined || proofMapping === undefined)
                 return yield* configError(`Missing email registration configuration for ${name}`);
 
-              // Metadata selects only code entries from the heterogeneous provisioning map.
-              const defaults = Option.isSome(provisioning)
-                ? (provisioning.value as Readonly<Record<string, EmailSubjectProvisioning>>)[name]
-                : undefined;
+              const createFromEmail = storage.subjects.createFromEmail;
 
-              context = Context.add(
-                context,
-                key,
-                yield* makeComposedEmailRegistrationAuthority(
-                  nativeTables,
-                  mapping,
-                  proofMapping,
-                  defaults,
-                ),
-              );
+              const registration =
+                createFromEmail === undefined
+                  ? {
+                      enabled: false,
+                      registerWithProof: () => Effect.fail(EmailUnavailable.make({})),
+                    }
+                  : (yield* makeNativeEmailCodeRegistrationServices(
+                      nativeTables,
+                      mapping,
+                      proofMapping,
+                      createFromEmail,
+                      yield* SqlBatchCommit,
+                    )).registrationAuthority;
+
+              context = Context.add(context, key, registration);
             }
           }
 
@@ -594,15 +594,7 @@ export const createPersistence = <T extends object, R, Database extends object =
           );
         }
         const scope = yield* Effect.scope;
-        let captured = yield* Effect.context<Layer.Services<typeof services>>();
-        const provisioning = yield* Effect.serviceOption(ProvisioningKey);
-
-        if (Option.isSome(provisioning)) {
-          const configured = { ...provisioning.value };
-
-          Object.freeze(configured);
-          captured = Context.add(captured, ProvisioningKey, configured);
-        }
+        const captured = yield* Effect.context<Layer.Services<typeof services>>();
         const client = Context.get(captured, SqlClient.SqlClient);
         const started = yield* Ref.make(false);
 
@@ -624,7 +616,6 @@ export const createPersistence = <T extends object, R, Database extends object =
                           CurrentSqlCommit,
                           CurrentCommitJournal,
                           SqlNativeCommit,
-                          ProvisioningKey,
                           client.transactionService,
                         ),
                       ),
@@ -834,7 +825,7 @@ export const createPersistence = <T extends object, R, Database extends object =
           );
 
           context = Context.add(context, key, {
-            inspect: (input) => Effect.flatMap(registration, (s) => s.inspect(input)),
+            enabled: Context.get(captured, ConfigKey).subjects.createFromEmail !== undefined,
             registerWithProof: (input, prepare) =>
               Effect.flatMap(registration, (s) => s.registerWithProof(input, prepare)),
           } satisfies EmailCodeRegistrationAuthority);

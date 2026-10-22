@@ -105,8 +105,8 @@ running for other waiting callers. Interrupted setup requires rebuilding the Lay
 before storage operations resume. Cookie-cached and anonymous session reads do
 not trigger initialization.
 
-Composition supports password sign-in, registration and management, email address
-verification and changes, phone sign-in, passkey sign-in and management, OAuth
+Composition supports password sign-in, registration and management, email-code
+registration, email sign-in and address changes, phone sign-in, passkey sign-in and management, OAuth
 sign-in and connected grants, and stateful sessions on PostgreSQL and SQLite.
 OAuth-only definitions also support `Sessions.stateless()`: flows, grants, and
 issuance authority remain durable; session verification uses signed credentials.
@@ -401,16 +401,14 @@ are permanent and are never removed by cleanup.
 ## Email
 
 With stateful sessions, `AuthPersistence.layer` supplies email lookup and proof
-storage. Add an entry keyed by the code strategy's name to `Persistence.Provisioning`
-to enable one-code account creation. Its `values` function returns the subject's
-native ID and application columns; Auth supplies active status and security revision.
-Values use current defaults at redemption and must not write or perform external
-side effects. Omit the entry for existing-account-only sign-in. Magic links do not
-create accounts.
+storage. Add `subjects.createFromEmail(email)` to your managed or mapped configuration
+to enable one-code account creation. Return an Effect containing the subject's native
+ID and application columns; Auth supplies active status and security revision. The
+callback prepares values without database writes or external side effects. Omitting
+it keeps sign-in limited to existing accounts. It applies to all email-code strategies
+in the configuration; magic links do not create accounts.
 
-For explicit adapters, `makeEmailSignInServices` supplies lookup.
-`makeEmailCodeRegistrationServices` supplies a code strategy's `RegistrationAuthority`;
-its `EmailRegistrationMapping<void, ...>` uses application-owned account defaults.
+For explicit adapters, `makeEmailSignInServices` supplies lookup,
 `makeEmailRegistrationServices` supplies separate registration with application data,
 and `makeEmailAddressServices` supplies address changes. For explicit
 mappings over an existing layout, use `.emails()` and `.proofs()` from
@@ -423,14 +421,14 @@ revision without moving credentials or application data or re-enabling a disable
 subject. Storage-backed sessions can invalidate immediately; purely stateless
 sessions retain their configured lifetime.
 
-Provisioning, identifier ownership, and proof consumption share one transaction or
-D1 batch. Provisioning is synchronous and receives a stable `requestId` for
-application idempotence. See [mailbox registration](../guide/codes#register-a-mailbox-owner).
-When using explicit adapters, supply the code registration authority alongside the
-sign-in and proof services. Its mapping and
-`makeEmailSignInServices` must address the same subject, identifier, and credential
-tables. Session issuance follows the registration commit and requires a fresh code
-if it fails or the outcome is unknown. D1 requires application-allocated subject IDs.
+Account creation, identifier ownership, and proof consumption share one transaction
+or D1 batch. Session issuance follows; if it fails or its outcome is unknown, request
+a fresh code. D1 requires application-allocated subject IDs. See
+[mailbox registration](../guide/codes#register-a-mailbox-owner).
+
+The separate registration adapter takes synchronous provisioning and a stable
+`requestId` for application idempotence. Its mapping and the sign-in adapter must
+address the same subject, identifier, and credential tables.
 
 Confirming an existing unverified address for the same subject preserves sessions
 and omits `invalidation`. Application policy may allow confirmation with a valid

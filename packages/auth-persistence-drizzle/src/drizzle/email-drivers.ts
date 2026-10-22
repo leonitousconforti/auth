@@ -21,7 +21,6 @@ import {
   makeTargetEmailAddressServices,
   makeTargetEmailSignInServices,
   makeTargetEmailRegistrationServices,
-  makeTargetEmailCodeRegistrationServices,
 } from "./email-target";
 import { NativeDatabase, nativeDatabase } from "./native-database";
 import type { NativeTargetConfiguration } from "./native-target";
@@ -320,24 +319,6 @@ export const makeEmailTarget = <DatabaseId, D extends NativeDriverDatabase>(
     ) =>
       makeTargetEmailRegistrationServices(
         mapping as unknown as AnyEmailRegistrationMapping<Registration>,
-        configuration,
-        proofs as unknown as AnyProofPersistenceMapping,
-      ).pipe(Effect.provideServiceEffect(NativeDatabase, nativeDatabase(databaseService))),
-    makeEmailCodeRegistrationServices: <
-      Proof extends Table,
-      PS extends Table,
-      PN,
-      S extends Table,
-      I extends Table,
-      C extends Table,
-      AC extends Table,
-      N,
-    >(
-      mapping: EmailRegistrationMapping<void, S, I, C, AC, N>,
-      proofs: ProofPersistenceMapping<Proof, PS, PN>,
-    ) =>
-      makeTargetEmailCodeRegistrationServices(
-        mapping as unknown as AnyEmailRegistrationMapping<void>,
         configuration,
         proofs as unknown as AnyProofPersistenceMapping,
       ).pipe(Effect.provideServiceEffect(NativeDatabase, nativeDatabase(databaseService))),
