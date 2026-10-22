@@ -13,8 +13,9 @@ import type { EmailCodeRegistrationDecision, EmailCommandId } from "./models";
  * The default authority declines registration and sends no code to unknown addresses.
  */
 export interface EmailCodeRegistrationAuthority {
-  /** Fingerprint the account defaults and policy; a changed fingerprint invalidates
-   * outstanding codes. Inspection must not create or reserve an account.
+  /** Fingerprint any policy that must remain fixed until redemption; a changed
+   * fingerprint invalidates outstanding codes. Authorities may instead resolve
+   * account defaults at redemption. Inspection must not create or reserve an account.
    */
   readonly inspect: (input: {
     readonly identifier: LoginIdentifier;

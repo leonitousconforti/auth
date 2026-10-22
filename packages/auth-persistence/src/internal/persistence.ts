@@ -1,4 +1,9 @@
-import { EmailAddressPersistence, EmailUnavailable } from "@yielded/auth/Email";
+import {
+  EmailAddressPersistence,
+  EmailSignInTargets,
+  EmailUnavailable,
+  type EmailCodeRegistrationAuthority,
+} from "@yielded/auth/Email";
 import type { LifecycleHooks } from "@yielded/auth/Hooks";
 import { CurrentCommitJournal, hasCommitScope } from "@yielded/auth/Hooks";
 import {
@@ -28,12 +33,14 @@ import * as Context from "effect/Context";
 import type * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import {
   PersistenceConfigurationError,
+  type BoundPersistence,
   type ClaimsCodec,
   type ConfigId,
   type Definition,
@@ -41,7 +48,8 @@ import {
   type Ports,
   type Roles,
   type Provisioning,
-  type ProvisioningRequirement,
+  type ProvisioningId,
+  type EmailSubjectProvisioning,
   type StorageLayout,
   type SubjectMapping,
   type SubjectOptions,
@@ -49,7 +57,8 @@ import {
   type PasskeyRequirement,
   type OAuthFeature,
 } from "./configuration";
-import { makeNativeEmailAddressServices } from "./email-native";
+import { makeComposedEmailRegistrationAuthority } from "./email-composed";
+import { makeNativeEmailAddressServices, makeNativeEmailSignInServices } from "./email-native";
 import { PersistenceMappingError } from "./mapping-error";
 import type { NativeSqlTables } from "./native-sql-table";
 import { makeManagedOAuth } from "./oauth-managed";
@@ -124,7 +133,7 @@ export const createPersistence = <T extends object, R, Database extends object =
 ): PersistenceApi<T, R> => {
   const make = <C extends ClaimsCodec, const Id extends string, const A extends Definition<C, Id>>(
     auth: A & Definition<C, Id>,
-  ) => {
+  ): BoundPersistence<T, R, C, Id, A> => {
     const features = Object.values(auth.strategies).flatMap((strategy) =>
       strategy.persistence === undefined ? [] : [strategy.persistence],
     );
@@ -150,7 +159,12 @@ export const createPersistence = <T extends object, R, Database extends object =
       (feature) => feature.kind === "password" && feature.management,
     );
 
-    const email = features.some((feature) => feature.kind === "email" && feature.addresses);
+    const emailAddresses = features.some(
+      (feature) => feature.kind === "email" && feature.addresses,
+    );
+
+    const emailSignIn = features.some((feature) => feature.kind === "email" && feature.signIn);
+    const email = emailAddresses || emailSignIn;
     const proofs = phone || management || email;
 
     const roles: StorageRole[] = ["identifiers", "credentials"];
@@ -175,7 +189,7 @@ export const createPersistence = <T extends object, R, Database extends object =
       layer: (value: StorageLayout<T, Roles<C, Id, A>>) => Layer.succeed(ConfigKey, value),
     });
 
-    const ProvisioningKey = Context.Service<ProvisioningRequirement<A>, Provisioning<A>>()(
+    const ProvisioningKey = Context.Service<ProvisioningId<A["namespace"]>, Provisioning<A>>()(
       `@yielded/auth-persistence/${auth.namespace}/Provisioning`,
     );
 
@@ -313,6 +327,7 @@ export const createPersistence = <T extends object, R, Database extends object =
         Effect.gen(function* () {
           const storage = yield* ConfigKey;
           const client = yield* SqlClient.SqlClient;
+          const provisioning = yield* Effect.serviceOption(ProvisioningKey);
 
           const dialect = client.onDialectOrElse({
             pg: () => "pg" as const,
@@ -326,7 +341,7 @@ export const createPersistence = <T extends object, R, Database extends object =
             features.some(
               (feature) =>
                 ("lifecycle" in feature && feature.lifecycle) ||
-                (feature.kind === "email" && !feature.addresses),
+                (feature.kind === "email" && !feature.addresses && !feature.signIn),
             )
           )
             return yield* configError(
@@ -462,7 +477,7 @@ export const createPersistence = <T extends object, R, Database extends object =
               continue;
             const key = strategy.RegistrationAuthority;
 
-            if (key === undefined)
+            if (key === undefined || Option.isNone(provisioning))
               return yield* configError(`Missing subject provisioning for ${name}`);
 
             const registration = yield* makeRegistrationAuthority(
@@ -470,20 +485,52 @@ export const createPersistence = <T extends object, R, Database extends object =
               yield* mappings.passwords(),
               ProvisioningKey,
               name,
-            );
+            ).pipe(Effect.provideService(ProvisioningKey, provisioning.value));
 
             context = Context.add(context, key, registration);
           }
-          if (email)
-            context = Context.add(
-              context,
-              EmailAddressPersistence,
-              (yield* makeNativeEmailAddressServices(
-                backend.nativeTables(database),
-                yield* mappings.emails(),
-                proofMapping,
-              )).emailAddressPersistence,
-            );
+          if (email) {
+            const mapping = yield* mappings.emails();
+
+            if (emailAddresses)
+              context = Context.add(
+                context,
+                EmailAddressPersistence,
+                (yield* makeNativeEmailAddressServices(nativeTables, mapping, proofMapping))
+                  .emailAddressPersistence,
+              );
+            if (emailSignIn)
+              context = Context.add(
+                context,
+                EmailSignInTargets,
+                (yield* makeNativeEmailSignInServices(nativeTables, mapping)).emailSignInTargets,
+              );
+
+            for (const [name, strategy] of Object.entries(auth.strategies)) {
+              if (strategy.persistence?.kind !== "email" || strategy.persistence.signIn !== "code")
+                continue;
+              const key = strategy.RegistrationAuthority;
+
+              if (key === undefined || proofMapping === undefined)
+                return yield* configError(`Missing email registration configuration for ${name}`);
+
+              // Metadata selects only code entries from the heterogeneous provisioning map.
+              const defaults = Option.isSome(provisioning)
+                ? (provisioning.value as Readonly<Record<string, EmailSubjectProvisioning>>)[name]
+                : undefined;
+
+              context = Context.add(
+                context,
+                key,
+                yield* makeComposedEmailRegistrationAuthority(
+                  nativeTables,
+                  mapping,
+                  proofMapping,
+                  defaults,
+                ),
+              );
+            }
+          }
 
           if (phone)
             context = Context.add(
@@ -547,7 +594,15 @@ export const createPersistence = <T extends object, R, Database extends object =
           );
         }
         const scope = yield* Effect.scope;
-        const captured = yield* Effect.context<Layer.Services<typeof services>>();
+        let captured = yield* Effect.context<Layer.Services<typeof services>>();
+        const provisioning = yield* Effect.serviceOption(ProvisioningKey);
+
+        if (Option.isSome(provisioning)) {
+          const configured = { ...provisioning.value };
+
+          Object.freeze(configured);
+          captured = Context.add(captured, ProvisioningKey, configured);
+        }
         const client = Context.get(captured, SqlClient.SqlClient);
         const started = yield* Ref.make(false);
 
@@ -569,6 +624,7 @@ export const createPersistence = <T extends object, R, Database extends object =
                           CurrentSqlCommit,
                           CurrentCommitJournal,
                           SqlNativeCommit,
+                          ProvisioningKey,
                           client.transactionService,
                         ),
                       ),
@@ -746,7 +802,7 @@ export const createPersistence = <T extends object, R, Database extends object =
               Effect.flatMap(registration, (s) => s.register(input, prepare)),
           } satisfies PasswordRegistrationAuthority<unknown>);
         }
-        if (email) {
+        if (emailAddresses) {
           const persistence = service(EmailAddressPersistence, () => EmailUnavailable.make({}));
 
           context = Context.add(context, EmailAddressPersistence, {
@@ -756,6 +812,32 @@ export const createPersistence = <T extends object, R, Database extends object =
             changeWithProof: (input, prepare) =>
               Effect.flatMap(persistence, (s) => s.changeWithProof(input, prepare)),
           });
+        }
+        if (emailSignIn) {
+          const targets = service(EmailSignInTargets, () => EmailUnavailable.make({}));
+
+          context = Context.add(context, EmailSignInTargets, {
+            lookup: (input) => Effect.flatMap(targets, (s) => s.lookup(input)),
+          });
+        }
+        for (const strategy of Object.values(auth.strategies)) {
+          if (strategy.persistence?.kind !== "email" || strategy.persistence.signIn !== "code")
+            continue;
+          const key = strategy.RegistrationAuthority;
+
+          if (key === undefined) return yield* configError("Missing email registration authority");
+
+          // The strategy metadata identifies the code registration port's erased service type.
+          const registration = service(
+            key as Context.Key<unknown, EmailCodeRegistrationAuthority>,
+            () => EmailUnavailable.make({}),
+          );
+
+          context = Context.add(context, key, {
+            inspect: (input) => Effect.flatMap(registration, (s) => s.inspect(input)),
+            registerWithProof: (input, prepare) =>
+              Effect.flatMap(registration, (s) => s.registerWithProof(input, prepare)),
+          } satisfies EmailCodeRegistrationAuthority);
         }
         if (phone) {
           const unavailable = () => PhoneOtpUnavailable.make({});

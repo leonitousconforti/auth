@@ -1,4 +1,9 @@
-import type { EmailAction, EmailAddressPersistence } from "@yielded/auth/Email";
+import type {
+  EmailAction,
+  EmailAddressPersistence,
+  EmailSignInTargets,
+  EmailUnavailable,
+} from "@yielded/auth/Email";
 import type { LoginIdentifier } from "@yielded/auth/Identity";
 import type {
   OAuthConnectedPersistence,
@@ -74,6 +79,7 @@ export interface Strategy {
         readonly lifecycle?: boolean;
         readonly management?: boolean;
         readonly addresses?: boolean;
+        readonly signIn?: "code" | "link";
       };
   readonly RegistrationAuthority?: Context.Key<unknown, unknown>;
 }
@@ -97,6 +103,19 @@ type ManagedPassword<A extends { readonly strategies: Readonly<Record<string, St
 
 type ManagedPasskey<A extends { readonly strategies: Readonly<Record<string, Strategy>> }> =
   Extract<Enabled<A, "passkey">, { persistence: { management: true } }>;
+
+type EmailSignIn<A extends { readonly strategies: Readonly<Record<string, Strategy>> }> = Extract<
+  Enabled<A, "email">,
+  { persistence: { signIn: "code" | "link" } }
+>;
+
+type EmailCode<A extends { readonly strategies: Readonly<Record<string, Strategy>> }> = Extract<
+  EmailSignIn<A>,
+  { persistence: { signIn: "code" } }
+>;
+
+type EmailAddresses<A extends { readonly strategies: Readonly<Record<string, Strategy>> }> =
+  Extract<Enabled<A, "email">, { persistence: { addresses: true } }>;
 
 export type PasskeyRequirement<
   A extends { readonly strategies: Readonly<Record<string, Strategy>> },
@@ -146,6 +165,17 @@ export type SubjectProvisioning<Registration> =
       input: SubjectProvisioningInput<Registration>,
     ) => Effect.Effect<SubjectId, PasswordUnavailable>);
 
+/** Prepare a new email account's native ID and application columns without writes
+ * or external side effects. The library supplies active status and security revision.
+ * Values are evaluated at redemption, including failed attempts; they must not reserve
+ * an account. Omit the strategy entry to keep sign-in limited to existing accounts.
+ */
+export interface EmailSubjectProvisioning {
+  readonly values: (
+    input: SubjectProvisioningInput<void>,
+  ) => Effect.Effect<Readonly<Record<string, unknown>>, EmailUnavailable>;
+}
+
 export type Provisioning<A extends { readonly strategies: Readonly<Record<string, Strategy>> }> = {
   readonly [
     K in keyof A["strategies"] as A["strategies"][K] extends {
@@ -154,6 +184,14 @@ export type Provisioning<A extends { readonly strategies: Readonly<Record<string
       ? K
       : never
   ]: SubjectProvisioning<Registration<A["strategies"][K]>>;
+} & {
+  readonly [
+    K in keyof A["strategies"] as A["strategies"][K] extends {
+      persistence: { kind: "email"; signIn: "code" };
+    }
+      ? K
+      : never
+  ]?: EmailSubjectProvisioning;
 };
 
 export type ProvisioningRequirement<
@@ -181,7 +219,9 @@ export type Ports<C extends ClaimsCodec, Id extends string, A extends Definition
   | KeyId<RegistrationKey<ManagedPassword<A>>>
   | (Enabled<A, "passkey"> extends never ? never : PasskeyPersistence | PasskeyCredentials)
   | (ManagedPasskey<A> extends never ? never : PasskeyManagementPersistence)
-  | (Enabled<A, "email"> extends never ? never : EmailAddressPersistence)
+  | (EmailAddresses<A> extends never ? never : EmailAddressPersistence)
+  | (EmailSignIn<A> extends never ? never : EmailSignInTargets)
+  | KeyId<RegistrationKey<EmailCode<A>>>
   | (UsesProofs<A> extends never ? never : ProofPersistence)
   | (Enabled<A, "phone"> extends never ? never : PhoneSignInTargets)
   | (OAuthSignIn<A> extends never ? never : OAuthSignInPersistence | IdentityImports)
@@ -274,12 +314,13 @@ export interface BoundPersistence<
       value: StorageLayout<T, Roles<C, Id, A>>,
     ) => Layer.Layer<ConfigId<A["namespace"]>>;
   };
-  /** Supply subject values through `{ values }` on every driver, including D1.
-   * Interactive drivers also accept callbacks that insert through the owning
-   * SqlClient and return the new subject ID. Never open an independent transaction
-   * or perform external side effects while preparing a subject.
+  /** Supply `{ values }` keyed by strategy name on every driver, including D1.
+   * Email code entries are optional; omitting one disables account creation.
+   * Password management requires an entry and, on interactive drivers, also accepts
+   * callbacks that insert through the owning SqlClient and return the subject ID.
+   * Never open an independent transaction or perform external side effects here.
    */
-  readonly Provisioning: Context.Service<ProvisioningRequirement<A>, Provisioning<A>>;
+  readonly Provisioning: Context.Service<ProvisioningId<A["namespace"]>, Provisioning<A>>;
   /** Stateful sessions and OAuth-only stateless sessions are supported. Other session
    * configurations fail acquisition with PersistenceConfigurationError.
    * Capture dependencies at acquisition; validate SQL metadata and configure storage

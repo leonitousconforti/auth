@@ -400,8 +400,16 @@ are permanent and are never removed by cleanup.
 
 ## Email
 
-`makeEmailSignInServices` supplies lookup. `makeEmailCodeRegistrationServices`
-supplies a code strategy's `RegistrationAuthority` for one-code sign-up and sign-in;
+With stateful sessions, `AuthPersistence.layer` supplies email lookup and proof
+storage. Add an entry keyed by the code strategy's name to `Persistence.Provisioning`
+to enable one-code account creation. Its `values` function returns the subject's
+native ID and application columns; Auth supplies active status and security revision.
+Values use current defaults at redemption and must not write or perform external
+side effects. Omit the entry for existing-account-only sign-in. Magic links do not
+create accounts.
+
+For explicit adapters, `makeEmailSignInServices` supplies lookup.
+`makeEmailCodeRegistrationServices` supplies a code strategy's `RegistrationAuthority`;
 its `EmailRegistrationMapping<void, ...>` uses application-owned account defaults.
 `makeEmailRegistrationServices` supplies separate registration with application data,
 and `makeEmailAddressServices` supplies address changes. For explicit
@@ -418,8 +426,8 @@ sessions retain their configured lifetime.
 Provisioning, identifier ownership, and proof consumption share one transaction or
 D1 batch. Provisioning is synchronous and receives a stable `requestId` for
 application idempotence. See [mailbox registration](../guide/codes#register-a-mailbox-owner).
-Supply the code registration authority explicitly alongside the sign-in and proof
-services; composed `AuthPersistence.layer` does not install it. Its mapping and
+When using explicit adapters, supply the code registration authority alongside the
+sign-in and proof services. Its mapping and
 `makeEmailSignInServices` must address the same subject, identifier, and credential
 tables. Session issuance follows the registration commit and requires a fresh code
 if it fails or the outcome is unknown. D1 requires application-allocated subject IDs.

@@ -14,8 +14,10 @@ import { Base64Url } from "effect/encoding";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 
 import { emailAuth, makeEmailConsumer, sessions, sessionPolicy } from "./email-methods-consumer";
+import { emailRegistration } from "./email-registration";
 
 const program = Effect.gen(function* () {
+  yield* emailRegistration.pipe(Effect.tap(Effect.log));
   for (const mode of ["stateless", "stateful"] as const) {
     const deliveries: EmailDelivery.EmailMessage[] = [];
     const notifications: string[] = [];

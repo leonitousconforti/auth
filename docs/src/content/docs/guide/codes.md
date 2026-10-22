@@ -29,7 +29,7 @@ export const AppAuth = Auth.make("app/Auth", {
 Codes default to six digits and five minutes. Override `digits` or `policy` when
 needed. Supply shared `ProofKeys` through [AuthDependencies](../reference/adapters#compose-the-application-layer).
 By default, codes sign in existing accounts. To create an account after its first
-verified code, supply the strategy's [registration authority](#register-a-mailbox-owner).
+verified code, supply [new-account values](#register-a-mailbox-owner).
 
 ## Start the flow and send a code
 
@@ -171,34 +171,41 @@ and overrides.
 
 ## Register a mailbox owner
 
-For one-code sign-up and sign-in, supply `AppAuth.strategies.email.RegistrationAuthority`.
+For one-code sign-up and sign-in, add an email entry to `Persistence.Provisioning`.
 The same `beginSignIn` → `signIn` → `completeSignIn` flow then serves new and existing
 accounts. Requesting a code creates no account; redeeming it creates the new subject
 and verified email credential before completing authentication.
 
-With Drizzle, construct this Layer from an email registration mapping and the same
-proof mapping used for issuance:
+Use your [managed or mapped persistence](./storage) configuration:
 
-```ts title="apps/server/email-registration.ts"
+```ts title="apps/server/account-defaults.ts"
 import { Effect, Layer } from "effect";
-import * as Sqlite from "@yielded/auth-persistence-drizzle/SqliteNode";
 
-import { AppAuth } from "./auth";
-import { emailRegistrationMapping, proofMapping } from "./auth-persistence";
+import { Persistence } from "./schema";
 
-export const EmailRegistrationLive = Layer.effect(
-  AppAuth.strategies.email.RegistrationAuthority,
-  Sqlite.makeEmailCodeRegistrationServices(emailRegistrationMapping, proofMapping).pipe(
-    Effect.map((services) => services.registrationAuthority),
-  ),
-);
+export const AccountDefaultsLive = Layer.succeed(Persistence.Provisioning, {
+  email: {
+    values: ({ identifier }) =>
+      Effect.sync(() => ({
+        id: crypto.randomUUID(),
+        displayName: identifier.value,
+      })),
+  },
+});
 ```
 
-Provide this Layer alongside `EmailServicesLive`. The registration mapping uses
-`void` as its registration type: the application supplies account defaults from the
-verified email, with no registration form payload. The factory requires the driver's
-database and normal crypto/hook services. See [email persistence](../reference/adapters#email)
-and the [runnable email example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/email-methods.ts).
+Provide `AccountDefaultsLive` to `Persistence.layer`. The key `email` matches the
+strategy name in `AppAuth`; include any other strategies' provisioning entries in
+the same Layer. The library wires lookup, proofs, and registration from the configured
+storage. Keep claims, email delivery, and return targets in your application Layers.
+
+Return your subject table's native ID and application columns. Auth supplies active
+status and the initial security revision. Values use the current account defaults
+at redemption and may be evaluated for failed attempts: allocate IDs, but do not
+insert rows, reserve accounts, or perform external side effects. Omitting the email
+entry keeps sign-in limited to existing accounts. Composed email persistence uses
+stateful sessions; see [email persistence](../reference/adapters#email) for explicit
+adapters and the [runnable example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/email-registration.ts).
 
 Account creation and proof redemption commit together. Session issuance follows;
 if it fails or the outcome is unknown, request a fresh code. Provisioning never
