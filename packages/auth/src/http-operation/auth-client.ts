@@ -8,6 +8,7 @@ import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 
 import type { AnyAuthAction, AuthActions } from "../operations/actions";
+import type { SubjectId } from "../Schema";
 import {
   Client,
   makeAuthenticationCompletion,
@@ -36,7 +37,7 @@ export type ActionArguments<Action extends AnyAuthAction> =
     : readonly [input: RouteInput<Action["route"]>];
 
 export interface AuthClientState {
-  readonly subject: string | null;
+  readonly subject: SubjectId | null;
   readonly generation: number;
 }
 
@@ -58,7 +59,12 @@ export interface AuthClientController<Actions extends AuthActions> {
   readonly subscribe: (
     listener: (event: AuthClientEvent) => Effect.Effect<void>,
   ) => Effect.Effect<void, never, Scope.Scope>;
-  readonly replaceSubject: (subject: string | null) => Effect.Effect<void>;
+  readonly replaceSubject: (subject: SubjectId | null) => Effect.Effect<void>;
+  /** Restore local display ownership only while the captured client is unchanged. */
+  readonly restoreRememberedSubject: (
+    subjectId: SubjectId,
+    generation: number,
+  ) => Effect.Effect<AuthClientState | undefined>;
   readonly completeAuthentication: OperationAuthenticationCompletion;
   readonly call: <Name extends keyof Actions>(
     name: Name,
@@ -113,7 +119,7 @@ const acquire = Effect.fn("Client.make")(function* <Actions extends AuthActions,
     });
 
   const publish = Effect.fn("Client.publishSubject")(function* (
-    subject: string | null,
+    subject: SubjectId | null,
     action?: string,
     origin?: object,
   ) {
@@ -130,12 +136,29 @@ const acquire = Effect.fn("Client.make")(function* <Actions extends AuthActions,
     Effect.provideService(Client, transport),
   );
 
-  const replaceSubject = Effect.fn("Client.replaceSubject")(function* (subject: string | null) {
+  const replaceSubject = Effect.fn("Client.replaceSubject")(function* (subject: SubjectId | null) {
     yield* gate.withPermits(1)(
       Effect.uninterruptible(
         Effect.gen(function* () {
           yield* transport.transition;
           yield* publish(subject);
+        }),
+      ),
+    );
+  });
+
+  const restoreRememberedSubject = Effect.fnUntraced(function* (
+    subjectId: SubjectId,
+    generation: number,
+  ) {
+    return yield* gate.withPermits(1)(
+      Effect.uninterruptible(
+        Effect.gen(function* () {
+          if (closed || state.generation !== generation) return undefined;
+          yield* transport.transition;
+          yield* publish(subjectId);
+
+          return state;
         }),
       ),
     );
@@ -217,6 +240,7 @@ const acquire = Effect.fn("Client.make")(function* <Actions extends AuthActions,
     state: Effect.sync(() => state),
     call,
     replaceSubject,
+    restoreRememberedSubject,
     completeAuthentication,
     subscribe: (listener) =>
       Effect.acquireRelease(

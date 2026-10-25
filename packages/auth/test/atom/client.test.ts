@@ -2,6 +2,7 @@ import { it } from "@effect/vitest";
 import * as AuthAtom from "@yielded/auth/Atom";
 import * as AuthContract from "@yielded/auth/AuthContract";
 import * as Client from "@yielded/auth/Client";
+import * as AuthSchema from "@yielded/auth/Schema";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -90,7 +91,9 @@ test.each(["confirmation", "replacement", "unseeded"] as const)(
           );
           yield* Deferred.await(entered);
           if (mode === "replacement") {
-            yield* Context.get(context, AuthAtom.AuthAtomLifetime).replaceSubject("member");
+            yield* Context.get(context, AuthAtom.AuthAtomLifetime).replaceSubject(
+              AuthSchema.SubjectId.make("member"),
+            );
             expect(registry.get(auth.session)._tag).toBe("Initial");
           }
           yield* Deferred.succeed(response, undefined);
@@ -222,7 +225,7 @@ test("subject queries retire account work and discard unrelated account results"
         registry.refresh(auth.discover);
         yield* Deferred.await(entered);
         phase = "replacement";
-        yield* lifetime.replaceSubject("other");
+        yield* lifetime.replaceSubject(AuthSchema.SubjectId.make("other"));
         expect(registry.get(auth.discover)).toMatchObject({ _tag: "Initial" });
         yield* Deferred.succeed(stale, undefined);
         expect(AsyncResult.value(registry.get(auth.discover))._tag).toBe("None");
@@ -263,7 +266,7 @@ test.each(["workflow", "client", "own-transition"] as const)(
             actions: () => ({
               authenticate: AuthContract.action({
                 payload: Schema.String,
-                success: Schema.String,
+                success: AuthSchema.SubjectId,
                 error: Schema.String,
                 mode: "mutation",
                 credentials: true,
@@ -372,7 +375,7 @@ test.each(["workflow", "client", "own-transition"] as const)(
           registry.set(host, "proof");
           if (mode !== "own-transition") {
             yield* Deferred.await(paused);
-            yield* lifetime.replaceSubject("replacement");
+            yield* lifetime.replaceSubject(AuthSchema.SubjectId.make("replacement"));
             resume?.();
           }
 
@@ -463,7 +466,7 @@ test("latest named authentication settles after interrupted admission and failur
           actions: () => ({
             authenticate: AuthContract.action({
               payload: Schema.String,
-              success: Schema.String,
+              success: AuthSchema.SubjectId,
               error: Schema.String,
               mode: "mutation",
               credentials: true,

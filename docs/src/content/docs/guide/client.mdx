@@ -187,6 +187,51 @@ Separate application atoms such as `projects` keep their own lifetime: reactivit
 keys refresh them but do not make them account-scoped. See the
 [account lifetime reference](../reference/client#account-lifetime).
 
+To reopen local account data before the server is reachable, opt into an identity
+cache. Use a key scoped to this application and auth server:
+
+```ts title="apps/web/auth-client.ts"
+import { Atom as AuthAtom, Client } from "@yielded/auth";
+import type { SubjectId } from "@yielded/auth/Schema";
+import { Effect } from "effect";
+import { KeyValueStore } from "effect/persistence";
+
+import { AuthApi } from "@app/domain/auth-contract";
+
+export const AppClient = Client.make(AuthApi, { baseUrl: "https://app.example.com" });
+export const auth = AuthAtom.make(AppClient, {
+  identityCache: {
+    key: "app:app.example.com:identity:v1",
+    storage: KeyValueStore.layerStorage(() => localStorage),
+  },
+});
+
+export const verifyAccount = auth.runtime.fn<SubjectId>()(
+  Effect.fn("app.verifyAccount")(function* (expectedSubjectId, get) {
+    return yield* get.result(auth.verifiedSession(expectedSubjectId), {
+      suspendOnWaiting: true,
+    });
+  }),
+);
+```
+
+Read `auth.identity` with `useAtomValue`: `Unknown` has no known identity,
+`Remembered` and `Verified` carry `subjectId` and the public session `snapshot`, and
+`SignedOut` records a confirmed sign-out. A remembered identity selects local data;
+it grants no authority. The cache stores one public snapshot, never credentials or
+the Atom registry. Your application owns IndexedDB and other business data.
+
+Compose `auth.verifiedSession(expectedSubjectId)` into an Effect workflow before
+sending that account's queued work. It waits for the shared live session read and
+rejects a different or signed-out account; the server must still authorize each
+request. Check `auth.session` for network errors. A failed verification preserves
+the remembered account and its local work; confirmation of the same subject keeps
+that work, while a different subject or confirmed sign-out retires it.
+
+Browser focus and reconnect refresh the session when caching is enabled. See the
+[cache reference](../reference/client#remembered-identity) for storage requirements
+and the [consumer example](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/auth-identity-cache.ts).
+
 ## Server rendering and hydration
 
 Default atoms render `Initial` on the server without fetching. For session-aware

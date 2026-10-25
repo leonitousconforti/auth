@@ -11,10 +11,11 @@ import {
   type OperationAuthenticationCompletion,
   type OperationFetchClient,
 } from "../http-operation/client";
+import type { SubjectId } from "../Schema";
 import { reportAtomDefects } from "./failures";
 
 export interface AuthSubjectLifetime {
-  readonly subject: string | null;
+  readonly subject: SubjectId | null;
   readonly generation: number;
   readonly registry: AtomRegistry.AtomRegistry;
 }
@@ -26,7 +27,7 @@ export class AuthAtomLifetime extends Context.Service<
     readonly current: Atom.Atom<AuthSubjectLifetime>;
     readonly get: Effect.Effect<AuthSubjectLifetime>;
     readonly controlRegistry: AtomRegistry.AtomRegistry;
-    readonly replaceSubject: (subject: string | null) => Effect.Effect<void>;
+    readonly replaceSubject: (subject: SubjectId | null) => Effect.Effect<void>;
     readonly completeAuthentication: OperationAuthenticationCompletion;
   }
 >()("effect-auth/AuthAtomLifetime") {}
@@ -36,7 +37,7 @@ export class AuthAtomLifetime extends Context.Service<
  * mutations and device workflows, belong to the current subject registry. Acquire
  * this lifetime in the host scope, then provide its value to the Atom runtime. */
 export const makeLifetime = Effect.fn("AuthAtom.makeLifetime")(
-  (options?: { readonly initialSubject?: string | null }) =>
+  (options?: { readonly initialSubject?: SubjectId | null }) =>
     Effect.gen(function* () {
       const client = yield* Client;
       const gate = yield* Semaphore.make(1);
@@ -49,7 +50,7 @@ export const makeLifetime = Effect.fn("AuthAtom.makeLifetime")(
       });
 
       const publishSubject = Effect.fn("AuthAtom.publishSubject")(function* (
-        subject: string | null,
+        subject: SubjectId | null,
       ) {
         const previous = yield* SubscriptionRef.get(state);
 
@@ -62,7 +63,7 @@ export const makeLifetime = Effect.fn("AuthAtom.makeLifetime")(
       });
 
       const replaceSubject = Effect.fn("AuthAtom.replaceSubject")(function* (
-        subject: string | null,
+        subject: SubjectId | null,
       ) {
         yield* gate.withPermits(1)(
           Effect.uninterruptible(
@@ -91,7 +92,7 @@ export const makeLifetime = Effect.fn("AuthAtom.makeLifetime")(
 
       return {
         client,
-        current: Atom.subscriptionRef(state) as Atom.Atom<AuthSubjectLifetime>,
+        current: Atom.subscriptionRef(state),
         get: SubscriptionRef.get(state),
         controlRegistry,
         replaceSubject,

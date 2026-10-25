@@ -4,6 +4,7 @@ import * as Schema from "effect/Schema";
 import * as SchemaAST from "effect/SchemaAST";
 
 import { HookDenied } from "../hooks/models";
+import type { SubjectId } from "../Schema";
 import { makeSessionContract } from "../sessions/contract";
 import { SessionError, SessionSignOutUnavailable } from "../sessions/errors";
 import { SessionReadOptions, SessionSignOut } from "../sessions/models";
@@ -35,7 +36,7 @@ export interface ActionOptions<
    * directly; it must validate the original state and private request binding. */
   readonly oauthCallback?: true;
   readonly subject?: {
-    fromSuccess(value: Success["Type"]): string | null | undefined;
+    fromSuccess(value: Success["Type"]): SubjectId | null | undefined;
   };
 }
 
@@ -93,7 +94,7 @@ export const fromOperation = <
     readonly requestFields?: RequestFields &
       Record<Exclude<keyof RequestFields, Extract<keyof Fields, string>>, never>;
     readonly mode?: Mode;
-    readonly subject?: { fromSuccess(value: Success["Type"]): string | null | undefined };
+    readonly subject?: { fromSuccess(value: Success["Type"]): SubjectId | null | undefined };
   } = {},
 ) => {
   if (operation.exposure !== "public")
@@ -214,7 +215,7 @@ export interface AnyAuthAction {
   readonly strategy: string | undefined;
   readonly requestFields: Readonly<Record<string, CredentialSlot>>;
   readonly oauthCallback?: true | undefined;
-  readonly subject?: { fromSuccess(value: unknown): string | null | undefined } | undefined;
+  readonly subject?: { fromSuccess(value: unknown): SubjectId | null | undefined } | undefined;
 }
 
 export type AuthActions = Readonly<Record<string, AnyAuthAction>>;
@@ -241,7 +242,7 @@ export type BoundActions<Definitions extends ActionDefinitions> = {
 };
 
 const sessionActions = <
-  S extends Schema.Codec<{ readonly subjectId: string }, unknown, unknown, unknown>,
+  S extends Schema.Codec<{ readonly subjectId: SubjectId }, unknown, unknown, unknown>,
 >(
   session: S,
 ) => ({

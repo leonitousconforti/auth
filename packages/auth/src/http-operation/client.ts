@@ -22,6 +22,7 @@ import {
 import { timeoutOrElseWithCause } from "../internal/timeout";
 import type { AuthCredentialCommand, CredentialSlot } from "../operations/credentials";
 import { snapshotRevealCommands, type AuthRevealCommandCollector } from "../operations/reveals";
+import type { SubjectId } from "../Schema";
 import { headerName } from "./configuration-schema";
 import {
   type AnyRoute,
@@ -100,7 +101,7 @@ export interface OperationAuthenticationCompletion {
   <R extends AnyRoute>(
     route: R,
     input: RouteInput<R>,
-    fromSuccess: (success: RouteSuccess<R>) => string | null | undefined,
+    fromSuccess: (success: RouteSuccess<R>) => SubjectId | null | undefined,
     options?: {
       readonly onTransition?: Effect.Effect<void>;
       /** Transport generation captured by the caller, checked under the admission gate. */
@@ -118,7 +119,7 @@ export interface OperationAuthenticationCompletion {
  * the transport: they run under credential admission, before reveal acceptance. */
 export const makeAuthenticationCompletion = Effect.fnUntraced(function* (
   gate: Semaphore.Semaphore,
-  publishSubject: (subject: string | null) => Effect.Effect<void>,
+  publishSubject: (subject: SubjectId | null) => Effect.Effect<void>,
 ) {
   const client = yield* Client;
 
@@ -127,7 +128,7 @@ export const makeAuthenticationCompletion = Effect.fnUntraced(function* (
   )(function* <R extends AnyRoute>(
     route: R,
     input: RouteInput<R>,
-    fromSuccess: (success: RouteSuccess<R>) => string | null | undefined,
+    fromSuccess: (success: RouteSuccess<R>) => SubjectId | null | undefined,
     options?: {
       readonly onTransition?: Effect.Effect<void>;
       readonly expectedGeneration?: number;
@@ -142,7 +143,7 @@ export const makeAuthenticationCompletion = Effect.fnUntraced(function* (
 
         return yield* Effect.uninterruptible(
           Effect.gen(function* () {
-            let nextSubject: string | null | undefined;
+            let nextSubject: SubjectId | null | undefined;
 
             return yield* client.call(route, input, {
               replaceSubject: (value) => {

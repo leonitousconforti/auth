@@ -4,6 +4,7 @@ import { HookDenied } from "../hooks/models";
 import { IdentityConflict } from "../identity/models";
 import { action } from "../operations/actions";
 import { AuthenticationRequired } from "../operations/errors";
+import type { SubjectId } from "../Schema";
 import { OAuthLinkedAccountsList, OAuthLinkedAccountsListResult } from "./accountsModels";
 import { OAuthGrantId, OAuthPermissionProfileKey } from "./permissionProfile";
 import {
@@ -49,7 +50,7 @@ export const signIn = (options?: { readonly strategy?: string }) =>
   });
 
 type Completion =
-  | { readonly _tag: "Authenticated"; readonly session: { readonly subjectId: string } }
+  | { readonly _tag: "Authenticated"; readonly session: { readonly subjectId: SubjectId } }
   | { readonly _tag: "PendingAuthentication" };
 
 /** Identifies the callback capability explicitly, including its private binding
