@@ -10,21 +10,20 @@ import { makeOAuthNativeFlow } from "./native-flow";
 import { makeOAuthNativeState, type OAuthNativeReadMapping } from "./native-state";
 import { invalidState, unavailable } from "./state";
 
-export const prepareOAuthNative = <Value, A>(
+export const prepareOAuthNative = Effect.fnUntraced(function* <Value, A>(
   value: Value,
   prepare: M.PrepareOAuthCommit<Value, A>,
-) =>
-  Effect.gen(function* () {
-    const journal = yield* CurrentCommitJournal;
+) {
+  const journal = yield* CurrentCommitJournal;
 
-    const receipt = prepare(value, journal);
+  const receipt = prepare(value, journal);
 
-    if (!(receipt?._tag === "PreparedCommit" && Effect.isEffect(receipt.read)))
-      return yield* invalidState();
-    yield* registerSqlCommitReceipt(receipt);
+  if (!(receipt?._tag === "PreparedCommit" && Effect.isEffect(receipt.read)))
+    return yield* invalidState();
+  yield* registerSqlCommitReceipt(receipt);
 
-    return receipt;
-  });
+  return receipt;
+});
 
 /** Both physical adapters bind the same native SQL operations. */
 export const makeNativeOAuthSignInServices = Effect.fnUntraced(function* (

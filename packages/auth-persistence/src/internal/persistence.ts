@@ -560,7 +560,7 @@ export const createPersistence = <T extends object, R, Database extends object =
         const initialize = yield* Effect.cached(
           Effect.flatMap(Ref.getAndSet(started, true), (alreadyStarted) =>
             alreadyStarted
-              ? Effect.succeed(undefined)
+              ? Effect.void
               : Layer.buildWithScope(services, scope).pipe(
                   Effect.updateContext((current: Context.Context<never>) =>
                     Context.merge(

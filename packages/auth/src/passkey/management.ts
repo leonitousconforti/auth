@@ -122,10 +122,7 @@ export const makePasskeyManagement = <
       readonly begin: (
         invocation: AuthInvocation,
         input: typeof BeginInput.Type,
-      ) => Effect.Effect<
-        AuthOperationResult<typeof PasskeyRegistrationStarted.Type>,
-        PasskeyFailure
-      >;
+      ) => Effect.Effect<AuthOperationResult<PasskeyRegistrationStarted>, PasskeyFailure>;
       readonly complete: (
         invocation: AuthInvocation,
         input: typeof CompleteInput.Type,
@@ -137,10 +134,7 @@ export const makePasskeyManagement = <
       readonly rename: (
         invocation: AuthInvocation,
         input: typeof RenameInput.Type,
-      ) => Effect.Effect<
-        { readonly credential: typeof PasskeyCredentialSummary.Type },
-        PasskeyFailure
-      >;
+      ) => Effect.Effect<{ readonly credential: PasskeyCredentialSummary }, PasskeyFailure>;
       readonly remove: (
         invocation: AuthInvocation,
         input: typeof RemoveInput.Type,
@@ -457,7 +451,9 @@ export const makePasskeyManagement = <
             moduleId,
             action: "remove",
             commandId: request.commandId,
-            flowId: Schema.decodeSync(PasskeyBegin.fields.flowId)(request.commandId),
+            flowId: yield* Schema.decodeEffect(PasskeyBegin.fields.flowId)(request.commandId).pipe(
+              Effect.orDie,
+            ),
             revision: inspected.credential.revision,
             bindingDigest: yield* digest(
               Schema.Tuple([

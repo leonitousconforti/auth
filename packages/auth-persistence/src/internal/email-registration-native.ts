@@ -121,22 +121,21 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
     }
   });
 
-  const prepare = <A>(
+  const prepare = Effect.fnUntraced(function* <A>(
     decision: EmailRegistrationDecision,
     project: PrepareEmailCommit<EmailRegistrationDecision, A>,
-  ) =>
-    Effect.gen(function* () {
-      const receipt = project(decision, yield* CurrentCommitJournal);
+  ) {
+    const receipt = project(decision, yield* CurrentCommitJournal);
 
-      yield* registerSqlCommitReceipt(receipt);
+    yield* registerSqlCommitReceipt(receipt);
 
-      return receipt;
-    });
+    return receipt;
+  });
 
   const registrationAuthority: EmailRegistrationAuthority<Registration> = {
     inspect: (input) => executor.read(mapping.inspect(input)),
-    registerWithProof: (original, project) =>
-      Effect.gen(function* () {
+    registerWithProof: Effect.fnUntraced(
+      function* (original, project) {
         const registration = yield* mapping.snapshotRegistration(original.registration);
 
         const inspection = yield* mapping.inspect({
@@ -399,13 +398,14 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
             return yield* prepare({ _tag: "Registered" }, project);
           }),
         );
-      }).pipe(
-        (effect) =>
+      },
+      (_) =>
+        ((effect) =>
           reportPersistenceFailure(effect, (error) => error._tag === "EmailUnavailable", {
             markReported: true,
-          }),
-        Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, unavailable))),
-      ),
+          }))(_),
+      Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, unavailable))),
+    ),
   };
 
   return { registrationAuthority };

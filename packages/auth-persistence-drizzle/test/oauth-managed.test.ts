@@ -47,13 +47,12 @@ it.live.each(["sqlite", "d1"] as const)(
         ...identity,
       });
 
-      const rejected = (value: typeof input) =>
-        Effect.gen(function* () {
-          expect(yield* importer.importIdentity(value).pipe(Effect.result)).toMatchObject({
-            _tag: "Failure",
-            failure: { _tag: "OAuthUnavailable" },
-          });
+      const rejected = Effect.fnUntraced(function* (value: typeof input) {
+        expect(yield* importer.importIdentity(value).pipe(Effect.result)).toMatchObject({
+          _tag: "Failure",
+          failure: { _tag: "OAuthUnavailable" },
         });
+      });
 
       yield* rejected({ ...input, subjectId: SubjectId.make("missing") });
       yield* rejected({ ...input, moduleId: OAuth.OAuthModuleId.make("disabled") });

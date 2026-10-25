@@ -47,7 +47,7 @@ import {
   AuthCredentialCommandCollector,
   AuthRevealCommandCollectorService,
 } from "../operations/credentials";
-import { OperationOutputError } from "../operations/errors";
+import { InvalidOperationInput, OperationOutputError } from "../operations/errors";
 import type { RequestBindingConfigurationError } from "../operations/requestBinding";
 import type { RequestBindingConfig } from "../operations/RequestBindingConfig";
 import { ProofUnavailable } from "../proofs/errors";
@@ -63,20 +63,21 @@ import { httpGroup, matchesEndpoint } from "./auth-contract";
 import { makeOAuth, type OAuthOptions } from "./oauth";
 import type { makeSessionHttpContract } from "./session-contract";
 
-const withProofRequestContext = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  Effect.gen(function* () {
-    const supplied = yield* Effect.serviceOption(ProofRequestContext);
-    const incoming = yield* HttpServerRequest.HttpServerRequest;
+const withProofRequestContext = Effect.fnUntraced(function* <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+) {
+  const supplied = yield* Effect.serviceOption(ProofRequestContext);
+  const incoming = yield* HttpServerRequest.HttpServerRequest;
 
-    const context = Option.isSome(supplied)
-      ? supplied.value
-      : Option.match(incoming.remoteAddress, {
-          onNone: () => Effect.fail(ProofUnavailable.make({})),
-          onSome: (address) => Effect.succeed({ networkKey: Redacted.make(address) }),
-        });
+  const context = Option.isSome(supplied)
+    ? supplied.value
+    : Option.match(incoming.remoteAddress, {
+        onNone: () => Effect.fail(ProofUnavailable.make({})),
+        onSome: (address) => Effect.succeed({ networkKey: Redacted.make(address) }),
+      });
 
-    return yield* Effect.provideService(effect, ProofRequestContext, context);
-  });
+  return yield* Effect.provideService(effect, ProofRequestContext, context);
+});
 
 /** Browser transport policy. Domain cookies require Secure and trust every subdomain.
  * Never host user- or AI-generated content there; audit dangling DNS, verify sessions
@@ -283,49 +284,47 @@ export const make = <
     }),
   );
 
-  const resolve = (
+  const resolve = Effect.fnUntraced(function* (
     api: Pick<SessionApi<S>, "verifySession">,
     credential: Redacted.Redacted<string> | undefined,
-  ) =>
-    Effect.gen(function* () {
-      if (credential === undefined) return guest;
-      const capture = yield* Effect.serviceOption(SessionVerificationCapture);
-      const now = DateTime.toEpochMillis(yield* DateTime.now);
+  ) {
+    if (credential === undefined) return guest;
+    const capture = yield* Effect.serviceOption(SessionVerificationCapture);
+    const now = DateTime.toEpochMillis(yield* DateTime.now);
 
-      const original =
-        Option.isSome(capture) && capture.value.isActive()
-          ? capture.value.sessions.findLast(
-              (value) =>
-                value.moduleId === auth.sessions.moduleId &&
-                Redacted.value(value.credential) === Redacted.value(credential) &&
-                now < value.expiresAtMillis &&
-                now < value.absoluteExpiresAtMillis,
-            )
-          : undefined;
+    const original =
+      Option.isSome(capture) && capture.value.isActive()
+        ? capture.value.sessions.findLast(
+            (value) =>
+              value.moduleId === auth.sessions.moduleId &&
+              Redacted.value(value.credential) === Redacted.value(credential) &&
+              now < value.expiresAtMillis &&
+              now < value.absoluteExpiresAtMillis,
+          )
+        : undefined;
 
-      const session =
-        original ??
-        (yield* api
-          .verifySession(credential)
-          .pipe(
-            Effect.catchCause((cause) =>
-              cause.reasons.every(
-                (reason) => Cause.isFailReason(reason) && reason.error._tag === "SessionInvalid",
-              )
-                ? Effect.succeed(null)
-                : Effect.failCause(cause),
+    const session =
+      original ??
+      (yield* api.verifySession(credential).pipe((effect) =>
+        Effect.catchCauseIf(
+          effect,
+          (cause) =>
+            cause.reasons.every(
+              (reason) => Cause.isFailReason(reason) && reason.error._tag === "SessionInvalid",
             ),
-          ));
+          () => Effect.succeed(null),
+        ),
+      ));
 
-      return session === null
-        ? guest
-        : {
-            _tag: "Authenticated" as const,
-            subjectId: session.subjectId,
-            sessionId: session.sessionId,
-            assurance: session.assurance,
-          };
-    });
+    return session === null
+      ? guest
+      : {
+          _tag: "Authenticated" as const,
+          subjectId: session.subjectId,
+          sessionId: session.sessionId,
+          assurance: session.assurance,
+        };
+  });
 
   /** Existing operation contracts retain private predecode injection and their wire format. */
   const operationLayer = Layer.merge(
@@ -371,7 +370,7 @@ export const make = <
         const api = yield* auth;
 
         const services = (yield* Effect.context<
-          Exclude<Effect.Services<ReturnType<Api["requireSession"]>>, AuthRequest>
+          Exclude<Effect.Services<Api["requireSession"]>, AuthRequest>
         >()).pipe(
           withoutObservability,
           Context.omit(
@@ -388,9 +387,9 @@ export const make = <
             // This exact Effect runs only inside the request security handler, so
             // expose its AuthRequest requirement through the router request marker.
             // @effect-diagnostics-next-line anyUnknownInErrorContext:off
-            const required = api
-              .requireSession()
-              .pipe(Effect.provide(services)) as unknown as Effect.Effect<
+            const required = api.requireSession.pipe(
+              Effect.provide(services),
+            ) as unknown as Effect.Effect<
               S,
               SessionApiError,
               HttpRouter.Request.From<"Requires", AuthRequest>
@@ -641,29 +640,29 @@ export const make = <
   const middleware = Layer.provide(requestLayer);
 
   /** Admit a custom mutation before it runs; body encoding remains application-owned. */
-  const protect = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-    Effect.gen(function* () {
-      const request = yield* AuthRequest;
+  const protect = Effect.fnUntraced(function* <A, E, R>(effect: Effect.Effect<A, E, R>) {
+    const request = yield* AuthRequest;
 
-      if (request.beforeMutation !== undefined) yield* request.beforeMutation;
+    if (request.beforeMutation !== undefined) yield* request.beforeMutation;
 
-      return yield* effect.pipe(
-        Effect.provideService(AuthCredentialCommandCollector, request.credentialCommandSink),
-        Effect.provideService(AuthRevealCommandCollectorService, {
-          supportedKinds: [],
-          accept: () => Effect.die(OperationOutputError.make({})),
-        }),
-      );
-    });
+    return yield* effect.pipe(
+      Effect.provideService(AuthCredentialCommandCollector, request.credentialCommandSink),
+      Effect.provideService(AuthRevealCommandCollectorService, {
+        supportedKinds: [],
+        accept: () => Effect.die(OperationOutputError.make({})),
+      }),
+    );
+  });
 
   /** Wrap a custom response workflow, keeping all credential delivery request-local. */
-  const withRequest = <E, R>(effect: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>) =>
-    Effect.gen(function* () {
-      const api = yield* auth;
-      const config = yield* OperationHttpServerConfig;
+  const withRequest = Effect.fnUntraced(function* <E, R>(
+    effect: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,
+  ) {
+    const api = yield* auth;
+    const config = yield* OperationHttpServerConfig;
 
-      return yield* wrap(api, config)(effect);
-    }).pipe(Effect.provide(configuration));
+    return yield* wrap(api, config)(effect);
+  }, Effect.provide(configuration));
 
   /** Mount the shared contract. Each route calls the same local method, and
    * request credentials are installed before that method executes. Paths belong
@@ -673,7 +672,9 @@ export const make = <
       Api[Extract<keyof Actions, keyof Api>],
       (...args: never[]) => Effect.Effect<unknown, unknown, unknown>
     >;
-    type Result = ReturnType<Call>;
+    type Result =
+      | ReturnType<Call>
+      | Extract<Api[Extract<keyof Actions, keyof Api>], Effect.Effect<unknown, unknown, unknown>>;
     type Mounted = {
       readonly [Name in keyof Actions]: Omit<Actions[Name]["route"], "operation"> & {
         readonly operation: Omit<Actions[Name]["route"]["operation"], "invokeUnknown"> & {
@@ -696,21 +697,23 @@ export const make = <
           ...action.route,
           operation: {
             ...action.route.operation,
-            invokeUnknown: (_invocation: unknown, input: unknown) =>
-              Effect.gen(function* () {
-                const api = yield* auth;
+            invokeUnknown: Effect.fnUntraced(function* (_invocation: unknown, input: unknown) {
+              const api = yield* auth;
 
-                // This table contains the exact methods bound from auth.contract.
-                const invoke = api[name as keyof Api] as (
-                  input: unknown,
-                ) => Effect.Effect<
-                  Effect.Success<Result>,
-                  Effect.Error<Result>,
-                  Effect.Services<Result>
-                >;
+              // This table contains the exact methods bound from auth.contract.
+              type Returned = Effect.Effect<
+                Effect.Success<Result>,
+                Effect.Error<Result>,
+                Effect.Services<Result>
+              >;
+              const invoke = api[name as keyof Api] as Returned | ((input: unknown) => Returned);
 
-                return yield* invoke(input);
-              }),
+              if (typeof invoke === "function") return yield* invoke(input);
+              if (!Schema.is(Schema.toEncoded(action.route.operation.rpc.payloadSchema))(input))
+                return yield* InvalidOperationInput.make({});
+
+              return yield* invoke;
+            }),
           },
         },
       ]),

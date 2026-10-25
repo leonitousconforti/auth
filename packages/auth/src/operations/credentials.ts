@@ -79,14 +79,13 @@ const slot = Schema.Literals([
 
 const decodeCommand = Schema.decodeResult(
   Schema.Union([
-    Schema.Struct({
-      _tag: Schema.Literal("Issue"),
+    Schema.TaggedStruct("Issue", {
       slot,
       credential: Schema.Redacted(Schema.String),
       expiresAtMillis: Schema.Finite,
       sameSite: Schema.optionalKey(Schema.Literal("none")),
     }),
-    Schema.Struct({ _tag: Schema.Literal("Clear"), slot }),
+    Schema.TaggedStruct("Clear", { slot }),
   ]),
 );
 

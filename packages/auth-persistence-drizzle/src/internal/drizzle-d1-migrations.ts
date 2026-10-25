@@ -71,7 +71,7 @@ export const d1MigrationsLayer = (options: {
         }),
       );
 
-      yield* Effect.gen(function* () {
+      yield* (function* () {
         const db = drizzle(client.config.db);
         const name = options.migrationsTable ?? "__drizzle_migrations";
         const table = sql.identifier(name);
@@ -163,7 +163,7 @@ export const d1MigrationsLayer = (options: {
             try: () => db.batch([first, ...rest]),
             catch: migrationFailure,
           });
-      });
+      })();
     }).pipe(
       (effect) =>
         reportPersistenceFailure(effect, Schema.is(PersistenceConfigurationError), {

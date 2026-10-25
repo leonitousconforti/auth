@@ -69,13 +69,14 @@ export const makeRegistrationAuthority = Effect.fnUntraced(function* <R>(
               reportPersistenceFailure(
                 work,
                 (error) =>
-                  error instanceof PasswordIdentifierTaken || Schema.is(PasswordUnavailable)(error),
+                  Schema.is(PasswordIdentifierTaken)(error) ||
+                  Schema.is(PasswordUnavailable)(error),
                 { markReported: true },
               ).pipe(
                 Effect.catchCause((cause) =>
                   Effect.failCause(
                     Cause.map(cause, (error) =>
-                      error instanceof PasswordIdentifierTaken
+                      Schema.is(PasswordIdentifierTaken)(error)
                         ? error
                         : PasswordUnavailable.make({}),
                     ),
@@ -84,15 +85,18 @@ export const makeRegistrationAuthority = Effect.fnUntraced(function* <R>(
               ),
             )
             .pipe(
-              Effect.catchCause((cause) =>
-                cause.reasons.length > 0 &&
-                cause.reasons.every(
-                  (reason) =>
-                    Cause.isFailReason(reason) && reason.error instanceof PasswordIdentifierTaken,
-                )
-                  ? executor.run(suppressed, "statement")
-                  : Effect.failCause(cause),
-              ),
+              (effect) =>
+                Effect.catchCauseIf(
+                  effect,
+                  (cause) =>
+                    cause.reasons.length > 0 &&
+                    cause.reasons.every(
+                      (reason) =>
+                        Cause.isFailReason(reason) &&
+                        Schema.is(PasswordIdentifierTaken)(reason.error),
+                    ),
+                  () => executor.run(suppressed, "statement"),
+                ),
               Effect.catchCause((cause) =>
                 Effect.failCause(Cause.map(cause, () => PasswordUnavailable.make({}))),
               ),
@@ -112,7 +116,7 @@ export const makeRegistrationAuthority = Effect.fnUntraced(function* <R>(
                     registration: input.registration,
                   };
 
-                  const row = yield* Effect.gen(function* () {
+                  const row = yield* (function* () {
                     if (typeof createSubject !== "function")
                       return yield* createSubject
                         .values(provisioningInput)
@@ -126,7 +130,7 @@ export const makeRegistrationAuthority = Effect.fnUntraced(function* <R>(
                     if (rows.length !== 1) return yield* PasswordUnavailable.make({});
 
                     return subject.decode(rows[0]!, "registration_subject_");
-                  });
+                  })();
 
                   if (!s.isActiveStatus(row[s.status])) return yield* PasswordUnavailable.make({});
                   const subjectId = yield* mapping.subjectId.toSubject(row[s.id]);

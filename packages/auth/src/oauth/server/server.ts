@@ -1137,7 +1137,7 @@ const makeServer = <
               const authorized =
                 openId === undefined
                   ? { scopes: requested }
-                  : yield* Effect.gen(function* () {
+                  : yield* (function* () {
                       if (record.authentication === undefined)
                         return yield* reject("invalid_grant");
 
@@ -1173,7 +1173,7 @@ const makeServer = <
                         ...decision,
                         scopes: [first, ...remaining] satisfies readonly [Scope, ...Scope[]],
                       };
-                    });
+                    })();
 
               const granted = authorized.scopes;
               const time = yield* now;
@@ -1332,22 +1332,28 @@ const makeServer = <
               }).pipe(Effect.mapError(() => reject()));
 
               const token = yield* decode(Redacted.make(query.token)).pipe(
-                Effect.catchCause((cause) =>
-                  cause.reasons.every(
-                    (reason) =>
-                      Cause.isFailReason(reason) && reason.error._tag === "OAuthServerInvalidToken",
-                  )
-                    ? decodeAccess(Redacted.make(query.token))
-                    : Effect.failCause(cause),
-                ),
-                Effect.catchCause((cause) =>
-                  cause.reasons.every(
-                    (reason) =>
-                      Cause.isFailReason(reason) && reason.error._tag === "OAuthServerInvalidToken",
-                  )
-                    ? Effect.void
-                    : Effect.failCause(cause),
-                ),
+                (effect) =>
+                  Effect.catchCauseIf(
+                    effect,
+                    (cause) =>
+                      cause.reasons.every(
+                        (reason) =>
+                          Cause.isFailReason(reason) &&
+                          reason.error._tag === "OAuthServerInvalidToken",
+                      ),
+                    () => decodeAccess(Redacted.make(query.token)),
+                  ),
+                (effect) =>
+                  Effect.catchCauseIf(
+                    effect,
+                    (cause) =>
+                      cause.reasons.every(
+                        (reason) =>
+                          Cause.isFailReason(reason) &&
+                          reason.error._tag === "OAuthServerInvalidToken",
+                      ),
+                    () => Effect.void,
+                  ),
               );
 
               if (token && (token.kind === "access" || token.kind === "refresh")) {

@@ -216,38 +216,37 @@ export const makeMappings = Effect.fnUntraced(function* (
           verifierVersion,
         }),
         encodeReplacement: ({ replacement, ...row }) => ({ ...row, ...verifier(replacement) }),
-        decode: ({ moduleId, subject: row, identifier, credential }) =>
-          Effect.gen(function* () {
-            const id = yield* s.toSubject(row[s.id]);
-            const hash = yield* decode(EncodedPasswordHash, credential.verifier);
+        decode: Effect.fnUntraced(function* ({ moduleId, subject: row, identifier, credential }) {
+          const id = yield* s.toSubject(row[s.id]);
+          const hash = yield* decode(EncodedPasswordHash, credential.verifier);
 
-            return yield* decode(PasswordCredentialSnapshot, {
-              moduleId,
-              revision: {
-                subjectId: id,
-                securityRevision: row[s.securityRevision],
-                credentials: [
-                  {
-                    credentialId: credential.credentialId,
-                    revision: credential.credentialRevision,
-                  },
-                ],
-              },
-              credentialId: credential.credentialId,
-              credentialRevision: credential.credentialRevision,
-              verifierVersion: credential.verifierVersion,
-              verifier: hash,
-              normalization: credential.normalization,
-              identifier: yield* decode(LoginIdentifier, {
-                namespace: identifier.namespace,
-                value: identifier.value,
-              }),
-              identifierBindingRevision: identifier.revision,
-              ...(identifier.verifiedAt === null
-                ? {}
-                : { identifierVerifiedAtMillis: yield* readInstant(identifier.verifiedAt) }),
-            });
-          }),
+          return yield* decode(PasswordCredentialSnapshot, {
+            moduleId,
+            revision: {
+              subjectId: id,
+              securityRevision: row[s.securityRevision],
+              credentials: [
+                {
+                  credentialId: credential.credentialId,
+                  revision: credential.credentialRevision,
+                },
+              ],
+            },
+            credentialId: credential.credentialId,
+            credentialRevision: credential.credentialRevision,
+            verifierVersion: credential.verifierVersion,
+            verifier: hash,
+            normalization: credential.normalization,
+            identifier: yield* decode(LoginIdentifier, {
+              namespace: identifier.namespace,
+              value: identifier.value,
+            }),
+            identifierBindingRevision: identifier.revision,
+            ...(identifier.verifiedAt === null
+              ? {}
+              : { identifierVerifiedAtMillis: yield* readInstant(identifier.verifiedAt) }),
+          });
+        }),
       },
       clock,
     };
@@ -331,30 +330,29 @@ export const makeMappings = Effect.fnUntraced(function* (
           active: true,
         }),
         encodeRetirement: ({ credentialRevision }) => ({ credentialRevision, active: false }),
-        decode: ({ moduleId, subject: row, identifier, credential }) =>
-          Effect.gen(function* () {
-            return yield* decode(
-              Schema.Struct(Struct.omit(EmailCredentialSnapshot.fields, ["requirement"])),
-              {
-                moduleId,
-                identifier: { namespace: identifier.namespace, value: identifier.value },
-                identifierRevision: identifier.revision,
-                verifiedAtMillis: yield* readInstant(identifier.verifiedAt),
-                credentialId: credential.credentialId,
-                credentialRevision: credential.credentialRevision,
-                revision: {
-                  subjectId: yield* s.toSubject(row[s.id]),
-                  securityRevision: row[s.securityRevision],
-                  credentials: [
-                    {
-                      credentialId: credential.credentialId,
-                      revision: credential.credentialRevision,
-                    },
-                  ],
-                },
+        decode: Effect.fnUntraced(function* ({ moduleId, subject: row, identifier, credential }) {
+          return yield* decode(
+            Schema.Struct(Struct.omit(EmailCredentialSnapshot.fields, ["requirement"])),
+            {
+              moduleId,
+              identifier: { namespace: identifier.namespace, value: identifier.value },
+              identifierRevision: identifier.revision,
+              verifiedAtMillis: yield* readInstant(identifier.verifiedAt),
+              credentialId: credential.credentialId,
+              credentialRevision: credential.credentialRevision,
+              revision: {
+                subjectId: yield* s.toSubject(row[s.id]),
+                securityRevision: row[s.securityRevision],
+                credentials: [
+                  {
+                    credentialId: credential.credentialId,
+                    revision: credential.credentialRevision,
+                  },
+                ],
               },
-            );
-          }),
+            },
+          );
+        }),
       },
     };
   });
@@ -495,17 +493,16 @@ export const makeMappings = Effect.fnUntraced(function* (
         allocateId: allocate,
         encodeInsert: (value, ids) => ({ ...encodeRow(value), ...ids }),
         encodeRotation: encodeRow,
-        decode: (row) =>
-          Effect.gen(function* () {
-            const saved = yield* decode(record, row.record),
-              decodedClaims = yield* decode(claims, saved.claims);
+        decode: Effect.fnUntraced(function* (row) {
+          const saved = yield* decode(record, row.record),
+            decodedClaims = yield* decode(claims, saved.claims);
 
-            return {
-              ...saved,
-              issuedAt: DateTime.makeUnsafe(yield* readInstant(row.issuedAt)),
-              claims: decodedClaims,
-            };
-          }),
+          return {
+            ...saved,
+            issuedAt: DateTime.makeUnsafe(yield* readInstant(row.issuedAt)),
+            claims: decodedClaims,
+          };
+        }),
       },
     };
   });

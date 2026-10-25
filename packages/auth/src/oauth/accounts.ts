@@ -213,7 +213,9 @@ export const makeOAuthAccounts = <
         sessionInvalidationWindow("credential-change", strategy.capabilities, strategy.policy),
       );
 
-      const expectedInvalidation = Schema.encodeSync(invalidationJson)(invalidation);
+      const expectedInvalidation = yield* Schema.encodeEffect(invalidationJson)(invalidation).pipe(
+        Effect.orDie,
+      );
 
       const available = Effect.fn("OAuthAccounts.available")(function* (
         invocation: AuthInvocation,
@@ -252,14 +254,14 @@ export const makeOAuthAccounts = <
         bytes.fill(0);
 
         return yield* hash(
-          Schema.encodeSync(strings)([
+          yield* Schema.encodeEffect(strings)([
             "effect-auth/oauth-link-state/v1",
             id,
             String(policy.generation),
             provider,
             flowId,
             raw,
-          ]),
+          ]).pipe(Effect.orDie),
         );
       });
 
@@ -278,13 +280,13 @@ export const makeOAuthAccounts = <
           revision,
           intentDigest,
           bindingDigest: yield* hash(
-            Schema.encodeSync(strings)([
+            yield* Schema.encodeEffect(strings)([
               "effect-auth/oauth-action/v1",
               id,
               action,
               flowId,
               intentDigest,
-            ]),
+            ]).pipe(Effect.orDie),
           ),
         });
       });
@@ -453,7 +455,7 @@ export const makeOAuthAccounts = <
             "link-begin",
             intent.flowId,
             revision,
-            Schema.encodeSync(intentJson)(intent),
+            yield* Schema.encodeEffect(intentJson)(intent).pipe(Effect.orDie),
           ),
           request.actionProof,
         );
@@ -473,7 +475,7 @@ export const makeOAuthAccounts = <
           sealed,
         });
 
-        const expected = Schema.encodeSync(flowJson)(flow);
+        const expected = yield* Schema.encodeEffect(flowJson)(flow).pipe(Effect.orDie);
 
         const receipt = yield* issue(
           yield* snapshotOAuthLinkFlow.effect(flow),
@@ -483,7 +485,9 @@ export const makeOAuthAccounts = <
 
               if (
                 decision._tag === "Issued" &&
-                Schema.encodeSync(flowJson)(decision.flow) !== expected
+                (yield* Schema.encodeResult(flowJson)(decision.flow).pipe(
+                  Result.mapError(() => OAuthUnavailable.make({})),
+                )) !== expected
               )
                 return yield* Result.fail(OAuthUnavailable.make({}));
 
@@ -509,13 +513,16 @@ export const makeOAuthAccounts = <
         raw: typeof OAuthLinkComplete.Type,
       ) {
         const authenticated = yield* available(invocation).pipe(
-          Effect.catchTag("AuthenticationRequired", () => Effect.succeed(undefined)),
+          Effect.catchTag("AuthenticationRequired", () => Effect.void),
         );
 
         const request = yield* snapshotOAuthLinkComplete.effect(raw);
         const response = request.response;
 
-        if (encoder.encode(Schema.encodeSync(responseJson)(response)).length > 16384)
+        if (
+          encoder.encode(yield* Schema.encodeEffect(responseJson)(response).pipe(Effect.orDie))
+            .length > 16384
+        )
           return yield* OAuthRejected.make({});
 
         const binder = {
@@ -717,7 +724,7 @@ export const makeOAuthAccounts = <
             "unlink",
             OAuthActionChallenge.fields.flowId.make(request.commandId),
             credential.revision,
-            Schema.encodeSync(credentialJson)(credential),
+            yield* Schema.encodeEffect(credentialJson)(credential).pipe(Effect.orDie),
           ),
           request.actionProof,
         );
@@ -737,8 +744,9 @@ export const makeOAuthAccounts = <
               if (decision._tag === "Unlinked") {
                 if (
                   decision.result.credentialId !== credential.credentialId ||
-                  Schema.encodeSync(invalidationJson)(decision.result.invalidation) !==
-                    expectedInvalidation
+                  (yield* Schema.encodeResult(invalidationJson)(decision.result.invalidation).pipe(
+                    Result.mapError(() => OAuthUnavailable.make({})),
+                  )) !== expectedInvalidation
                 )
                   return yield* Result.fail(OAuthUnavailable.make({}));
                 journal.stage(event);

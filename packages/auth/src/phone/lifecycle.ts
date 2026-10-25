@@ -348,7 +348,9 @@ export const makePhoneLifecycle = <
           const actionRequirement = yield* Schema.decodeEffect(
             Schema.toCodecIso(AuthenticationRequirement),
           )(
-            Schema.encodeSync(Schema.toCodecIso(AuthenticationRequirement))(verified.requirement),
+            yield* Schema.encodeEffect(Schema.toCodecIso(AuthenticationRequirement))(
+              verified.requirement,
+            ).pipe(Effect.orDie),
           ).pipe(Effect.mapError(phoneActionFailure));
 
           if (

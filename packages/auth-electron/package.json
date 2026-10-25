@@ -24,7 +24,7 @@
   },
   "scripts": {
     "build": "vp pack",
-    "check": "tsc --noEmit -p tsconfig.json"
+    "check": "effect-tsrs diagnostics --project tsconfig.json --type-check --strict"
   },
   "dependencies": {
     "@yielded/auth": "workspace:*"

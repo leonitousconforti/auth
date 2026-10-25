@@ -538,7 +538,7 @@ export const makeOAuthMethod = <
             sealed,
           });
 
-          const expected = Schema.encodeSync(flowJson)(flow);
+          const expected = yield* Schema.encodeEffect(flowJson)(flow).pipe(Effect.orDie);
 
           type Issuance =
             | { readonly _tag: "Rejected" }
@@ -555,7 +555,11 @@ export const makeOAuthMethod = <
 
                 if (checked._tag === "Rejected")
                   return journal.prepare({ _tag: "Rejected" as const });
-                if (Schema.encodeSync(flowJson)(checked.flow) !== expected)
+                if (
+                  (yield* Schema.encodeResult(flowJson)(checked.flow).pipe(
+                    Result.mapError(() => OAuthUnavailable.make({})),
+                  )) !== expected
+                )
                   return yield* Result.fail(OAuthUnavailable.make({}));
 
                 return journal.prepare({
@@ -742,7 +746,10 @@ export const makeOAuthMethod = <
 
               if (prepared === undefined) return yield* OAuthRejected.make({});
               const intentCodec = Schema.fromJsonString(OAuthRegistrationIntent);
-              const expected = Schema.encodeSync(intentCodec)(prepared.intent);
+
+              const expected = yield* Schema.encodeEffect(intentCodec)(prepared.intent).pipe(
+                Effect.orDie,
+              );
 
               const issued = yield* registration
                 .issue(
@@ -753,7 +760,9 @@ export const makeOAuthMethod = <
 
                       if (
                         checked._tag === "RegistrationIssued" &&
-                        Schema.encodeSync(intentCodec)(checked.intent) !== expected
+                        (yield* Schema.encodeResult(intentCodec)(checked.intent).pipe(
+                          Result.mapError(() => OAuthUnavailable.make({})),
+                        )) !== expected
                       )
                         return yield* Result.fail(OAuthUnavailable.make({}));
 
@@ -780,12 +789,12 @@ export const makeOAuthMethod = <
             const connection =
               access === undefined
                 ? undefined
-                : yield* Effect.gen(function* () {
+                : yield* (function* () {
                     if (privateGrant === undefined || grantStartedAt === undefined)
                       return yield* OAuthUnavailable.make({});
 
                     return yield* access.retain(flow, credential, privateGrant, grantStartedAt);
-                  });
+                  })();
 
             const established = yield* authenticate({
               context,
@@ -822,7 +831,7 @@ export const makeOAuthMethod = <
   };
 
   const signInLayer = (configuration: OAuthSignInPolicy) =>
-    makeSignInLayer(configuration, Effect.succeed(undefined));
+    makeSignInLayer(configuration, Effect.as(Effect.void, undefined));
 
   function registration<
     Registration extends Schema.Codec<unknown, unknown, unknown, unknown>,

@@ -26,11 +26,11 @@ export class PasskeyReactNative extends Context.Service<
     >;
     /** Registers a platform passkey; requested algorithms must include ES256 (-7). */
     readonly register: (
-      started: typeof PasskeyRegistrationStarted.Type,
+      started: PasskeyRegistrationStarted,
     ) => Effect.Effect<PasskeyReactNativeRegistration, PasskeyReactNativeFailure>;
     /** Conditional mediation is accepted for port compatibility but fails Unsupported. */
     readonly authenticate: (input: {
-      readonly started: typeof PasskeyAuthenticationStarted.Type;
+      readonly started: PasskeyAuthenticationStarted;
       readonly mediation: "required" | "conditional";
     }) => Effect.Effect<PasskeyReactNativeAuthentication, PasskeyReactNativeFailure>;
   }

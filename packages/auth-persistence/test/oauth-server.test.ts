@@ -76,14 +76,13 @@ const harness = (
 
           return OAuthServer.Persistence.of({
             ...store,
-            compareAndSet: (namespace, id, version, record) =>
-              Effect.gen(function* () {
-                const saved = yield* store.compareAndSet(namespace, id, version, record);
+            compareAndSet: Effect.fnUntraced(function* (namespace, id, version, record) {
+              const saved = yield* store.compareAndSet(namespace, id, version, record);
 
-                if (record.status === "Active" && saved) yield* fault;
+              if (record.status === "Active" && saved) yield* fault;
 
-                return saved;
-              }),
+              return saved;
+            }),
           });
         }),
       ).pipe(Layer.provideMerge(storage))
@@ -140,60 +139,66 @@ const consentToken = (html: string) => {
   return csrf;
 };
 
-const start = (user = "alice", scope = "read", overrides: Record<string, string> = {}) =>
-  Effect.gen(function* () {
-    const service = yield* server.Service;
+const start = Effect.fnUntraced(function* (
+  user = "alice",
+  scope = "read",
+  overrides: Record<string, string> = {},
+) {
+  const service = yield* server.Service;
 
-    const query = new URLSearchParams({
-      response_type: "code",
-      client_id: "client",
-      redirect_uri: redirectUri,
-      resource,
-      scope,
-      code_challenge: challenge,
-      code_challenge_method: "S256",
-      state: "client-state",
-      ...overrides,
-    });
-
-    const response = yield* service.handle(
-      get(`${server.paths.authorize}?${query}`, undefined, user),
-    );
-
-    expect(response.status).toBe(303);
-    const consentCookie = response.headers.getSetCookie()[0];
-
-    // Requested hardening: the browser must enforce a host-only consent cookie on HTTPS.
-    expect(consentCookie.split("=", 1)[0]).toBe("__Host-yielded-mcp-consent");
-    expect(
-      consentCookie
-        .split(";")
-        .slice(1)
-        .map((attribute) => attribute.trim()),
-    ).toContain("Path=/");
-    const cookie = consentCookie.split(";")[0];
-
-    const consent = yield* service.handle(get(server.paths.authorize, cookie, user));
-
-    expect(consent.status).toBe(200);
-    const html = yield* Effect.promise(() => consent.text());
-
-    return { service, cookie, csrf: consentToken(html), user, html };
+  const query = new URLSearchParams({
+    response_type: "code",
+    client_id: "client",
+    redirect_uri: redirectUri,
+    resource,
+    scope,
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    state: "client-state",
+    ...overrides,
   });
 
-const authorize = (user = "alice", scope = "read", overrides: Record<string, string> = {}) =>
-  Effect.gen(function* () {
-    const flow = yield* start(user, scope, overrides);
+  const response = yield* service.handle(
+    get(`${server.paths.authorize}?${query}`, undefined, user),
+  );
 
-    const response = yield* flow.service.handle(
-      post(server.paths.authorize, { csrf: flow.csrf, decision: "approve" }, flow.cookie, user),
-    );
+  expect(response.status).toBe(303);
+  const consentCookie = response.headers.getSetCookie()[0];
 
-    expect(response.status).toBe(303);
-    const redirect = new URL(response.headers.get("location")!);
+  // Requested hardening: the browser must enforce a host-only consent cookie on HTTPS.
+  expect(consentCookie.split("=", 1)[0]).toBe("__Host-yielded-mcp-consent");
+  expect(
+    consentCookie
+      .split(";")
+      .slice(1)
+      .map((attribute) => attribute.trim()),
+  ).toContain("Path=/");
+  const cookie = consentCookie.split(";")[0];
 
-    return { ...flow, code: redirect.searchParams.get("code")! };
-  });
+  const consent = yield* service.handle(get(server.paths.authorize, cookie, user));
+
+  expect(consent.status).toBe(200);
+  const html = yield* Effect.promise(() => consent.text());
+
+  return { service, cookie, csrf: consentToken(html), user, html };
+});
+
+const authorize = Effect.fnUntraced(function* (
+  user = "alice",
+  scope = "read",
+  overrides: Record<string, string> = {},
+) {
+  const flow = yield* start(user, scope, overrides);
+
+  const response = yield* flow.service.handle(
+    post(server.paths.authorize, { csrf: flow.csrf, decision: "approve" }, flow.cookie, user),
+  );
+
+  expect(response.status).toBe(303);
+  const redirect = new URL(response.headers.get("location")!);
+
+  return { ...flow, code: redirect.searchParams.get("code")! };
+});
 
 const exchange = (code: string) =>
   post(server.paths.token, {
@@ -205,15 +210,14 @@ const exchange = (code: string) =>
     code_verifier: verifier,
   });
 
-const issue = (user = "alice", scope = "read") =>
-  Effect.gen(function* () {
-    const flow = yield* authorize(user, scope);
-    const response = yield* flow.service.handle(exchange(flow.code));
+const issue = Effect.fnUntraced(function* (user = "alice", scope = "read") {
+  const flow = yield* authorize(user, scope);
+  const response = yield* flow.service.handle(exchange(flow.code));
 
-    expect(response.status).toBe(200);
+  expect(response.status).toBe(200);
 
-    return { ...flow, tokens: yield* body(response, Tokens) };
-  });
+  return { ...flow, tokens: yield* body(response, Tokens) };
+});
 
 const refresh = (token: string) =>
   post(server.paths.token, {
@@ -261,7 +265,11 @@ it.effect("rejects an issued token for another resource under the same authority
 
     const otherResource = server
       .layer({ ...config, resource: `${origin}/other` })
-      .pipe(Layer.provide(Layer.succeed(server.Identity, { current: Effect.succeed(undefined) })));
+      .pipe(
+        Layer.provide(
+          Layer.succeed(server.Identity, { current: Effect.as(Effect.void, undefined) }),
+        ),
+      );
 
     const crossResource = yield* Effect.gen(function* () {
       return yield* (yield* server.Service).verify(Redacted.make(tokens.access_token));
@@ -323,14 +331,13 @@ it.effect(
       const tools = McpServer.toolkit(toolkit).pipe(
         Layer.provide(
           toolkit.toLayer({
-            whoami: () =>
-              Effect.gen(function* () {
-                const access = yield* OAuthServer.CurrentAccess;
+            whoami: Effect.fnUntraced(function* () {
+              const access = yield* OAuthServer.CurrentAccess;
 
-                if (access === undefined) return yield* OAuthServer.InvalidToken.make({});
+              if (access === undefined) return yield* OAuthServer.InvalidToken.make({});
 
-                return access.subjectId;
-              }),
+              return access.subjectId;
+            }),
           }),
         ),
         Layer.provide(
@@ -1223,7 +1230,9 @@ it.effect(
         const fresh = server
           .layer(options)
           .pipe(
-            Layer.provide(Layer.succeed(server.Identity, { current: Effect.succeed(undefined) })),
+            Layer.provide(
+              Layer.succeed(server.Identity, { current: Effect.as(Effect.void, undefined) }),
+            ),
             Layer.provide(FetchHttpClient.layer),
           );
 

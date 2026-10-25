@@ -111,7 +111,7 @@ Under the HTTP middleware, use the regular Auth API:
 
 ```ts
 const auth = yield* AppAuth;
-const session = yield* auth.requireSession();
+const session = yield* auth.requireSession;
 const connections = yield* auth.listAccountConnections({ limit: 20 });
 ```
 

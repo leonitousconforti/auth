@@ -1,5 +1,6 @@
 import { Atom as AuthAtom, Client, type Proofs } from "@yielded/auth";
-import { Effect, Redacted, Schema } from "effect";
+import { layerCryptoWeb } from "@yielded/auth/WebCrypto";
+import { Crypto, Effect, Redacted, Schema } from "effect";
 
 import { LoginApi } from "./login-contract";
 
@@ -52,10 +53,17 @@ export const sendEmailCode = auth.runtime.fn<string>()(
   Effect.fn("example.sendEmailCode")(function* (email) {
     const client = yield* AppClient;
 
-    const ids = yield* Effect.try({
-      try: () => ({ flowId: crypto.randomUUID(), requestId: crypto.randomUUID() }),
-      catch: () => BrowserFlowUnavailable.make({}),
-    });
+    const ids = yield* Effect.gen(function* () {
+      const crypto = yield* Crypto.Crypto;
+
+      return yield* Effect.all({
+        flowId: crypto.randomUUIDv4(),
+        requestId: crypto.randomUUIDv4(),
+      });
+    }).pipe(
+      Effect.provide(layerCryptoWeb),
+      Effect.mapError(() => BrowserFlowUnavailable.make({})),
+    );
 
     yield* client.auth.beginEmailSignIn({ flowId: ids.flowId });
 

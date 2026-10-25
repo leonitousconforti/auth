@@ -37,8 +37,8 @@ const IdToken = Schema.Struct({
   iss: Schema.String,
   sub: Schema.String,
   aud: Schema.String,
-  iat: Schema.Number,
-  exp: Schema.Number,
+  iat: Schema.Finite,
+  exp: Schema.Finite,
   nonce: Schema.String,
   email: Schema.String,
 });

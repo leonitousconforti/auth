@@ -12,7 +12,7 @@ use, autolink with CocoaPods, and rebuild the application.
 ## Passkeys
 
 Import `* as ReactNativePasskey` from this package and construct the adapter with
-`ReactNativePasskey.make()`, or provide `ReactNativePasskey.layer`.
+`ReactNativePasskey.make`, or provide `ReactNativePasskey.layer`.
 
 Install this package and its `react-native` and `react-native-passkey` peers only
 in the native application. `@yielded/auth` does not depend on React Native or

@@ -256,15 +256,15 @@ export const makeProofModule = <
               scope: proofAbuseScope(moduleId, options.purpose, binding),
               policy: policy.abuse,
             })
-            .pipe(
-              Effect.as(true),
-              Effect.catchCause((cause) =>
-                cause.reasons.every(
-                  (reason) =>
-                    Cause.isFailReason(reason) && reason.error._tag === "ProofIngressDenied",
-                )
-                  ? Effect.succeed(false)
-                  : Effect.failCause(cause),
+            .pipe(Effect.as(true), (effect) =>
+              Effect.catchCauseIf(
+                effect,
+                (cause) =>
+                  cause.reasons.every(
+                    (reason) =>
+                      Cause.isFailReason(reason) && reason.error._tag === "ProofIngressDenied",
+                  ),
+                () => Effect.succeed(false),
               ),
             );
 

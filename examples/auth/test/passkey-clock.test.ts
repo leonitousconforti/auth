@@ -237,12 +237,14 @@ it.effect("rejects enrollment when authority time expires the challenge during v
   }).pipe(
     Effect.provide(
       harness({
-        verify: () =>
-          Effect.gen(function* () {
+        verify: Effect.fnUntraced(
+          function* () {
             yield* (yield* SqlClient.SqlClient)`UPDATE passkey_test_clock SET millis = 120001`;
 
             return verified;
-          }).pipe(Effect.orDie),
+          },
+          (_) => Effect.orDie(_),
+        ),
       }),
     ),
   ),

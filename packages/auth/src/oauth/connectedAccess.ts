@@ -47,13 +47,14 @@ export type OAuthConnectedAccessFailure = typeof OAuthConnectedAccessFailure.Typ
  * owned defects once while retaining the complete private Cause for callers. */
 export const reportConnectedFailure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   Effect.uninterruptibleMask((restore) =>
-    restore(effect).pipe(
-      Effect.catchCause((cause) =>
-        Cause.hasDies(cause)
-          ? reportAuthFailure("oauth-connected", cause).pipe(
-              Effect.andThen(Effect.failCause(markAuthFailureReported(cause))),
-            )
-          : Effect.failCause(cause),
+    restore(effect).pipe((effect) =>
+      Effect.catchCauseIf(
+        effect,
+        (cause) => Cause.hasDies(cause),
+        (cause) =>
+          reportAuthFailure("oauth-connected", cause).pipe(
+            Effect.andThen(Effect.failCause(markAuthFailureReported(cause))),
+          ),
       ),
     ),
   );

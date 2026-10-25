@@ -233,18 +233,20 @@ export const makeNativePasswordServices = Effect.fnUntraced(function* (
     };
   });
 
-  const prepare = <V, A>(value: V, project: P.PreparePasswordCommit<V, A>) =>
-    Effect.gen(function* () {
-      const journal = yield* CurrentCommitJournal;
+  const prepare = Effect.fnUntraced(function* <V, A>(
+    value: V,
+    project: P.PreparePasswordCommit<V, A>,
+  ) {
+    const journal = yield* CurrentCommitJournal;
 
-      const receipt = project(value, journal);
+    const receipt = project(value, journal);
 
-      if (!(receipt?._tag === "PreparedCommit" && Effect.isEffect(receipt.read)))
-        return yield* invalidState();
-      yield* registerSqlCommitReceipt(receipt);
+    if (!(receipt?._tag === "PreparedCommit" && Effect.isEffect(receipt.read)))
+      return yield* invalidState();
+    yield* registerSqlCommitReceipt(receipt);
 
-      return receipt;
-    });
+    return receipt;
+  });
 
   const mutation = <A>(
     original: P.PasswordMutationInput,

@@ -225,26 +225,24 @@ export const makeD1SubjectProvisioningServices = Effect.fnUntraced(function* <
     }
     const attempt = db.$client.batch(statements);
 
-    yield* attempt.pipe(
-      Effect.catchCause(
-        (
-          cause,
-        ): Effect.Effect<
-          void,
-          | Effect.Error<typeof attempt>
-          | Effect.Error<ReturnType<typeof findReceipt>>
-          | IdentityConflict
-        > => {
-          if (
+    yield* attempt.pipe((effect) =>
+      Effect.catchCauseIf(
+        effect,
+        (cause) =>
+          !(
             cause.reasons.length === 0 ||
             !cause.reasons.every(
               (reason) =>
                 Cause.isFailReason(reason) &&
                 isMappedConstraintConflict(mapping.isConstraintConflict, reason.error),
             )
-          )
-            return Effect.failCause(cause);
-
+          ),
+        (): Effect.Effect<
+          void,
+          | Effect.Error<typeof attempt>
+          | Effect.Error<ReturnType<typeof findReceipt>>
+          | IdentityConflict
+        > => {
           return findReceipt(input.requestId).pipe(
             Effect.flatMap((receipt) =>
               receipt !== undefined && receipt.fingerprint === fingerprint
@@ -332,38 +330,40 @@ export const makeD1ExternalIdentityServices = Effect.fnUntraced(function* <
           ) as any,
       )
       .returning({ subjectId: externalSubjectIdColumn })
-      .pipe(
-        Effect.catchCause((cause) => {
-          if (
-            cause.reasons.length === 0 ||
-            !cause.reasons.every(
-              (reason) =>
-                Cause.isFailReason(reason) &&
-                isMappedConstraintConflict(mapping.isConstraintConflict, reason.error),
-            )
-          )
-            return Effect.failCause(cause);
-
-          return db
-            .select({ subjectId: externalSubjectIdColumn })
-            .from(externalTable as any)
-            .innerJoin(
-              mapping.subject.table as any,
-              and(
-                eq(externalSubjectIdColumn, subjectIdColumn),
-                eq(subjectStatusColumn, mapping.d1.activeStatusValue),
-              ),
-            )
-            .where(
-              and(
-                eq(externalProviderColumn, identity.provider),
-                eq(externalIssuerColumn, identity.issuer),
-                eq(externalSubjectColumn, identity.subject),
-                eq(externalSubjectIdColumn, nativeId),
-              ),
-            )
-            .limit(1);
-        }),
+      .pipe((effect) =>
+        Effect.catchCauseIf(
+          effect,
+          (cause) =>
+            !(
+              cause.reasons.length === 0 ||
+              !cause.reasons.every(
+                (reason) =>
+                  Cause.isFailReason(reason) &&
+                  isMappedConstraintConflict(mapping.isConstraintConflict, reason.error),
+              )
+            ),
+          () => {
+            return db
+              .select({ subjectId: externalSubjectIdColumn })
+              .from(externalTable as any)
+              .innerJoin(
+                mapping.subject.table as any,
+                and(
+                  eq(externalSubjectIdColumn, subjectIdColumn),
+                  eq(subjectStatusColumn, mapping.d1.activeStatusValue),
+                ),
+              )
+              .where(
+                and(
+                  eq(externalProviderColumn, identity.provider),
+                  eq(externalIssuerColumn, identity.issuer),
+                  eq(externalSubjectColumn, identity.subject),
+                  eq(externalSubjectIdColumn, nativeId),
+                ),
+              )
+              .limit(1);
+          },
+        ),
       );
 
     const row = inserted[0];

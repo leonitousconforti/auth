@@ -80,10 +80,10 @@ export const make = Effect.gen(function* () {
     );
 
   return {
-    randomId: () => random(32).pipe(Effect.map(Base64Url.encode)),
+    randomId: Effect.suspend(() => random(32)).pipe(Effect.map(Base64Url.encode)),
     digest,
     recoveryDigest,
-    generateSecret: () => random(20),
+    generateSecret: Effect.suspend(() => random(20)),
     matchCode: Effect.fn("Totp.matchCode")(function* (
       secret: Uint8Array,
       code: string,

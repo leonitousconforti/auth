@@ -118,50 +118,47 @@ export const makePasskeyMapped = Effect.fnUntraced(function* <M, R>(
   };
 });
 
-export const makeTargetPasskeyCredentials = <M, R>(
+export const makeTargetPasskeyCredentials = Effect.fnUntraced(function* <M, R>(
   source: PasskeyMappingSource<M, R>,
   configuration: PasskeyTargetConfiguration,
-) =>
-  Effect.gen(function* () {
-    const target = yield* makePasskeyMapped(source, configuration);
+) {
+  const target = yield* makePasskeyMapped(source, configuration);
 
-    return yield* target
-      .provide(
-        makeNativePasskeyCredentialServices(
-          target.tables,
-          target.mapping as unknown as PasskeyNativeRead,
-        ),
-      )
-      .pipe(Effect.provideService(LifecycleHooks, emptyHooks));
-  });
-
-export const makeTargetPasskeyPersistence = <M, R>(
-  source: PasskeyMappingSource<M, R>,
-  configuration: PasskeyTargetConfiguration,
-) =>
-  Effect.gen(function* () {
-    const target = yield* makePasskeyMapped(source, configuration);
-
-    const base = yield* target.base();
-
-    return { passkeyPersistence: base.passkeyPersistence } satisfies PasskeyPersistenceServices;
-  });
-
-export const makeTargetPasskeyRegistration = <M, R>(
-  source: PasskeyMappingSource<M, R>,
-  configuration: PasskeyTargetConfiguration,
-) =>
-  Effect.gen(function* () {
-    const target = yield* makePasskeyMapped(source, configuration);
-
-    return yield* target.provide(
-      makeNativePasskeyCeremonyServices(
+  return yield* target
+    .provide(
+      makeNativePasskeyCredentialServices(
         target.tables,
-        target.mapping as unknown as NativePasskeyCeremonyMapping,
-        configuration.mode === "batch" ? target.batch : undefined,
+        target.mapping as unknown as PasskeyNativeRead,
       ),
-    );
-  });
+    )
+    .pipe(Effect.provideService(LifecycleHooks, emptyHooks));
+});
+
+export const makeTargetPasskeyPersistence = Effect.fnUntraced(function* <M, R>(
+  source: PasskeyMappingSource<M, R>,
+  configuration: PasskeyTargetConfiguration,
+) {
+  const target = yield* makePasskeyMapped(source, configuration);
+
+  const base = yield* target.base();
+
+  return { passkeyPersistence: base.passkeyPersistence } satisfies PasskeyPersistenceServices;
+});
+
+export const makeTargetPasskeyRegistration = Effect.fnUntraced(function* <M, R>(
+  source: PasskeyMappingSource<M, R>,
+  configuration: PasskeyTargetConfiguration,
+) {
+  const target = yield* makePasskeyMapped(source, configuration);
+
+  return yield* target.provide(
+    makeNativePasskeyCeremonyServices(
+      target.tables,
+      target.mapping as unknown as NativePasskeyCeremonyMapping,
+      configuration.mode === "batch" ? target.batch : undefined,
+    ),
+  );
+});
 
 export const coordinatePasskeyOwner = <S, Transaction, A, E, R, ESetup, RSetup>(
   database: NativeDatabaseHandle,

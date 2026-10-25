@@ -70,19 +70,18 @@ it.effect("completes a form_post callback through the proxy without repeating ex
                     oidcNonce: "B".repeat(43),
                   },
                 }).pipe(Effect.orDie),
-              exchangeVerifiedIdentity: (input) =>
-                Effect.gen(function* () {
-                  exchanges++;
-                  expect(input.response.user).toBe(user);
+              exchangeVerifiedIdentity: Effect.fnUntraced(function* (input) {
+                exchanges++;
+                expect(input.response.user).toBe(user);
 
-                  return yield* Schema.decodeEffect(OAuth.OAuthVerifiedExternalIdentity)({
-                    identity: {
-                      provider: binding.provider,
-                      issuer: "https://appleid.apple.com",
-                      subject: "apple-subject",
-                    },
-                  }).pipe(Effect.orDie);
-                }),
+                return yield* Schema.decodeEffect(OAuth.OAuthVerifiedExternalIdentity)({
+                  identity: {
+                    provider: binding.provider,
+                    issuer: "https://appleid.apple.com",
+                    subject: "apple-subject",
+                  },
+                }).pipe(Effect.orDie);
+              }),
             }),
         },
       },

@@ -121,17 +121,16 @@ export const makeNativeEmailAddressServices = Effect.fnUntraced(function* (
     }
   });
 
-  const prepare = <A>(
+  const prepare = Effect.fnUntraced(function* <A>(
     decision: E.EmailAddressDecision,
     project: E.PrepareEmailCommit<E.EmailAddressDecision, A>,
-  ) =>
-    Effect.gen(function* () {
-      const receipt = project(decision, yield* CurrentCommitJournal);
+  ) {
+    const receipt = project(decision, yield* CurrentCommitJournal);
 
-      yield* registerSqlCommitReceipt(receipt);
+    yield* registerSqlCommitReceipt(receipt);
 
-      return receipt;
-    });
+    return receipt;
+  });
 
   const target = Effect.fnUntraced(function* (
     input: Parameters<E.EmailAddressPersistence["Service"]["target"]>[0],

@@ -86,7 +86,7 @@ export class PrivateKeyClientSecret extends Context.Service<
 >()("effect-auth/oauth/providers/PrivateKeyClientSecret") {
   /** Static client secrets stay on the OAuth client. */
   static readonly layerUnused = Layer.succeed(PrivateKeyClientSecret, {
-    mint: () => Effect.succeed(undefined),
+    mint: () => Effect.as(Effect.void, undefined),
   });
 
   /** Mint fresh ES256 assertions with one parsed key per installed policy. Keys
@@ -144,7 +144,7 @@ export class PrivateKeyClientSecret extends Context.Service<
     return PrivateKeyClientSecret.of({
       mint: (authentication) =>
         !isPrivateKeyAuthentication(authentication)
-          ? Effect.succeed(undefined)
+          ? Effect.as(Effect.void, undefined)
           : run(mint(authentication.privateKeyJwt)),
     });
   });

@@ -88,44 +88,43 @@ export interface BindingModule<Id extends string, Purpose extends string> {
   readonly purpose: Purpose;
 }
 
-const makeBindingCodec = Effect.fn("RequestBinding.makeCodec")(function* (
-  configuration: RequestBindingConfiguration,
-) {
-  const policy = yield* Schema.decodeEffect(configurationSchema)(configuration).pipe(
-    Effect.mapError(() => RequestBindingConfigurationError.make({})),
-  );
+const makeBindingCodec = Effect.fn("RequestBinding.makeCodec")(
+  function* (configuration: RequestBindingConfiguration) {
+    const policy = yield* Schema.decodeEffect(configurationSchema)(configuration);
 
-  const signer = yield* makeSessionSigningCodec(envelope, policy.keyring, 2048).pipe(
-    Effect.mapError(() => RequestBindingConfigurationError.make({})),
-  );
+    const signer = yield* makeSessionSigningCodec(envelope, policy.keyring, 2048);
 
-  const read = Effect.fn("RequestBinding.read")(function* (credential: Redacted.Redacted<string>) {
-    const value = yield* signer
-      .decode(credential)
-      .pipe(
-        Effect.mapError((error) =>
-          error._tag === "SessionUnavailable"
-            ? RequestBindingUnavailable.make({})
-            : RequestBindingInvalid.make({}),
-        ),
-      );
+    const read = Effect.fn("RequestBinding.read")(function* (
+      credential: Redacted.Redacted<string>,
+    ) {
+      const value = yield* signer
+        .decode(credential)
+        .pipe(
+          Effect.mapError((error) =>
+            error._tag === "SessionUnavailable"
+              ? RequestBindingUnavailable.make({})
+              : RequestBindingInvalid.make({}),
+          ),
+        );
 
-    const now = DateTime.toEpochMillis(yield* DateTime.now);
+      const now = DateTime.toEpochMillis(yield* DateTime.now);
 
-    if (
-      value.generation !== policy.generation ||
-      value.issuedAtMillis > now ||
-      value.expiresAtMillis <= now ||
-      value.expiresAtMillis <= value.issuedAtMillis ||
-      value.expiresAtMillis - value.issuedAtMillis > policy.lifetimeMillis
-    )
-      return yield* RequestBindingInvalid.make({});
+      if (
+        value.generation !== policy.generation ||
+        value.issuedAtMillis > now ||
+        value.expiresAtMillis <= now ||
+        value.expiresAtMillis <= value.issuedAtMillis ||
+        value.expiresAtMillis - value.issuedAtMillis > policy.lifetimeMillis
+      )
+        return yield* RequestBindingInvalid.make({});
 
-    return value;
-  });
+      return value;
+    });
 
-  return { policy, signer, read };
-});
+    return { policy, signer, read };
+  },
+  Effect.mapError(() => RequestBindingConfigurationError.make({})),
+);
 
 /** Recover correlation from a verified private credential. This is not flow
  * authorization: the operation still verifies module, purpose, state and binding

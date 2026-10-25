@@ -72,9 +72,11 @@ const operationFailure = Effect.fn("AuthOperation.failure")(function* <E>(
 const sanitizeOperationDefects =
   (stage: "local" | "rpc" | "private-output") =>
   <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-    effect.pipe(
-      Effect.catchCause((cause) =>
-        Cause.hasDies(cause) ? operationFailure(stage, cause) : Effect.failCause(cause),
+    effect.pipe((effect) =>
+      Effect.catchCauseIf(
+        effect,
+        (cause) => Cause.hasDies(cause),
+        (cause) => operationFailure(stage, cause),
       ),
     );
 

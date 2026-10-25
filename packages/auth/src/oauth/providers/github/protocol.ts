@@ -282,16 +282,17 @@ const revocationLayer = (options: Pick<GitHubOAuthAppConnectedProtocolOptions, "
                 length + chunk.byteLength > 65536
                   ? Effect.fail(unavailable())
                   : Effect.succeed(length + chunk.byteLength),
-            ).pipe(
-              Effect.catchCause((cause) =>
-                cause.reasons.every(
-                  (reason) =>
-                    Cause.isFailReason(reason) &&
-                    reason.error._tag === "HttpClientError" &&
-                    reason.error.reason._tag === "EmptyBodyError",
-                )
-                  ? Effect.succeed(0)
-                  : Effect.failCause(cause),
+            ).pipe((effect) =>
+              Effect.catchCauseIf(
+                effect,
+                (cause) =>
+                  cause.reasons.every(
+                    (reason) =>
+                      Cause.isFailReason(reason) &&
+                      reason.error._tag === "HttpClientError" &&
+                      reason.error.reason._tag === "EmptyBodyError",
+                  ),
+                () => Effect.succeed(0),
               ),
             );
           }).pipe(

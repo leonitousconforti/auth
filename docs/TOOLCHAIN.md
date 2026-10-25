@@ -5,12 +5,20 @@ Use `vp help` and command help for options.
 
 ## Development
 
-Run `vp install` to install dependencies, patch TypeScript with Effect diagnostics,
-and configure Git hooks. Run `vp run ready` before handoff.
+Run `vp install` to install dependencies and configure Git hooks.
+Run `vp run ready` before handoff.
 
-`vp check` runs formatting and linting. `vp run check` also runs the patched
-compiler across workspaces and scripts. Include `vp env doctor` output when
-reporting toolchain failures.
+`vp check` runs formatting and linting. `vp run check` also runs TypeScript and
+Effect diagnostics through `effect-tsrs` across workspaces and scripts. Its bundled
+tsrs compiler checks both with `--type-check`; `--strict` makes warnings fail the check.
+Keep optional dependencies enabled for its platform binaries. Include
+`vp env doctor` output when reporting toolchain failures.
+
+TypeScript and `@effect/tsgo` remain available for editor features and the Effect
+configuration schema; typecheck tasks do not patch or invoke them.
+
+The shared Effect policy makes correctness, composition, and Schema diagnostics
+errors. Exact severities and scoped exceptions live in `tsconfig.base.json`.
 
 Within `packages/`, Effect diagnostics require namespace imports for `effect`
 and `@effect/*`, such as `import * as Effect from "effect/Effect"`. Examples,

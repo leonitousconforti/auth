@@ -48,15 +48,17 @@ export const snapshotPasskey = <S extends Schema.Codec<unknown, unknown, never, 
   value: S["Type"],
 ) => Effect.suspend(() => Effect.fromResult(snapshotPasskeyResult(schema, value)));
 
-export const samePasskey = <S extends Schema.Codec<unknown, unknown, never, never>>(
-  schema: S,
-  left: S["Type"],
-  right: S["Type"],
-) =>
-  Effect.gen(function* () {
+export const samePasskey = Effect.fnUntraced(
+  function* <S extends Schema.Codec<unknown, unknown, never, never>>(
+    schema: S,
+    left: S["Type"],
+    right: S["Type"],
+  ) {
     const codec = Schema.fromJsonString(Schema.toCodecJson(Schema.toType(schema)));
     const a = yield* Schema.encodeEffect(codec)(left);
     const b = yield* Schema.encodeEffect(codec)(right);
 
     return a === b;
-  }).pipe(Effect.mapError(() => PasskeyUnavailable.make({})));
+  },
+  Effect.mapError(() => PasskeyUnavailable.make({})),
+);

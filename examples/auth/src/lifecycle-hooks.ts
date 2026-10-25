@@ -1,5 +1,6 @@
 import { BunRuntime } from "@effect/platform-bun";
 import { Hooks, Identity, Operations, Schema as AuthSchema } from "@yielded/auth";
+import { layerCryptoWeb } from "@yielded/auth/WebCrypto";
 import { DateTime, Effect, Layer, Redacted, Schema, Semaphore } from "effect";
 import { HttpRouter } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
@@ -99,7 +100,9 @@ const verifier = Layer.succeed(ExternalProofVerifier, {
   },
 });
 
-const method = externalMethodLayer.pipe(Layer.provide(Layer.mergeAll(authority, verifier, hooks)));
+const method = externalMethodLayer.pipe(
+  Layer.provide(Layer.mergeAll(authority, verifier, hooks, layerCryptoWeb)),
+);
 
 const group = Operations.remoteGroup([ExternalRegistration]);
 

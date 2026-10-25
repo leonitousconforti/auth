@@ -71,101 +71,95 @@ const mapped = Effect.fnUntraced(function* (
   return { mapping, ...(yield* nativeTarget(configuration)) };
 });
 
-export const makeTargetOAuthSignInServices = (
+export const makeTargetOAuthSignInServices = Effect.fnUntraced(function* (
   source: unknown,
   configuration: OAuthTargetConfiguration,
-) =>
-  Effect.gen(function* () {
-    const target = yield* mapped(source, configuration);
+) {
+  const target = yield* mapped(source, configuration);
 
-    return yield* target.provide(
-      makeNativeOAuthSignInServices(
-        target.tables,
-        target.mapping as OAuthNativeReadMapping,
-        target.batch,
-      ),
-    );
-  });
+  return yield* target.provide(
+    makeNativeOAuthSignInServices(
+      target.tables,
+      target.mapping as OAuthNativeReadMapping,
+      target.batch,
+    ),
+  );
+});
 
-export const makeTargetOAuthAccountsServices = (
+export const makeTargetOAuthAccountsServices = Effect.fnUntraced(function* (
   source: unknown,
   configuration: OAuthTargetConfiguration,
-) =>
-  Effect.gen(function* () {
-    const target = yield* mapped(source, configuration);
+) {
+  const target = yield* mapped(source, configuration);
 
-    return yield* target.provide(
-      makeNativeOAuthAccountsServices(
-        target.tables,
-        target.mapping as OAuthNativeAccountsMapping,
-        target.batch,
-      ),
-    );
-  });
+  return yield* target.provide(
+    makeNativeOAuthAccountsServices(
+      target.tables,
+      target.mapping as OAuthNativeAccountsMapping,
+      target.batch,
+    ),
+  );
+});
 
-export const makeTargetOAuthRegistrationIntentServices = (
+export const makeTargetOAuthRegistrationIntentServices = Effect.fnUntraced(function* (
   source: unknown,
   configuration: OAuthTargetConfiguration,
-) =>
-  Effect.gen(function* () {
-    const target = yield* mapped(source, configuration);
+) {
+  const target = yield* mapped(source, configuration);
 
-    return yield* target.provide(
-      makeNativeOAuthRegistrationIntentServices(
-        target.tables,
-        target.mapping as OAuthNativeRegistrationIntentMapping,
-        target.batch,
-      ),
-    );
-  });
+  return yield* target.provide(
+    makeNativeOAuthRegistrationIntentServices(
+      target.tables,
+      target.mapping as OAuthNativeRegistrationIntentMapping,
+      target.batch,
+    ),
+  );
+});
 
-export const makeTargetOAuthConnectedServices = (
+export const makeTargetOAuthConnectedServices = Effect.fnUntraced(function* (
   source: unknown,
   configuration: OAuthTargetConfiguration,
-) =>
-  Effect.gen(function* () {
-    const target = yield* mapped(source, configuration);
+) {
+  const target = yield* mapped(source, configuration);
 
-    return yield* target.provide(
-      makeNativeOAuthConnectedServices(
-        target.tables,
-        target.mapping as OAuthNativeConnectedMapping,
-        target.batch,
-      ),
-    );
-  });
+  return yield* target.provide(
+    makeNativeOAuthConnectedServices(
+      target.tables,
+      target.mapping as OAuthNativeConnectedMapping,
+      target.batch,
+    ),
+  );
+});
 
-export const makeTargetOAuthConnectedRevocationServices = (
+export const makeTargetOAuthConnectedRevocationServices = Effect.fnUntraced(function* (
   source: unknown,
   configuration: OAuthTargetConfiguration,
-) =>
-  Effect.gen(function* () {
-    const target = yield* mapped(source, configuration);
+) {
+  const target = yield* mapped(source, configuration);
 
-    return yield* target.provide(
-      makeNativeOAuthRevocationServices(
-        target.tables,
-        target.mapping as OAuthNativeRevocationMapping,
-        target.batch,
-      ),
-    );
-  });
+  return yield* target.provide(
+    makeNativeOAuthRevocationServices(
+      target.tables,
+      target.mapping as OAuthNativeRevocationMapping,
+      target.batch,
+    ),
+  );
+});
 
-export const makeTargetOAuthRegistrationServices = <Registration>(
+export const makeTargetOAuthRegistrationServices = Effect.fnUntraced(function* <Registration>(
   source: unknown,
   configuration: OAuthTargetConfiguration,
-) =>
-  Effect.gen(function* () {
-    const target = yield* mapped(source, configuration);
+) {
+  const target = yield* mapped(source, configuration);
 
-    return yield* target.provide(
-      makeNativeOAuthRegistrationServices(
-        target.tables,
-        target.mapping as OAuthNativeRegistrationMapping<Registration>,
-        target.batch,
-      ),
-    );
-  });
+  return yield* target.provide(
+    makeNativeOAuthRegistrationServices(
+      target.tables,
+      target.mapping as OAuthNativeRegistrationMapping<Registration>,
+      target.batch,
+    ),
+  );
+});
 
 const coordinateOwner = <Services, Transaction, A, E, R, ES, RS>(
   database: NativeDatabaseHandle,

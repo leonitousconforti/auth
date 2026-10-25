@@ -39,14 +39,14 @@ const invalidState = () =>
 const seriesKey = Effect.fnUntraced(function* (binding: P.ProofBinding) {
   const crypto = yield* Crypto.Crypto;
 
-  const tuple = Schema.encodeSync(
+  const tuple = yield* Schema.encodeEffect(
     Schema.fromJsonString(Schema.Array(Schema.NullOr(Schema.String))),
   )([
     "effect-auth/proof-series/v1",
     binding.identifier.namespace,
     binding.identifier.value,
     binding._tag === "Identifier" ? null : binding.revision.subjectId,
-  ]);
+  ]).pipe(Effect.orDie);
 
   return Base64Url.encode(yield* crypto.digest("SHA-256", new TextEncoder().encode(tuple)));
 });
@@ -404,18 +404,20 @@ export const makeNativeProofServices = Effect.fnUntraced(function* (
       ? executor.run(effect, mode)
       : executor.batch(effect).pipe(Effect.provideService(SqlBatchCommit, batch));
 
-  const prepare = <Value, A>(value: Value, project: P.PrepareProofCommit<Value, A>) =>
-    Effect.gen(function* () {
-      const journal = yield* CurrentCommitJournal;
+  const prepare = Effect.fnUntraced(function* <Value, A>(
+    value: Value,
+    project: P.PrepareProofCommit<Value, A>,
+  ) {
+    const journal = yield* CurrentCommitJournal;
 
-      const receipt = project(value, journal);
+    const receipt = project(value, journal);
 
-      if (!(receipt?._tag === "PreparedCommit" && Effect.isEffect(receipt.read)))
-        return yield* invalidState();
-      yield* registerSqlCommitReceipt(receipt);
+    if (!(receipt?._tag === "PreparedCommit" && Effect.isEffect(receipt.read)))
+      return yield* invalidState();
+    yield* registerSqlCommitReceipt(receipt);
 
-      return receipt;
-    });
+    return receipt;
+  });
 
   const proofPersistence: P.ProofPersistence["Service"] = {
     issue: (input, project) =>

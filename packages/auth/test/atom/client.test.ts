@@ -310,10 +310,12 @@ test.each(["workflow", "client", "own-transition"] as const)(
             Effect.fnUntraced(function* (input) {
               const workflow = yield* AuthAtom.AuthAtomWorkflow;
 
-              return workflow.completeAuthentication(
-                contract.actions.authenticate.route,
-                input,
-                (value) => value,
+              return yield* Effect.succeed(
+                workflow.completeAuthentication(
+                  contract.actions.authenticate.route,
+                  input,
+                  (value) => value,
+                ),
               );
             }),
             { reactivityKeys: ["session"] },

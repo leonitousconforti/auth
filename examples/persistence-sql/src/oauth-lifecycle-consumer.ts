@@ -85,7 +85,7 @@ export const exercise = Effect.gen(function* () {
   )
     return yield* DemoFailure.make({ step: "sign-in and retained grant" });
   const connection = complete.connection;
-  const session = yield* delivery.call(auth.requireSession());
+  const session = yield* delivery.call(auth.requireSession);
 
   const caller = {
     _tag: "Authenticated" as const,
@@ -133,7 +133,7 @@ export const exercise = Effect.gen(function* () {
 
   if (linked._tag !== "Linked") return yield* DemoFailure.make({ step: "link completion" });
 
-  const afterLink = yield* delivery.call(auth.requireSession(), caller);
+  const afterLink = yield* delivery.call(auth.requireSession, caller);
 
   const [authority] =
     yield* sql`SELECT "securityRevision" FROM oauth_subject WHERE id = ${session.subjectId}`;
@@ -307,46 +307,43 @@ export const exercise = Effect.gen(function* () {
 
 /** Run after closing and reopening the SQL client, using the privately retained
  * session credential and the original grant ID. No provider code exchange occurs. */
-export const reopen = (saved: Effect.Success<typeof exercise>) =>
-  Effect.gen(function* () {
-    const auth = yield* AppAuth;
+export const reopen = Effect.fnUntraced(function* (saved: Effect.Success<typeof exercise>) {
+  const auth = yield* AppAuth;
 
-    const call: Auth.AuthRequest["Service"] = {
-      invocation: Operations.guest,
-      credentials: { session: saved.sessionToken },
-      credentialCommandSink: () => Effect.void,
-    };
+  const call: Auth.AuthRequest["Service"] = {
+    invocation: Operations.guest,
+    credentials: { session: saved.sessionToken },
+    credentialCommandSink: () => Effect.void,
+  };
 
-    const session = yield* auth
-      .requireSession()
-      .pipe(Effect.provideService(Auth.AuthRequest, call));
+  const session = yield* auth.requireSession.pipe(Effect.provideService(Auth.AuthRequest, call));
 
-    const caller = { ...saved.caller, subjectId: session.subjectId, assurance: session.assurance };
+  const caller = { ...saved.caller, subjectId: session.subjectId, assurance: session.assurance };
 
-    const listed = yield* auth
-      .listAccountConnections({ limit: 20 })
-      .pipe(Effect.provideService(Auth.AuthRequest, { ...call, invocation: caller }));
+  const listed = yield* auth
+    .listAccountConnections({ limit: 20 })
+    .pipe(Effect.provideService(Auth.AuthRequest, { ...call, invocation: caller }));
 
-    if (!listed.items.some((item) => item.grantId === saved.connection.grantId))
-      return yield* DemoFailure.make({ step: "grant survived database reopen" });
-    const access = yield* AppAuth.strategies.oauth.access.ConnectedAccess;
-    const http = yield* HttpClient.HttpClient;
+  if (!listed.items.some((item) => item.grantId === saved.connection.grantId))
+    return yield* DemoFailure.make({ step: "grant survived database reopen" });
+  const access = yield* AppAuth.strategies.oauth.access.ConnectedAccess;
+  const http = yield* HttpClient.HttpClient;
 
-    const id = yield* access.withAccessToken(caller, saved.connection, (token) =>
-      http
-        .execute(
-          HttpClientRequest.get("https://www.strava.com/api/v3/athlete").pipe(
-            HttpClientRequest.bearerToken(token),
-          ),
-        )
-        .pipe(
-          Effect.flatMap((response) => response.json),
-          Effect.flatMap(Schema.decodeUnknownEffect(Schema.Struct({ id: Schema.Int }))),
+  const id = yield* access.withAccessToken(caller, saved.connection, (token) =>
+    http
+      .execute(
+        HttpClientRequest.get("https://www.strava.com/api/v3/athlete").pipe(
+          HttpClientRequest.bearerToken(token),
         ),
-    );
+      )
+      .pipe(
+        Effect.flatMap((response) => response.json),
+        Effect.flatMap(Schema.decodeUnknownEffect(Schema.Struct({ id: Schema.Int }))),
+      ),
+  );
 
-    if (id.id !== 123) return yield* DemoFailure.make({ step: "decrypted grant token use" });
-    yield* Console.log(
-      `reopen: grant=${saved.connection.grantId}; native provider API token use athlete=${id.id}`,
-    );
-  });
+  if (id.id !== 123) return yield* DemoFailure.make({ step: "decrypted grant token use" });
+  yield* Console.log(
+    `reopen: grant=${saved.connection.grantId}; native provider API token use athlete=${id.id}`,
+  );
+});

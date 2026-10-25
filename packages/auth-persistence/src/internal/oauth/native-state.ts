@@ -351,7 +351,7 @@ export const makeOAuthNativeState = Effect.fnUntraced(function* (
   });
 
   const readCredential = Effect.fnUntraced(function* (
-    input: typeof OAuthCredentialKey.Type,
+    input: OAuthCredentialKey,
     metadataAccess: Statement.Fragment = sql`true`,
   ) {
     const nativeId = yield* mapping.subjectId.toNative(input.subjectId);

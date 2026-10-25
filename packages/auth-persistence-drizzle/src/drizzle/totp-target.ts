@@ -175,22 +175,22 @@ export const makeTotpTarget = <DatabaseId, D extends NativeDriverDatabase>(
 
   return {
     coordinateTotpPersistence,
-    makeTotpPersistenceServices: <
-      S extends Table,
-      F extends Table,
-      C extends Table,
-      N,
-      P extends Table = Table,
-      RS = never,
-    >(
-      source: TotpMappingSource<TotpMapping<S, F, C, N, P>, RS>,
-    ) =>
-      Effect.gen(function* () {
+    makeTotpPersistenceServices: Effect.fnUntraced(
+      function* <
+        S extends Table,
+        F extends Table,
+        C extends Table,
+        N,
+        P extends Table = Table,
+        RS = never,
+      >(source: TotpMappingSource<TotpMapping<S, F, C, N, P>, RS>) {
         const value = mapping(yield* Effect.isEffect(source) ? source : Effect.succeed(source));
 
         yield* validate(value);
 
         return yield* services(value);
-      }).pipe(Effect.provideServiceEffect(NativeDatabase, nativeDatabase(databaseService))),
+      },
+      Effect.provideServiceEffect(NativeDatabase, nativeDatabase(databaseService)),
+    ),
   };
 };

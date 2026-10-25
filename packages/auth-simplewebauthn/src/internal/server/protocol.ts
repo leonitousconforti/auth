@@ -55,23 +55,24 @@ const unavailable = () => PasskeyUnavailable.make({});
 
 const unexpected = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   Effect.uninterruptibleMask((restore) =>
-    restore(effect).pipe(
-      Effect.catchCause((cause): Effect.Effect<never, E | PasskeyUnavailable> =>
-        Cause.hasDies(cause)
-          ? reportAuthFailure("passkey-protocol", cause).pipe(
-              Effect.andThen(
-                Effect.failCause(
-                  markAuthFailureReported(
-                    Cause.fromReasons<E | PasskeyUnavailable>(
-                      cause.reasons.map((reason) =>
-                        Cause.isDieReason(reason) ? Cause.makeFailReason(unavailable()) : reason,
-                      ),
+    restore(effect).pipe((effect) =>
+      Effect.catchCauseIf(
+        effect,
+        (cause) => Cause.hasDies(cause),
+        (cause): Effect.Effect<never, E | PasskeyUnavailable> =>
+          reportAuthFailure("passkey-protocol", cause).pipe(
+            Effect.andThen(
+              Effect.failCause(
+                markAuthFailureReported(
+                  Cause.fromReasons<E | PasskeyUnavailable>(
+                    cause.reasons.map((reason) =>
+                      Cause.isDieReason(reason) ? Cause.makeFailReason(unavailable()) : reason,
                     ),
                   ),
                 ),
               ),
-            )
-          : Effect.failCause(cause),
+            ),
+          ),
       ),
     ),
   );

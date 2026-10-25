@@ -20,10 +20,10 @@ export class PasskeyBrowser extends Context.Service<
   {
     readonly capabilities: Effect.Effect<PasskeyBrowserCapabilities, PasskeyBrowserUnavailable>;
     readonly register: (
-      started: typeof PasskeyRegistrationStarted.Type,
+      started: PasskeyRegistrationStarted,
     ) => Effect.Effect<PasskeyBrowserRegistration, PasskeyBrowserFailure>;
     readonly authenticate: (input: {
-      readonly started: typeof PasskeyAuthenticationStarted.Type;
+      readonly started: PasskeyAuthenticationStarted;
       readonly mediation: "required" | "conditional";
     }) => Effect.Effect<PasskeyBrowserAuthentication, PasskeyBrowserFailure>;
   }

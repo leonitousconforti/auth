@@ -89,14 +89,15 @@ export const AccountMethodsLive = Layer.effect(
             });
 
           return candidate;
-        }).pipe(
-          Effect.catchCause((cause) =>
-            cause.reasons.every(
-              (reason) =>
-                Cause.isFailReason(reason) && Schema.is(Password.PasswordRejected)(reason.error),
-            )
-              ? Effect.succeed(undefined)
-              : Effect.failCause(cause),
+        }).pipe((effect) =>
+          Effect.catchCauseIf(
+            effect,
+            (cause) =>
+              cause.reasons.every(
+                (reason) =>
+                  Cause.isFailReason(reason) && Schema.is(Password.PasswordRejected)(reason.error),
+              ),
+            () => Effect.void,
           ),
         );
 
@@ -126,7 +127,7 @@ export const AccountMethodsLive = Layer.effect(
               admission.value,
             ).pipe(Effect.mapError(() => Password.PasswordUnavailable.make({})));
 
-        const checked = yield* Effect.gen(function* () {
+        const checked = yield* (function* () {
           if (captured === undefined) {
             yield* hasher
               .dummy(input.password)
@@ -217,7 +218,7 @@ export const AccountMethodsLive = Layer.effect(
           };
 
           return { evidence, credential: captured, requirement };
-        });
+        })();
 
         const values = yield* claims.resolve({
           subjectId: checked.credential.revision.subjectId,

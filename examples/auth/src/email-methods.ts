@@ -57,23 +57,20 @@ const program = Effect.gen(function* () {
         },
       }).pipe(Layer.provide(base));
 
-      const stateless = sessions
-        .statelessLayer(sessionPolicy)
-        .pipe(
-          Layer.provide(
-            Layer.succeed(Sessions.SessionSigningKeys, {
-              activeKeyId: "session",
-              keys: [
-                {
-                  id: "session",
-                  // Demo-only key material. Production requires independently generated random keys.
-                  material: Redacted.make(Base64Url.encode(new Uint8Array(32).fill(42))),
-                },
-              ],
-            }),
-          ),
-        )
-        .pipe(Layer.provide(base));
+      const stateless = sessions.statelessLayer(sessionPolicy).pipe(
+        Layer.provide(
+          Layer.succeed(Sessions.SessionSigningKeys, {
+            activeKeyId: "session",
+            keys: [
+              {
+                id: "session",
+                material: Redacted.make(Base64Url.encode(new Uint8Array(32).fill(42))),
+              },
+            ],
+          }),
+        ),
+        Layer.provide(base),
+      );
 
       const stateful = sessions
         .statefulLayer(sessionPolicy)
@@ -404,8 +401,10 @@ const program = Effect.gen(function* () {
 
         const replay = yield* auth
           .completeEmailChange("addresses", changeInput)
-          .pipe(Effect.provideService(Auth.AuthRequest, { ...call, invocation: changeCaller }))
-          .pipe(Effect.result);
+          .pipe(
+            Effect.provideService(Auth.AuthRequest, { ...call, invocation: changeCaller }),
+            Effect.result,
+          );
 
         if (replay._tag !== "Failure" || notifications.length !== 1)
           return yield* Effect.die("address change replay/notification failed");

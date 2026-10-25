@@ -104,8 +104,9 @@ export const makeNativePasswordRegistrationStore = Effect.fnUntraced(function* (
     else
       yield* sql.onDialectOrElse({
         mysql: () =>
-          stage(initial).pipe(
+          stage(initial).pipe((effect) =>
             Effect.catchCauseIf(
+              effect,
               (cause) =>
                 mapping.isIdentifierConflict !== undefined &&
                 isMappedConstraintConflict(mapping.isIdentifierConflict, cause),
@@ -180,22 +181,21 @@ export const makeNativePasswordRegistrationStore = Effect.fnUntraced(function* (
       });
   });
 
-  const prepare = <A>(
+  const prepare = Effect.fnUntraced(function* <A>(
     value: PasswordRegistrationDecision,
     project: PreparePasswordCommit<PasswordRegistrationDecision, A>,
-  ) =>
-    Effect.gen(function* () {
-      const receipt = project(value, yield* CurrentCommitJournal);
-      const current = yield* CurrentSqlCommit;
+  ) {
+    const receipt = project(value, yield* CurrentCommitJournal);
+    const current = yield* CurrentSqlCommit;
 
-      if (current.mode === "batch" && current.statements.length === 0)
-        yield* appendSqlBatchStatement(sql`select 1`);
-      if (!(receipt?._tag === "PreparedCommit" && Effect.isEffect(receipt.read)))
-        return yield* invalidState();
-      yield* registerSqlCommitReceipt(receipt);
+    if (current.mode === "batch" && current.statements.length === 0)
+      yield* appendSqlBatchStatement(sql`select 1`);
+    if (!(receipt?._tag === "PreparedCommit" && Effect.isEffect(receipt.read)))
+      return yield* invalidState();
+    yield* registerSqlCommitReceipt(receipt);
 
-      return receipt;
-    });
+    return receipt;
+  });
 
   return { available, bind, prepare, stage };
 });
@@ -225,28 +225,32 @@ export const makeNativePasswordRegistrationServices = Effect.fnUntraced(function
               reportPersistenceFailure(
                 work,
                 (error) =>
-                  error instanceof PasswordIdentifierTaken || Schema.is(PasswordUnavailable)(error),
+                  Schema.is(PasswordIdentifierTaken)(error) ||
+                  Schema.is(PasswordUnavailable)(error),
                 { markReported: true },
               ).pipe(
                 Effect.catchCause((cause) =>
                   Effect.failCause(
                     Cause.map(cause, (error) =>
-                      error instanceof PasswordIdentifierTaken ? error : unavailable(),
+                      Schema.is(PasswordIdentifierTaken)(error) ? error : unavailable(),
                     ),
                   ),
                 ),
               ),
             )
             .pipe(
-              Effect.catchCause((cause) =>
-                cause.reasons.length > 0 &&
-                cause.reasons.every(
-                  (reason) =>
-                    Cause.isFailReason(reason) && reason.error instanceof PasswordIdentifierTaken,
-                )
-                  ? executor.run(suppressed, "statement")
-                  : Effect.failCause(cause),
-              ),
+              (effect) =>
+                Effect.catchCauseIf(
+                  effect,
+                  (cause) =>
+                    cause.reasons.length > 0 &&
+                    cause.reasons.every(
+                      (reason) =>
+                        Cause.isFailReason(reason) &&
+                        Schema.is(PasswordIdentifierTaken)(reason.error),
+                    ),
+                  () => executor.run(suppressed, "statement"),
+                ),
               Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, unavailable))),
             );
 

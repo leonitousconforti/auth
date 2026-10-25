@@ -18,7 +18,7 @@ import { sqlBatchAssertion } from "./d1-planning";
 import { PersistenceMappingError, isMappedConstraintConflict } from "./mapping-error";
 import type { PendingAuthenticationMapping } from "./models/session-model";
 import type { NativeSqlTables } from "./native-sql-table";
-import { prepareNativeSession } from "./session-native-pending";
+import { prepareNativeSession, type StoredSessionPending } from "./session-native-pending";
 import { makeNativeSessionPendingReader } from "./session-native-pending-read";
 import {
   normalizeSessionOperation,
@@ -81,9 +81,7 @@ export const makeNativePendingAuthenticationServices = Effect.fnUntraced(functio
           .pipe(Effect.provideService(SqlBatchCommit, batch))
     ).pipe(Effect.provideService(AuthenticationClock, state.clockPolicy));
 
-  const verifyPayload = Effect.fnUntraced(function* (
-    stored: import("./session-native-pending").StoredSessionPending,
-  ) {
+  const verifyPayload = Effect.fnUntraced(function* (stored: StoredSessionPending) {
     const record = yield* mapping.login.decode(stored.snapshot);
 
     if (
@@ -200,15 +198,12 @@ export const makeNativePendingAuthenticationServices = Effect.fnUntraced(functio
         }),
       ),
     read: ({ digest }) =>
-      executor
-        .read(read(digest))
-        .pipe(
-          Effect.flatMap((result) =>
-            result === undefined
-              ? Effect.fail(PendingAuthenticationInvalid.make({}))
-              : Effect.succeed(result),
-          ),
+      executor.read(read(digest)).pipe(
+        Effect.filterOrFail(
+          (result) => !(result === undefined),
+          () => PendingAuthenticationInvalid.make({}),
         ),
+      ),
     reject: ({ digest }, project) =>
       native(
         Effect.gen(function* () {

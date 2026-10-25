@@ -12,22 +12,26 @@ const redactDefects =
   <Failure>(project: () => Cause.Reason<Failure>) =>
   <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     Effect.uninterruptibleMask((restore) =>
-      restore(effect).pipe(
-        Effect.catchCause((cause) => {
-          if (!Cause.hasDies(cause)) return Effect.failCause(cause);
-
-          return reportAuthFailure("browser-login", cause).pipe(
-            Effect.andThen(
-              Effect.failCause(
-                markAuthFailureReported(
-                  Cause.fromReasons<E | Failure>(
-                    cause.reasons.map((reason) => (Cause.isDieReason(reason) ? project() : reason)),
+      restore(effect).pipe((effect) =>
+        Effect.catchCauseIf(
+          effect,
+          (cause) => !!Cause.hasDies(cause),
+          (cause) => {
+            return reportAuthFailure("browser-login", cause).pipe(
+              Effect.andThen(
+                Effect.failCause(
+                  markAuthFailureReported(
+                    Cause.fromReasons<E | Failure>(
+                      cause.reasons.map((reason) =>
+                        Cause.isDieReason(reason) ? project() : reason,
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-          );
-        }),
+            );
+          },
+        ),
       ),
     );
 

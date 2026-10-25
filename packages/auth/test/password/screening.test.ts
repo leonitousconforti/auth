@@ -17,19 +17,19 @@ it.effect("times out stalled screening without retrying it", () =>
     let released = false;
 
     const screening = Layer.succeed(Password.CompromisedPasswords, {
-      check: () =>
-        Effect.gen(function* () {
+      check: Effect.fnUntraced(
+        function* () {
           calls++;
           yield* Deferred.succeed(started, undefined);
 
           return yield* Effect.never;
-        }).pipe(
-          Effect.ensuring(
-            Effect.sync(() => {
-              released = true;
-            }),
-          ),
+        },
+        Effect.ensuring(
+          Effect.sync(() => {
+            released = true;
+          }),
         ),
+      ),
     });
 
     const fiber = yield* Effect.flatMap(Password.NewPasswordCheck, (service) =>

@@ -90,13 +90,12 @@ it.effect("resolves proof ingress from each HTTP invocation instead of shared co
     );
 
     const limiter = Proofs.HostIngressLimiter.of({
-      check: ({ networkKey }) =>
-        Effect.gen(function* () {
-          const network = Redacted.value(networkKey);
+      check: Effect.fnUntraced(function* ({ networkKey }) {
+        const network = Redacted.value(networkKey);
 
-          seen.push(network);
-          if (network === "blocked") return yield* Proofs.ProofIngressDenied.make({});
-        }),
+        seen.push(network);
+        if (network === "blocked") return yield* Proofs.ProofIngressDenied.make({});
+      }),
     });
 
     const server = yield* operationServer.pipe(
@@ -160,33 +159,32 @@ const contract = AuthContract.make("test/http-invocation", {
 class HttpAuth extends Context.Service<
   HttpAuth,
   Auth.SessionApi<typeof contract.sessions.Session.Type> & {
-    readonly observe: () => Effect.Effect<
+    readonly observe: Effect.Effect<
       "accepted",
       Proofs.ProofUnavailable,
       Proofs.ProofRequestContext
     >;
-    readonly health: () => Effect.Effect<"healthy">;
+    readonly health: Effect.Effect<"healthy">;
   }
 >()("test/HttpAuth") {}
 
 export const makeHttp = (seen: string[]) => {
-  const unusedSession = () => Effect.die("This request does not use a session");
+  const unusedSession = Effect.die("This request does not use a session");
 
   const layer = Layer.succeed(HttpAuth, {
-    verifySession: unusedSession,
-    getSession: unusedSession,
+    verifySession: () => unusedSession,
+    getSession: () => unusedSession,
     requireSession: unusedSession,
     signOut: unusedSession,
     renewSession: unusedSession,
-    observe: () =>
-      Effect.gen(function* () {
-        const context = yield* yield* Proofs.ProofRequestContext;
+    observe: Effect.gen(function* () {
+      const context = yield* yield* Proofs.ProofRequestContext;
 
-        seen.push(Redacted.value(context.networkKey));
+      seen.push(Redacted.value(context.networkKey));
 
-        return "accepted" as const;
-      }),
-    health: () => Effect.succeed("healthy" as const),
+      return "accepted" as const;
+    }),
+    health: Effect.succeed("healthy" as const),
   });
 
   return Http.make(Object.assign(HttpAuth, { contract, sessions: contract.sessions, layer }), {

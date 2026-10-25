@@ -144,7 +144,7 @@ const makeLazyServices = Effect.fnUntraced(function* <M, A>(
   );
 
   // Check ownership before accessing the cache so rejected callers cannot initialize it.
-  return executor.read(initialize);
+  return yield* Effect.succeed(executor.read(initialize));
 });
 
 const coordinate = Effect.fnUntraced(function* <S, A, E, R, ES, RS>(

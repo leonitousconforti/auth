@@ -205,8 +205,8 @@ const mappings = Effect.fnUntraced(function* (
           requirement: s.actionRequirements,
           metadata,
           action: metadata,
-          remainingSignIn: (nativeId, excluded, row) =>
-            Effect.gen(function* () {
+          remainingSignIn: Effect.fnUntraced(
+            function* (nativeId, excluded, row) {
               const requirement = yield* Schema.decodeEffect(M.PasskeyRequirement)(
                 yield* s.requirements(row),
               );
@@ -250,15 +250,15 @@ const mappings = Effect.fnUntraced(function* (
               }
 
               return anySqlCondition(alternatives);
-            }).pipe(
-              Effect.catchCause((cause) =>
-                Effect.failCause(
-                  Cause.map(cause, (error) =>
-                    PersistenceMappingError.make({ operation: "mapping", cause: error }),
-                  ),
+            },
+            Effect.catchCause((cause) =>
+              Effect.failCause(
+                Cause.map(cause, (error) =>
+                  PersistenceMappingError.make({ operation: "mapping", cause: error }),
                 ),
               ),
             ),
+          ),
         },
       },
       invalidation: {

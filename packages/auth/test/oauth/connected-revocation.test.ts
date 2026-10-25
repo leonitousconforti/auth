@@ -65,7 +65,7 @@ it.effect("erases a separate revocation private key when the provider scope clos
           ],
           clientRegistrationId: "registration",
           profiles: [
-            Schema.decodeSync(OAuthConnectedProfile)({
+            yield* Schema.decodeEffect(OAuthConnectedProfile)({
               key: "profile",
               generation: 1,
               issuance: "active",
@@ -78,7 +78,7 @@ it.effect("erases a separate revocation private key when the provider scope clos
               refreshAheadMillis: 0,
               refresh: "unsupported",
               revocation: "provider",
-            }),
+            }).pipe(Effect.orDie),
           ],
           resourceIndicators: "unsupported",
           refreshExpiry: "unreported",

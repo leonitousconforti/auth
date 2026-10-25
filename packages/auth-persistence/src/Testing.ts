@@ -631,14 +631,12 @@ export const layer = <C extends ClaimsCodec, const Id extends string>(
               Effect.gen(function* () {
                 const limit = yield* Schema.decodeEffect(
                   Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1000 })),
-                )(input.limit).pipe(Effect.mapError(unavailable));
+                )(input.limit);
 
                 const cursor =
                   input.cursor === undefined
                     ? undefined
-                    : yield* Schema.decodeEffect(SessionId)(input.cursor).pipe(
-                        Effect.mapError(unavailable),
-                      );
+                    : yield* Schema.decodeEffect(SessionId)(input.cursor);
 
                 const rows = state.sessions
                   .filter(
@@ -659,12 +657,12 @@ export const layer = <C extends ClaimsCodec, const Id extends string>(
 
                 const metadata = yield* Effect.forEach(page, (row) =>
                   Schema.decodeEffect(Schema.toType(SessionMetadata))(row),
-                ).pipe(Effect.mapError(unavailable));
+                );
 
                 const nextCursor = rows.length > limit ? page.at(-1)?.sessionId : undefined;
 
                 return { sessions: metadata, ...(nextCursor === undefined ? {} : { nextCursor }) };
-              }),
+              }).pipe(Effect.mapError(unavailable)),
             ),
         }),
       );

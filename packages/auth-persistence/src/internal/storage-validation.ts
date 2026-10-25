@@ -48,7 +48,7 @@ const MysqlIndexes = Schema.Array(
     relation: Schema.String,
     name: Schema.String,
     columnName: Schema.NullOr(Schema.String),
-    prefix: Schema.NullOr(Schema.Number),
+    prefix: Schema.NullOr(Schema.Finite),
   }),
 );
 

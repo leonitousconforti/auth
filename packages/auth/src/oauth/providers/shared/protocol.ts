@@ -287,7 +287,7 @@ export const makeOpenIdConnectOAuthProtocol = Effect.fn("makeOpenIdConnectOAuthP
 
           const claims =
             provider.userInfo === "merge"
-              ? yield* Effect.gen(function* () {
+              ? yield* (function* () {
                   const userInfo = yield* entry.client
                     .fetchProfile(grant.accessToken)
                     .pipe(
@@ -301,7 +301,7 @@ export const makeOpenIdConnectOAuthProtocol = Effect.fn("makeOpenIdConnectOAuthP
                   if (subject.sub !== verified.subject) return yield* rejected();
 
                   return { ...userInfo, ...Redacted.value(verified.claims) };
-                })
+                })()
               : Redacted.value(verified.claims);
 
           const profile = yield* decodeOidcProfile(

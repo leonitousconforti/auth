@@ -290,10 +290,9 @@ export const makeNativeSessionStepUpServices = Effect.fnUntraced(function* <Clai
         )
         .pipe(
           Effect.provideService(AuthenticationClock, state.clockPolicy),
-          Effect.flatMap((value) =>
-            value === undefined
-              ? Effect.fail(SessionStepUpInvalid.make({}))
-              : Effect.succeed(value),
+          Effect.filterOrFail(
+            (value) => !(value === undefined),
+            () => SessionStepUpInvalid.make({}),
           ),
         ),
     reject: ({ digest }, project) =>

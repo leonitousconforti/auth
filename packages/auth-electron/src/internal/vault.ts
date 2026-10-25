@@ -89,17 +89,16 @@ export const layerVault = (options: { readonly path: string }) =>
       const readRecord = Effect.gen(function* () {
         yield* checkEncryption;
 
-        const stat = yield* fs
-          .stat(destination)
-          .pipe(
-            Effect.catchCause((cause) =>
+        const stat = yield* fs.stat(destination).pipe((effect) =>
+          Effect.catchCauseIf(
+            effect,
+            (cause) =>
               cause.reasons.every(
                 (reason) => Cause.isFailReason(reason) && reason.error.reason._tag === "NotFound",
-              )
-                ? Effect.void
-                : Effect.failCause(cause),
-            ),
-          );
+              ),
+            () => Effect.void,
+          ),
+        );
 
         if (stat === undefined) return { credentials: {} } satisfies typeof recordSchema.Type;
         if (stat.type !== "File" || stat.size > 1048576) return yield* failure();

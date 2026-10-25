@@ -58,7 +58,7 @@ type KeyRequirement<Secret extends ProofSecretPolicy> =
 export const proofKeysFor = <Secret extends ProofSecretPolicy>(secret: Secret) =>
   // The policy discriminant excludes ProofKeys exactly for Token, matching KeyRequirement<Secret>.
   // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off
-  (secret._tag === "Token" ? Effect.succeed(undefined) : ProofKeys) as Effect.Effect<
+  (secret._tag === "Token" ? Effect.void : ProofKeys) as Effect.Effect<
     ProofKeyring | undefined,
     never,
     KeyRequirement<Secret>

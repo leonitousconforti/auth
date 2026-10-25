@@ -6,7 +6,7 @@ import { expectTypeOf } from "vite-plus/test";
 
 // Compile-only contract for literal scope inference. Runtime proofs
 // cannot detect a typo accepted by the TypeScript API.
-export const literalScopes = () => {
+export const literalScopes = Effect.suspend(() => {
   const read = OAuthScope.make("documents:read");
   const write = OAuthScope.make("documents:write");
   const scopes = [read, write];
@@ -62,7 +62,7 @@ export const literalScopes = () => {
   });
 
   identity.Identity.of({
-    current: Effect.succeed(undefined),
+    current: Effect.as(Effect.void, undefined),
     active: () => Effect.succeed(true),
     profile: ({ scopes }) => {
       expectTypeOf(scopes[0]).toEqualTypeOf<
@@ -127,7 +127,7 @@ export const literalScopes = () => {
 
     expectTypeOf(unconfiguredAccess.scopes[0]).toEqualTypeOf<OAuthScope.OAuthScope>();
   });
-};
+});
 
 export const serviceScopes = () => {
   const narrow = OAuthServer.makeOpenId("same-id", { scopes: [OAuthScope.make("read")] });

@@ -309,7 +309,7 @@ export const makeOAuthRegistration = <
 
             const event =
               application._tag === "Unbound"
-                ? yield* Effect.gen(function* () {
+                ? yield* (function* () {
                     const snapshot = yield* lifecycleSnapshotEffect({
                       action: "registration",
                       operation: `${moduleId}/oauth-registration`,
@@ -334,7 +334,7 @@ export const makeOAuthRegistration = <
                     bytes.fill(0);
 
                     return value;
-                  })
+                  })()
                 : undefined;
 
             const ownerData = yield* snapshotData(data);

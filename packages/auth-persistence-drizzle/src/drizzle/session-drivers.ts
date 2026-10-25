@@ -59,24 +59,23 @@ export const makeSessionTarget = <DatabaseId, D extends NativeDriverDatabase>(
   databaseService: Context.Service<DatabaseId, D>,
   configuration: NativeTargetConfiguration,
 ) => {
-  const authenticationAuthority = <Claims>(mapping: NativeAuthenticationAuthorityMapping<Claims>) =>
-    Effect.gen(function* () {
-      yield* validateDrizzleStorage(mapping).pipe(
-        Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, unavailable))),
+  const authenticationAuthority = Effect.fnUntraced(function* <Claims>(
+    mapping: NativeAuthenticationAuthorityMapping<Claims>,
+  ) {
+    yield* validateDrizzleStorage(mapping).pipe(
+      Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, unavailable))),
+    );
+    if (
+      configuration.mode === "batch" &&
+      (mapping.d1?.primary !== true || mapping.subject.requirementColumns === undefined)
+    )
+      return yield* reportAuthDiagnostic("persistence-validation", "configuration").pipe(
+        Effect.andThen(unavailable()),
       );
-      if (
-        configuration.mode === "batch" &&
-        (mapping.d1?.primary !== true || mapping.subject.requirementColumns === undefined)
-      )
-        return yield* reportAuthDiagnostic("persistence-validation", "configuration").pipe(
-          Effect.andThen(unavailable()),
-        );
-      const target = yield* nativeTarget(configuration);
+    const target = yield* nativeTarget(configuration);
 
-      return yield* target.provide(
-        makeNativeAuthenticationAuthorityServices(target.tables, mapping),
-      );
-    });
+    return yield* target.provide(makeNativeAuthenticationAuthorityServices(target.tables, mapping));
+  });
 
   function coordinateAuthenticationAuthority<
     DB extends D,
@@ -174,22 +173,23 @@ export const makeSessionTarget = <DatabaseId, D extends NativeDriverDatabase>(
     );
   }
 
-  const pendingAuthentication = <Claims>(mapping: NativePendingAuthenticationMapping<Claims>) =>
-    Effect.gen(function* () {
-      yield* validateDrizzleStorage(mapping).pipe(
-        Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, unavailable))),
+  const pendingAuthentication = Effect.fnUntraced(function* <Claims>(
+    mapping: NativePendingAuthenticationMapping<Claims>,
+  ) {
+    yield* validateDrizzleStorage(mapping).pipe(
+      Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, unavailable))),
+    );
+    if (
+      configuration.mode === "batch" &&
+      (mapping.d1?.primary !== true || mapping.subject.requirementColumns === undefined)
+    )
+      return yield* reportAuthDiagnostic("persistence-validation", "configuration").pipe(
+        Effect.andThen(unavailable()),
       );
-      if (
-        configuration.mode === "batch" &&
-        (mapping.d1?.primary !== true || mapping.subject.requirementColumns === undefined)
-      )
-        return yield* reportAuthDiagnostic("persistence-validation", "configuration").pipe(
-          Effect.andThen(unavailable()),
-        );
-      const target = yield* nativeTarget(configuration);
+    const target = yield* nativeTarget(configuration);
 
-      return yield* target.provide(makeNativePendingAuthenticationServices(target.tables, mapping));
-    });
+    return yield* target.provide(makeNativePendingAuthenticationServices(target.tables, mapping));
+  });
 
   function coordinatePendingAuthentication<
     DB extends D,
@@ -285,22 +285,23 @@ export const makeSessionTarget = <DatabaseId, D extends NativeDriverDatabase>(
     );
   }
 
-  const statefulSessionPersistence = <Claims>(mapping: NativeStatefulSessionMapping<Claims>) =>
-    Effect.gen(function* () {
-      yield* validateDrizzleStorage(mapping).pipe(
-        Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, unavailable))),
+  const statefulSessionPersistence = Effect.fnUntraced(function* <Claims>(
+    mapping: NativeStatefulSessionMapping<Claims>,
+  ) {
+    yield* validateDrizzleStorage(mapping).pipe(
+      Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, unavailable))),
+    );
+    if (
+      configuration.mode === "batch" &&
+      (mapping.d1?.primary !== true || mapping.subject.requirementColumns === undefined)
+    )
+      return yield* reportAuthDiagnostic("persistence-validation", "configuration").pipe(
+        Effect.andThen(unavailable()),
       );
-      if (
-        configuration.mode === "batch" &&
-        (mapping.d1?.primary !== true || mapping.subject.requirementColumns === undefined)
-      )
-        return yield* reportAuthDiagnostic("persistence-validation", "configuration").pipe(
-          Effect.andThen(unavailable()),
-        );
-      const target = yield* nativeTarget(configuration);
+    const target = yield* nativeTarget(configuration);
 
-      return yield* target.provide(makeNativeStatefulSessionServices(target.tables, mapping));
-    });
+    return yield* target.provide(makeNativeStatefulSessionServices(target.tables, mapping));
+  });
 
   function coordinateStatefulSessions<
     DB extends D,
@@ -417,19 +418,20 @@ export const makeSessionTarget = <DatabaseId, D extends NativeDriverDatabase>(
     );
   }
 
-  const signedSessionValidity = (mapping: NativeSignedSessionValidityMapping) =>
-    Effect.gen(function* () {
-      yield* validateDrizzleStorage(mapping).pipe(
-        Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, unavailable))),
+  const signedSessionValidity = Effect.fnUntraced(function* (
+    mapping: NativeSignedSessionValidityMapping,
+  ) {
+    yield* validateDrizzleStorage(mapping).pipe(
+      Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, unavailable))),
+    );
+    if (configuration.mode === "batch" && mapping.d1?.primary !== true)
+      return yield* reportAuthDiagnostic("persistence-validation", "configuration").pipe(
+        Effect.andThen(unavailable()),
       );
-      if (configuration.mode === "batch" && mapping.d1?.primary !== true)
-        return yield* reportAuthDiagnostic("persistence-validation", "configuration").pipe(
-          Effect.andThen(unavailable()),
-        );
-      const target = yield* nativeTarget(configuration);
+    const target = yield* nativeTarget(configuration);
 
-      return yield* target.provide(makeNativeSignedSessionValidityServices(target.tables, mapping));
-    });
+    return yield* target.provide(makeNativeSignedSessionValidityServices(target.tables, mapping));
+  });
 
   function coordinateSignedSessionValidity<
     DB extends D,
@@ -522,22 +524,23 @@ export const makeSessionTarget = <DatabaseId, D extends NativeDriverDatabase>(
     );
   }
 
-  const sessionStepUpPersistence = <Claims>(mapping: NativeSessionStepUpMapping<Claims>) =>
-    Effect.gen(function* () {
-      yield* validateDrizzleStorage(mapping).pipe(
-        Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, unavailable))),
+  const sessionStepUpPersistence = Effect.fnUntraced(function* <Claims>(
+    mapping: NativeSessionStepUpMapping<Claims>,
+  ) {
+    yield* validateDrizzleStorage(mapping).pipe(
+      Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, unavailable))),
+    );
+    if (
+      configuration.mode === "batch" &&
+      (mapping.d1?.primary !== true || mapping.subject.requirementColumns === undefined)
+    )
+      return yield* reportAuthDiagnostic("persistence-validation", "configuration").pipe(
+        Effect.andThen(unavailable()),
       );
-      if (
-        configuration.mode === "batch" &&
-        (mapping.d1?.primary !== true || mapping.subject.requirementColumns === undefined)
-      )
-        return yield* reportAuthDiagnostic("persistence-validation", "configuration").pipe(
-          Effect.andThen(unavailable()),
-        );
-      const target = yield* nativeTarget(configuration);
+    const target = yield* nativeTarget(configuration);
 
-      return yield* target.provide(makeNativeSessionStepUpServices(target.tables, mapping));
-    });
+    return yield* target.provide(makeNativeSessionStepUpServices(target.tables, mapping));
+  });
 
   function coordinateSessionStepUp<
     DB extends D,
@@ -708,17 +711,16 @@ export const makeSessionTarget = <DatabaseId, D extends NativeDriverDatabase>(
     ) =>
       sessionStepUpPersistence(
         clockMapping(mapping) as unknown as NativeSessionStepUpMapping<Claims>,
-      )
-        .pipe(Effect.provideServiceEffect(NativeDatabase, nativeDatabase(databaseService)))
-        .pipe(
-          Effect.map((services) => ({
-            sessionStepUpPersistence: target.of(services.sessionStepUpPersistence),
-          })),
-        ),
-    makeSessionCleanupServices: <P extends Table, T extends Table, N, NS>(
-      mapping: SessionCleanupMapping<P, T, N, NS>,
-    ) =>
-      Effect.gen(function* () {
+      ).pipe(
+        Effect.provideServiceEffect(NativeDatabase, nativeDatabase(databaseService)),
+        Effect.map((services) => ({
+          sessionStepUpPersistence: target.of(services.sessionStepUpPersistence),
+        })),
+      ),
+    makeSessionCleanupServices: Effect.fnUntraced(
+      function* <P extends Table, T extends Table, N, NS>(
+        mapping: SessionCleanupMapping<P, T, N, NS>,
+      ) {
         const target = yield* nativeTarget(configuration);
 
         return yield* target.provide(
@@ -729,6 +731,8 @@ export const makeSessionTarget = <DatabaseId, D extends NativeDriverDatabase>(
             >[1],
           ),
         );
-      }).pipe(Effect.provideServiceEffect(NativeDatabase, nativeDatabase(databaseService))),
+      },
+      Effect.provideServiceEffect(NativeDatabase, nativeDatabase(databaseService)),
+    ),
   };
 };

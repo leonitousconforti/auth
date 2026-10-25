@@ -122,8 +122,8 @@ export const keyValueRateLimiterStore: Layer.Layer<
       fixedWindow: () => unsupported,
       adaptiveConsume: () => unsupported,
       adaptiveFeedback: () => unsupported,
-      tokenBucket: (request) =>
-        Effect.gen(function* () {
+      tokenBucket: Effect.fnUntraced(
+        function* (request) {
           if (request.allowOverflow || request.tokens !== 1) return yield* unsupported;
           const refillRateMillis = Duration.toMillis(request.refillRate);
           const now = yield* Clock.currentTimeMillis;
@@ -160,24 +160,24 @@ export const keyValueRateLimiterStore: Layer.Layer<
             yield* store.set(key, yield* Schema.encodeEffect(Bucket)(bucket));
 
           return [remaining, Math.max(0, now - bucket.lastRefill)] as const;
-        }).pipe(
-          Effect.catchCause((cause) =>
-            Effect.failCause(
-              Cause.map(cause, (error) =>
-                RateLimiter.RateLimiterError.make({
-                  reason: RateLimiter.RateLimitStoreError.make({
-                    message:
-                      error._tag === "KeyValueStoreError"
-                        ? "Auth rate limit key-value store failed"
-                        : error._tag === "PlatformError"
-                          ? "Auth rate limit key digest failed"
-                          : "Auth rate limit entry is malformed",
-                  }),
+        },
+        Effect.catchCause((cause) =>
+          Effect.failCause(
+            Cause.map(cause, (error) =>
+              RateLimiter.RateLimiterError.make({
+                reason: RateLimiter.RateLimitStoreError.make({
+                  message:
+                    error._tag === "KeyValueStoreError"
+                      ? "Auth rate limit key-value store failed"
+                      : error._tag === "PlatformError"
+                        ? "Auth rate limit key digest failed"
+                        : "Auth rate limit entry is malformed",
                 }),
-              ),
+              }),
             ),
           ),
         ),
+      ),
     });
   }),
 );

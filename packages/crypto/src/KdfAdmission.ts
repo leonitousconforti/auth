@@ -1,7 +1,6 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 
@@ -78,13 +77,7 @@ export const layer = (options: Options = {}): Layer.Layer<KdfAdmission, InvalidI
 
             return admitted
               .withPermitsIfAvailable(1)(Effect.scoped(Effect.andThen(acquire, owned)))
-              .pipe(
-                Effect.flatMap((result) =>
-                  Option.isSome(result)
-                    ? Effect.succeed(result.value)
-                    : Effect.fail(KdfBusy.make({})),
-                ),
-              );
+              .pipe(Effect.flatMap((result) => Effect.fromOption(result, () => KdfBusy.make({}))));
           }),
       });
     }),

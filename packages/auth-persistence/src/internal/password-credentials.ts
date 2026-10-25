@@ -197,8 +197,8 @@ export const makePasswordCredentials = Effect.fnUntraced(function* (
   });
 
   return {
-    findCredential: (uncaptured) =>
-      Effect.gen(function* () {
+    findCredential: Effect.fnUntraced(
+      function* (uncaptured) {
         const input = { ...uncaptured, identifier: { ...uncaptured.identifier } };
 
         yield* standalone;
@@ -230,9 +230,11 @@ export const makePasswordCredentials = Effect.fnUntraced(function* (
           (input.subjectId !== undefined && credential.revision.subjectId !== input.subjectId)
           ? Option.none()
           : Option.some(credential);
-      }).pipe(failure),
-    rehashIfCurrent: (input) =>
-      Effect.gen(function* () {
+      },
+      (_) => failure(_),
+    ),
+    rehashIfCurrent: Effect.fnUntraced(
+      function* (input) {
         const nextVerifier = Redacted.make(
           yield* Schema.decodeEffect(EncodedPasswordHash)(Redacted.value(input.nextVerifier)),
         );
@@ -293,6 +295,8 @@ export const makePasswordCredentials = Effect.fnUntraced(function* (
             and ${c.column(mapping.credential.credentialId)} = ${c.value(mapping.credential.credentialId, credential.credentialId)}
             and ${exact}`;
         }).pipe(Effect.flatten);
-      }).pipe(failure),
+      },
+      (_) => failure(_),
+    ),
   } satisfies Pick<PasswordPersistence["Service"], "findCredential" | "rehashIfCurrent">;
 });

@@ -127,7 +127,10 @@ export const makePasswordVerification = ({
     const crypto = yield* Crypto.Crypto;
 
     const bytes = yield* unexpected(
-      crypto.digest("SHA-256", encoder.encode(Schema.encodeSync(tuple)(parts))),
+      crypto.digest(
+        "SHA-256",
+        encoder.encode(yield* Schema.encodeEffect(tuple)(parts).pipe(Effect.orDie)),
+      ),
     );
 
     return TokenDigest.make(Base64Url.encode(bytes));
@@ -221,13 +224,14 @@ export const makePasswordVerification = ({
         });
 
       return candidate;
-    }).pipe(
-      Effect.catchCause((cause) =>
-        cause.reasons.every(
-          (reason) => Cause.isFailReason(reason) && reason.error._tag === "PasswordRejected",
-        )
-          ? Effect.succeed(undefined)
-          : Effect.failCause(cause),
+    }).pipe((effect) =>
+      Effect.catchCauseIf(
+        effect,
+        (cause) =>
+          cause.reasons.every(
+            (reason) => Cause.isFailReason(reason) && reason.error._tag === "PasswordRejected",
+          ),
+        () => Effect.void,
       ),
     );
 

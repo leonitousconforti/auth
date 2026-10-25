@@ -117,17 +117,16 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
     }
   });
 
-  const prepare = <A>(
+  const prepare = Effect.fnUntraced(function* <A>(
     decision: P.PhoneMutationDecision,
     project: (decision: P.PhoneMutationDecision, journal: CommitJournal) => PreparedCommit<A>,
-  ) =>
-    Effect.gen(function* () {
-      const result = project(decision, yield* CurrentCommitJournal);
+  ) {
+    const result = project(decision, yield* CurrentCommitJournal);
 
-      yield* registerSqlCommitReceipt(result);
+    yield* registerSqlCommitReceipt(result);
 
-      return result;
-    });
+    return result;
+  });
 
   const capture = Effect.fnUntraced(function* (
     input: Parameters<P.PhonePersistence["Service"]["target"]>[0],
@@ -196,7 +195,7 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
           if (row[c.id] === null || row[c.id] === undefined) continue;
           if (!((yield* resolve(mapping.subjectIds.toSubject(row[c.subjectId]))) === subjectId))
             return yield* invalidState();
-          if (!!factors.some((f) => f.row[c.id] === row[c.id])) return yield* invalidState();
+          if (factors.some((f) => f.row[c.id] === row[c.id])) return yield* invalidState();
           factors.push({ row, active: Number(joinedRow.credential_active) === 1 });
         }
         if (!(factors.filter((f) => f.active).length <= 64)) return yield* invalidState();

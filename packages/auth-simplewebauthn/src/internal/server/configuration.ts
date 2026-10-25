@@ -103,11 +103,13 @@ export const captureSimpleWebAuthnProfiles = Effect.fn("captureSimpleWebAuthnPro
       return profile;
     });
   },
-  Effect.catchCause((cause) =>
-    Cause.hasDies(cause)
-      ? reportAuthFailure("passkey-protocol", cause).pipe(
+  (effect) =>
+    Effect.catchCauseIf(
+      effect,
+      (cause) => Cause.hasDies(cause),
+      (cause) =>
+        reportAuthFailure("passkey-protocol", cause).pipe(
           Effect.andThen(Effect.fail(PasskeyConfigurationError.make({}))),
-        )
-      : Effect.failCause(cause),
-  ),
+        ),
+    ),
 );

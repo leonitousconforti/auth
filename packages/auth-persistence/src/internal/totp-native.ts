@@ -172,7 +172,7 @@ export const makeNativeTotpServices = Effect.fnUntraced(function* (
       if (value[c.id] === null || value[c.id] === undefined) continue;
       if (!(mapping.subjectIds.toSubject(value[c.subjectId]) === subjectId))
         return yield* invalidState();
-      if (!!credentials.some((entry) => entry.credentialId === value[c.id]))
+      if (credentials.some((entry) => entry.credentialId === value[c.id]))
         return yield* invalidState();
       credentials.push({ credentialId: value[c.id], revision: value[c.revision] });
     }
@@ -235,8 +235,12 @@ export const makeNativeTotpServices = Effect.fnUntraced(function* (
     if (
       !(
         input.moduleId === mapping.moduleId &&
-        Schema.encodeSync(Schema.fromJsonString(TotpPolicy))(input.policy) ===
-          Schema.encodeSync(Schema.fromJsonString(TotpPolicy))(mapping.policy)
+        (yield* Schema.encodeEffect(Schema.fromJsonString(TotpPolicy))(input.policy).pipe(
+          Effect.orDie,
+        )) ===
+          (yield* Schema.encodeEffect(Schema.fromJsonString(TotpPolicy))(mapping.policy).pipe(
+            Effect.orDie,
+          ))
       )
     )
       return yield* invalidState();
@@ -679,11 +683,16 @@ export const makeNativeTotpServices = Effect.fnUntraced(function* (
             if (!(final !== undefined && final.now >= now)) return yield* invalidState();
             const expected = mapping.subject.decodeRequirement(expectedPolicy);
 
-            const encodedRequirement = Schema.encodeSync(
+            const encodedRequirement = Schema.encodeEffect(
               Schema.fromJsonString(AuthenticationRequirement),
             );
 
-            if (!(encodedRequirement(final.snapshot.requirement) === encodedRequirement(expected)))
+            if (
+              !(
+                (yield* encodedRequirement(final.snapshot.requirement).pipe(Effect.orDie)) ===
+                (yield* encodedRequirement(expected).pipe(Effect.orDie))
+              )
+            )
               return yield* invalidState();
           }
         }).pipe(

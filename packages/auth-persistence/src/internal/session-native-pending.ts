@@ -216,14 +216,13 @@ export const makeNativeSessionPending = Effect.fnUntraced(function* (
   };
 });
 
-export const prepareNativeSession = <Value, A>(
+export const prepareNativeSession = Effect.fnUntraced(function* <Value, A>(
   value: Value,
   project: (value: Value, journal: CommitJournal) => PreparedCommit<A>,
-) =>
-  Effect.gen(function* () {
-    const receipt = project(value, yield* CurrentCommitJournal);
+) {
+  const receipt = project(value, yield* CurrentCommitJournal);
 
-    yield* registerSqlCommitReceipt(receipt);
+  yield* registerSqlCommitReceipt(receipt);
 
-    return receipt;
-  });
+  return receipt;
+});

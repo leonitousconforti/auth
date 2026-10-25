@@ -3,7 +3,8 @@ import {
   PasskeyBrowser,
   layer as layerSimpleWebAuthnPasskeyBrowser,
 } from "@yielded/auth-simplewebauthn/Browser";
-import { DateTime, Effect, Layer, Redacted, Schema } from "effect";
+import { layerCryptoWeb } from "@yielded/auth/WebCrypto";
+import { Crypto, DateTime, Effect, Layer, Redacted, Schema } from "effect";
 import type { KeyValueStore } from "effect/persistence";
 import { Atom, type AsyncResult } from "effect/reactivity";
 
@@ -70,7 +71,7 @@ export const makeAccountClient = <Auth extends AccountAuth>(
   browser: Layer.Layer<PasskeyBrowser> = layerSimpleWebAuthnPasskeyBrowser,
 ) => {
   const factory = Atom.context();
-  const runtime = factory(Layer.merge(storage, browser));
+  const runtime = factory(Layer.mergeAll(storage, browser, layerCryptoWeb));
   const { auth, register, signIn: passwordSignIn } = bind(factory);
 
   const page = Atom.kvs({
@@ -98,7 +99,7 @@ export const makeAccountClient = <Auth extends AccountAuth>(
     mode: "async",
   });
 
-  const id = Effect.sync(() => crypto.randomUUID());
+  const id = Effect.flatMap(Crypto.Crypto, (crypto) => crypto.randomUUIDv4()).pipe(Effect.orDie);
   const nowMillis = DateTime.now.pipe(Effect.map(DateTime.toEpochMillis));
   const clock = runtime.atom(nowMillis).pipe(Atom.withRefresh("1 second"));
 

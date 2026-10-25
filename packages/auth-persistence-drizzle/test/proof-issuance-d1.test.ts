@@ -81,9 +81,9 @@ it.effect("D1 rejects a planned reissue when another live binding wins before ba
     // A different binding won the series after the advisory planning read.
     const replacement = record("replacement", "replacement");
 
-    const binding = Schema.encodeSync(Schema.fromJsonString(Proofs.ProofBinding))(
+    const binding = yield* Schema.encodeEffect(Schema.fromJsonString(Proofs.ProofBinding))(
       replacement.binding,
-    );
+    ).pipe(Effect.orDie);
 
     yield* sql`update proof_test_proofs set proof_id = ${replacement.proofId}, binding = ${binding}, verifier_digest = ${replacement.verifier.digest}`;
   });

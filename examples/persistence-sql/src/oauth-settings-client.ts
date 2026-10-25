@@ -1,12 +1,21 @@
 import { Atom as AuthAtom, Client, OAuth } from "@yielded/auth";
-import { DateTime, Effect, Redacted, Schema } from "effect";
+import { layerCryptoWeb } from "@yielded/auth/WebCrypto";
+import { Crypto, DateTime, Effect, Layer, Redacted, Schema } from "effect";
 import { KeyValueStore } from "effect/persistence";
 import { Atom } from "effect/reactivity";
 
 import { Attempt, CallbackExpired, SettingsApi } from "./oauth-settings-contract";
 
 const factory = Atom.context();
-const runtime = factory(KeyValueStore.layerStorage(() => sessionStorage));
+
+const runtime = factory(
+  Layer.merge(
+    KeyValueStore.layerStorage(() => sessionStorage),
+    layerCryptoWeb,
+  ),
+);
+
+const id = Effect.flatMap(Crypto.Crypto, (crypto) => crypto.randomUUIDv4()).pipe(Effect.orDie);
 const SettingsClient = Client.make(SettingsApi, { baseUrl: location.origin });
 
 export const auth = AuthAtom.make(SettingsClient, { runtime: factory });
@@ -40,7 +49,7 @@ export const begin = runtime.fn<"sign-in" | "link" | "switch">()(
 
     const started =
       kind === "link"
-        ? yield* get.setResult(auth.linkAccount, { ...input, flowId: crypto.randomUUID() })
+        ? yield* get.setResult(auth.linkAccount, { ...input, flowId: yield* id })
         : yield* get.setResult(auth.signIn, input);
 
     get.set(attempt, {
@@ -132,7 +141,7 @@ export const complete = runtime.fn<void>()(
 export const unlink = runtime.fn<string>()(
   Effect.fn("OAuthSettings.unlink")(function* (credentialId, get) {
     get.set(notice, null);
-    yield* get.setResult(auth.unlinkAccount, { credentialId, commandId: crypto.randomUUID() });
+    yield* get.setResult(auth.unlinkAccount, { credentialId, commandId: yield* id });
     get.set(cursor, undefined);
     get.set(
       notice,

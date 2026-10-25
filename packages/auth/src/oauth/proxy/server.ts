@@ -58,10 +58,7 @@ export class Server extends Context.Service<
   }
 >()("effect-auth/OAuthProxy/Server") {}
 
-const sameConfiguration = (
-  left: typeof OAuthProtocolConfiguration.Type,
-  right: typeof OAuthProtocolConfiguration.Type,
-) =>
+const sameConfiguration = (left: OAuthProtocolConfiguration, right: OAuthProtocolConfiguration) =>
   Schema.encodeSync(Schema.fromJsonString(OAuthProtocolConfiguration))(left) ===
   Schema.encodeSync(Schema.fromJsonString(OAuthProtocolConfiguration))(right);
 

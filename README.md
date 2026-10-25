@@ -96,7 +96,7 @@ const result = yield* auth.signIn({ email, password });
 ```
 
 The request context supplies credentials and cookie delivery. `auth.getSession()`,
-`auth.requireSession()`, and `auth.signOut()` use the same boundary. An
+`auth.requireSession`, and `auth.signOut` use the same boundary. An
 `Authenticated` sign-in result contains a session with typed `claims.displayName`.
 
 Create the client and its atoms from the same contract:

@@ -13,14 +13,14 @@ import type { TotpSecretBinding, TotpSecretEnvelope } from "./models";
 export class TotpCryptography extends Context.Service<
   TotpCryptography,
   {
-    readonly randomId: () => Effect.Effect<string, TotpUnavailable>;
+    readonly randomId: Effect.Effect<string, TotpUnavailable>;
     readonly digest: (value: string) => Effect.Effect<TokenDigest, TotpUnavailable>;
     readonly recoveryDigest: (
       moduleId: string,
       subjectId: string,
       value: string,
     ) => Effect.Effect<TokenDigest, TotpUnavailable>;
-    readonly generateSecret: () => Effect.Effect<Uint8Array, TotpUnavailable>;
+    readonly generateSecret: Effect.Effect<Uint8Array, TotpUnavailable>;
     readonly matchCode: (
       secret: Uint8Array,
       code: string,

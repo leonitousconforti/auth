@@ -136,8 +136,9 @@ const acquireBrowser = Effect.sync(() => {
 
   return lease;
 }).pipe(
-  Effect.flatMap((lease) =>
-    lease === undefined ? Effect.fail(failure("busy")) : Effect.succeed(lease),
+  Effect.filterOrFail(
+    (lease) => !(lease === undefined),
+    () => failure("busy"),
   ),
 );
 

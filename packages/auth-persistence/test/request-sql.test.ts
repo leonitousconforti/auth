@@ -297,13 +297,13 @@ it.live(
         ),
       ).toMatchObject({ _tag: "Failure", failure: { _tag: "OAuthUnavailable" } });
 
-      const decisions = yield* Effect.all(
-        [first, second].map((client) =>
+      const decisions = yield* Effect.forEach(
+        [first, second],
+        (client) =>
           issue(valid.oauthRegistrationIntents).pipe(
             Effect.flatMap((receipt) => receipt.read),
             Effect.provideService(RequestClient, client),
           ),
-        ),
         { concurrency: 2 },
       );
 

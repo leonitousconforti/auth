@@ -440,17 +440,16 @@ export interface SqlBatchCollector {
 
 export const captureSqlBatchStatements: Effect.Effect<SqlBatchCollector, never, CurrentSqlCommit> =
   Effect.map(CurrentSqlCommit, (scope) => ({
-    append: (statement: Statement.Statement<unknown>) =>
-      Effect.gen(function* () {
-        const current = yield* Effect.serviceOption(CurrentSqlCommit);
+    append: Effect.fnUntraced(function* (statement: Statement.Statement<unknown>) {
+      const current = yield* Effect.serviceOption(CurrentSqlCommit);
 
-        if (
-          !scope.active ||
-          scope.mode !== "batch" ||
-          Option.isNone(current) ||
-          current.value !== scope
-        )
-          return yield* closed();
-        scope.statements.push(statement);
-      }),
+      if (
+        !scope.active ||
+        scope.mode !== "batch" ||
+        Option.isNone(current) ||
+        current.value !== scope
+      )
+        return yield* closed();
+      scope.statements.push(statement);
+    }),
   }));

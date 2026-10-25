@@ -124,17 +124,18 @@ export const makeOAuthNativeMutation = Effect.fnUntraced(function* (
     ]);
 
   const insertUnique = (statement: Statement.Fragment) =>
-    change(statement).pipe(
-      Effect.catchCause((cause) =>
-        cause.reasons.length > 0 &&
-        cause.reasons.every(
-          (reason) =>
-            Cause.isFailReason(reason) &&
-            Schema.is(SqlError.SqlError)(reason.error) &&
-            reason.error.reason._tag === "UniqueViolation",
-        )
-          ? Effect.succeed(0)
-          : Effect.failCause(cause),
+    change(statement).pipe((effect) =>
+      Effect.catchCauseIf(
+        effect,
+        (cause) =>
+          cause.reasons.length > 0 &&
+          cause.reasons.every(
+            (reason) =>
+              Cause.isFailReason(reason) &&
+              Schema.is(SqlError.SqlError)(reason.error) &&
+              reason.error.reason._tag === "UniqueViolation",
+          ),
+        () => Effect.succeed(0),
       ),
     );
 

@@ -78,7 +78,7 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
       ? run(effect)
       : executor.run(Effect.provideService(effect, Crypto.Crypto, crypto), mode);
 
-  const refreshMiss = <A>(
+  const refreshMiss = Effect.fnUntraced(function* <A>(
     key: M.OAuthConnectedGrantKey,
     nativeId: unknown,
     encoded: string,
@@ -88,25 +88,24 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
       decision: typeof M.OAuthConnectedRefreshDecision.Type,
       journal: CommitJournal,
     ) => PreparedCommit<A>,
-  ) =>
-    Effect.gen(function* () {
-      const rows =
-        yield* sql`select ${grant.column(g.state)} as state,${now} as instant from ${grant.name} where ${state.key(key, nativeId)} and ${state.exact(g.snapshot, encoded)} and ${required} limit 2`;
+  ) {
+    const rows =
+      yield* sql`select ${grant.column(g.state)} as state,${now} as instant from ${grant.name} where ${state.key(key, nativeId)} and ${state.exact(g.snapshot, encoded)} and ${required} limit 2`;
 
-      if (!(rows.length <= 1)) return yield* invalidState();
-      const row = rows[0];
+    if (!(rows.length <= 1)) return yield* invalidState();
+    const row = rows[0];
 
-      return yield* prepareOAuthNative(
-        row === undefined
-          ? { _tag: "Rejected" }
-          : row.state === "Refreshing"
-            ? { _tag: "Busy" }
-            : row.state !== "Active" || Number(row.instant) >= upper
-              ? { _tag: "ReauthorizationRequired" }
-              : { _tag: "Busy" },
-        prepare,
-      );
-    });
+    return yield* prepareOAuthNative(
+      row === undefined
+        ? { _tag: "Rejected" }
+        : row.state === "Refreshing"
+          ? { _tag: "Busy" }
+          : row.state !== "Active" || Number(row.instant) >= upper
+            ? { _tag: "ReauthorizationRequired" }
+            : { _tag: "Busy" },
+      prepare,
+    );
+  });
 
   const read = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     executor.read(Effect.provideService(effect, Crypto.Crypto, crypto));

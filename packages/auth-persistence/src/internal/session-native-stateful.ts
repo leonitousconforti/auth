@@ -378,13 +378,12 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
         ),
       ),
     verify: ({ digest }) =>
-      executor
-        .verify(verify(digest))
-        .pipe(
-          Effect.flatMap((record) =>
-            record === undefined ? Effect.fail(SessionInvalid.make({})) : Effect.succeed(record),
-          ),
+      executor.verify(verify(digest)).pipe(
+        Effect.filterOrFail(
+          (record) => !(record === undefined),
+          () => SessionInvalid.make({}),
         ),
+      ),
     rotate: (input, project) =>
       native(
         classify(

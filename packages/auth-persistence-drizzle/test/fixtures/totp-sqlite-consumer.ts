@@ -197,7 +197,7 @@ export const useAuthenticator = Effect.gen(function* () {
     change: Parameters<TotpPersistence["Service"]["mutate"]>[0]["action"],
     management?: typeof TotpActionChallenge.Type.action,
   ) {
-    const commandId = yield* randomId(),
+    const commandId = yield* randomId,
       authorization =
         management === undefined ? undefined : yield* action(snapshot, management, commandId);
 
@@ -218,10 +218,10 @@ export const useAuthenticator = Effect.gen(function* () {
 
   const initial = yield* current(),
     now = DateTime.toEpochMillis(yield* DateTime.now),
-    secret = yield* generateSecret(),
-    credentialId = yield* randomId(),
-    revision = yield* randomId(),
-    enrollmentId = yield* randomId();
+    secret = yield* generateSecret,
+    credentialId = yield* randomId,
+    revision = yield* randomId,
+    enrollmentId = yield* randomId;
 
   const envelope = yield* encryptSecret({ moduleId, subjectId, credentialId, revision }, secret);
 
@@ -230,7 +230,7 @@ export const useAuthenticator = Effect.gen(function* () {
     subjectId,
     credentialId,
     revision,
-    version: yield* randomId(),
+    version: yield* randomId,
     secret: null,
     pending: {
       revision,
