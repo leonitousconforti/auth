@@ -86,6 +86,11 @@ For Cloudflare D1, import `AuthPersistence` from
 See [D1 composition](../reference/adapters.md#managed-d1) for migrations and batch
 constraints.
 
+With `PhoneOtp.make({ lifecycle: true })` and `Sessions.stateful()`, managed or
+mapped storage also supports account signup and phone number updates. Supply
+account values through `Persistence.Provisioning`; see the
+[phone lifecycle guide](./phone).
+
 ## Your schema
 
 Declare your tables and connect them with `Persistence.map({ subjects, tables })`.

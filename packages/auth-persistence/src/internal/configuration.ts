@@ -21,7 +21,13 @@ import type {
   PasswordPersistence,
   PasswordUnavailable,
 } from "@yielded/auth/Password";
-import type { PhoneSignInTargets } from "@yielded/auth/PhoneOtp";
+import type {
+  PhoneActionChallenge,
+  PhoneLifecyclePolicy,
+  PhoneOtpUnavailable,
+  PhonePersistence,
+  PhoneSignInTargets,
+} from "@yielded/auth/PhoneOtp";
 import type { ProofPersistence } from "@yielded/auth/Proofs";
 import type { SubjectId } from "@yielded/auth/Schema";
 import type {
@@ -62,16 +68,23 @@ export interface OAuthFeature {
   readonly connected?: OAuthConnectedPolicy;
 }
 
+export interface PhoneFeature {
+  readonly kind: "phone";
+  readonly moduleId: string;
+  readonly lifecycle?: boolean;
+  readonly lifecyclePolicy?: PhoneLifecyclePolicy;
+}
+
 export interface Strategy {
   readonly strategy: object;
   /** Absent metadata leaves the strategy's persistence services application-supplied. */
   readonly persistence?:
     | PasskeyFeature
     | OAuthFeature
+    | PhoneFeature
     | {
-        readonly kind: "password" | "phone" | "email";
+        readonly kind: "password" | "email";
         readonly moduleId: string;
-        readonly lifecycle?: boolean;
         readonly management?: boolean;
         readonly addresses?: boolean;
       };
@@ -94,6 +107,11 @@ type Enabled<
 
 type ManagedPassword<A extends { readonly strategies: Readonly<Record<string, Strategy>> }> =
   Extract<Enabled<A, "password">, { persistence: { management: true } }>;
+
+type ManagedPhone<A extends { readonly strategies: Readonly<Record<string, Strategy>> }> = Extract<
+  Enabled<A, "phone">,
+  { persistence: { lifecycle: true } }
+>;
 
 type ManagedPasskey<A extends { readonly strategies: Readonly<Record<string, Strategy>> }> =
   Extract<Enabled<A, "passkey">, { persistence: { management: true } }>;
@@ -146,19 +164,34 @@ export type SubjectProvisioning<Registration> =
       input: SubjectProvisioningInput<Registration>,
     ) => Effect.Effect<SubjectId, PasswordUnavailable>);
 
+/** Prepare the complete application subject row after phone ownership is proved.
+ * Include the allocated native ID, active status, initial security revision and
+ * fields needed by subject policy. Do not write to storage or perform external
+ * side effects; the phone commit owner inserts these values with the credential.
+ * requestId identifies the redeemed proof, independently of completion retries.
+ */
+export interface PhoneSubjectProvisioning {
+  readonly values: (input: {
+    readonly requestId: string;
+    readonly identifier: LoginIdentifier;
+  }) => Effect.Effect<Readonly<Record<string, unknown>>, PhoneOtpUnavailable>;
+}
+
 export type Provisioning<A extends { readonly strategies: Readonly<Record<string, Strategy>> }> = {
   readonly [
     K in keyof A["strategies"] as A["strategies"][K] extends {
-      persistence: { kind: "password"; management: true };
+      persistence: { kind: "password"; management: true } | { kind: "phone"; lifecycle: true };
     }
       ? K
       : never
-  ]: SubjectProvisioning<Registration<A["strategies"][K]>>;
+  ]: A["strategies"][K] extends { persistence: { kind: "phone" } }
+    ? PhoneSubjectProvisioning
+    : SubjectProvisioning<Registration<A["strategies"][K]>>;
 };
 
 export type ProvisioningRequirement<
   A extends { readonly namespace: string; readonly strategies: Readonly<Record<string, Strategy>> },
-> = ManagedPassword<A> extends never ? never : ProvisioningId<A["namespace"]>;
+> = ManagedPassword<A> | ManagedPhone<A> extends never ? never : ProvisioningId<A["namespace"]>;
 
 type ProofRoles = "proofs";
 
@@ -184,6 +217,7 @@ export type Ports<C extends ClaimsCodec, Id extends string, A extends Definition
   | (Enabled<A, "email"> extends never ? never : EmailAddressPersistence)
   | (UsesProofs<A> extends never ? never : ProofPersistence)
   | (Enabled<A, "phone"> extends never ? never : PhoneSignInTargets)
+  | (ManagedPhone<A> extends never ? never : PhonePersistence)
   | (OAuthSignIn<A> extends never ? never : OAuthSignInPersistence | IdentityImports)
   | (OAuthConnected<A> extends never
       ? never
@@ -217,7 +251,11 @@ export interface SubjectOptions<T extends object, NativeId> {
   /** Defaults to sign-in requirements. Recovery can have a distinct application policy. */
   readonly actionRequirements?: (
     row: Readonly<Record<string, unknown>>,
-    action: PasswordAction | EmailAction | PasskeyActionChallenge["action"],
+    action:
+      | PasswordAction
+      | EmailAction
+      | PasskeyActionChallenge["action"]
+      | PhoneActionChallenge["action"],
   ) => Effect.Effect<AuthenticationRequirement, PersistenceMappingError>;
 }
 
@@ -275,7 +313,7 @@ export interface BoundPersistence<
     ) => Layer.Layer<ConfigId<A["namespace"]>>;
   };
   /** Supply subject values through `{ values }` on every driver, including D1.
-   * Interactive drivers also accept callbacks that insert through the owning
+   * For passwords, interactive drivers also accept callbacks that insert through the owning
    * SqlClient and return the new subject ID. Never open an independent transaction
    * or perform external side effects while preparing a subject.
    */

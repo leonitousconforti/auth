@@ -29,11 +29,14 @@ connection and migration runner. On Workers, use a [request-scoped SQL connectio
 and shared `WorkerdServices`.
 
 The composed Layer covers password sign-in and management, email address verification
-and changes, phone sign-in, passkey sign-in and management, OAuth sign-in with optional
-retained access, and connected accounts with stateful sessions on PostgreSQL and SQLite.
+and changes, phone sign-in and enabled lifecycle operations, passkey sign-in and
+management, OAuth sign-in with optional retained access, and connected accounts
+with stateful sessions on PostgreSQL and SQLite.
 OAuth-only definitions also support stateless sessions without a session table; identity
 authority and OAuth flows remain durable. Other stateless combinations and state-assisted
 sessions require explicit persistence services.
+Phone signup supplies subject values through `Persistence.Provisioning`; applications
+retain delivery, claims, and authorization for number verification and changes.
 OAuth registration and login linking/unlinking still use explicit `OAuthPersistence`
 mappings. Applications provision login identities and supply OAuth action evidence,
 use authorization, provider configuration, and encryption keys.

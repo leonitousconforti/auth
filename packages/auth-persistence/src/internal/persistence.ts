@@ -20,7 +20,7 @@ import {
   reportAuthDiagnostic,
   reportPersistenceFailure,
 } from "@yielded/auth/Persistence";
-import { PhoneSignInTargets, PhoneOtpUnavailable } from "@yielded/auth/PhoneOtp";
+import { PhonePersistence, PhoneSignInTargets, PhoneOtpUnavailable } from "@yielded/auth/PhoneOtp";
 import { ProofPersistence, ProofUnavailable } from "@yielded/auth/Proofs";
 import { AuthenticationAuthority, SessionUnavailable } from "@yielded/auth/Sessions";
 import * as Cause from "effect/Cause";
@@ -56,7 +56,7 @@ import { makeManagedOAuth } from "./oauth-managed";
 import { IdentityImport, IdentityImports } from "./oauth/identity-import";
 import { makeManagedPasskeys } from "./passkey-managed";
 import { makeNativePasswordServices } from "./password-native";
-import { makeComposedPhoneTargets } from "./phone-composed";
+import { makeComposedPhoneServices } from "./phone-composed";
 import { makeNativeProofServices } from "./proof-native";
 import { makeRegistrationAuthority } from "./registration";
 import type { PasswordRegistrationAuthority } from "./registration-contract";
@@ -129,7 +129,12 @@ export const createPersistence = <T extends object, R, Database extends object =
       strategy.persistence === undefined ? [] : [strategy.persistence],
     );
 
-    const phone = features.some((feature) => feature.kind === "phone");
+    const phones = Object.entries(auth.strategies).flatMap(([name, strategy]) =>
+      strategy.persistence?.kind === "phone" ? [{ name, feature: strategy.persistence }] : [],
+    );
+
+    const phone = phones.length > 0;
+    const phoneLifecycle = phones.some(({ feature }) => feature.lifecycle);
     const password = features.some((feature) => feature.kind === "password");
 
     const passkeys = features.filter(
@@ -322,13 +327,7 @@ export const createPersistence = <T extends object, R, Database extends object =
 
           if (dialect === undefined)
             return yield* configError("Use an explicit adapter for this SQL dialect");
-          if (
-            features.some(
-              (feature) =>
-                ("lifecycle" in feature && feature.lifecycle) ||
-                (feature.kind === "email" && !feature.addresses),
-            )
-          )
+          if (features.some((feature) => feature.kind === "email" && !feature.addresses))
             return yield* configError(
               "Use explicit services for strategies without composed persistence support",
             );
@@ -485,17 +484,19 @@ export const createPersistence = <T extends object, R, Database extends object =
               )).emailAddressPersistence,
             );
 
-          if (phone)
-            context = Context.add(
-              context,
-              PhoneSignInTargets,
-              yield* makeComposedPhoneTargets(
-                backend.nativeTables(database),
-                storage,
-                yield* mappings.proofs(),
-                features.flatMap((feature) => (feature.kind === "phone" ? [feature.moduleId] : [])),
-              ),
+          if (phone) {
+            const services = yield* makeComposedPhoneServices(
+              backend.nativeTables(database),
+              storage,
+              yield* mappings.proofs(),
+              phones,
+              ProvisioningKey,
             );
+
+            context = Context.add(context, PhoneSignInTargets, services.phoneSignInTargets);
+            if (phoneLifecycle)
+              context = Context.add(context, PhonePersistence, services.phonePersistence);
+          }
 
           if (passkeys.length > 0) {
             // This existential definition has lost its strategy types. The checked passkey
@@ -766,6 +767,15 @@ export const createPersistence = <T extends object, R, Database extends object =
               lookup: (input) => Effect.flatMap(targets, (s) => s.lookup(input)),
             }),
           );
+          if (phoneLifecycle) {
+            const persistence = service(PhonePersistence, unavailable);
+
+            context = Context.add(context, PhonePersistence, {
+              target: (input) => Effect.flatMap(persistence, (s) => s.target(input)),
+              mutate: (input, prepare) =>
+                Effect.flatMap(persistence, (s) => s.mutate(input, prepare)),
+            });
+          }
         }
         if (passkeys.length > 0) {
           const unavailable = () => PasskeyUnavailable.make({});

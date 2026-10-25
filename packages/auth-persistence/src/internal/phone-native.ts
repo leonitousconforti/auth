@@ -4,6 +4,7 @@ import {
   type PreparedCommit,
   type CommitJournal,
 } from "@yielded/auth/Hooks";
+import { LoginIdentifier } from "@yielded/auth/Identity";
 import * as P from "@yielded/auth/PhoneOtp";
 import { ProofRedemptionInput } from "@yielded/auth/Proofs";
 import {
@@ -13,14 +14,17 @@ import {
   snapshotAuthenticationEvidence,
 } from "@yielded/auth/Sessions";
 import * as Cause from "effect/Cause";
+import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import type * as Statement from "effect/sql/Statement";
 
+import type { PhoneSubjectProvisioning } from "./configuration";
 import { randomId } from "./crypto";
 import { sqlBatchAssertion } from "./d1-planning";
 import { PersistenceMappingError } from "./mapping-error";
@@ -49,6 +53,16 @@ const resolve = <A>(
   Effect.isEffect(value) ? value : Effect.succeed(value);
 
 const targetCodec = Schema.fromJsonString(P.PhoneLifecycleTarget);
+const SubjectValues = Schema.Record(Schema.String, Schema.Unknown);
+
+/** Application subject preparation for the phone commit owner. The default supplies
+ * no values; explicit mappings then require their own allocator and insert encoder. */
+export class PhoneRegistrationValues extends Context.Service<
+  PhoneRegistrationValues,
+  Option.Option<PhoneSubjectProvisioning>
+>()("@yielded/auth-persistence/PhoneRegistrationValues") {
+  static readonly defaultLayer = Layer.succeed(PhoneRegistrationValues, Option.none());
+}
 
 const sameRevision = (a: AuthenticationRevision, b: AuthenticationRevision) =>
   a.subjectId === b.subjectId &&
@@ -68,17 +82,22 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
     readonly phoneSignInTargets: P.PhoneSignInTargets["Service"];
   },
   P.PhoneOtpUnavailable,
-  SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto | SqlBatchCommit
+  SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto | SqlBatchCommit | PhoneRegistrationValues
 > {
   const batch = yield* SqlBatchCommit;
   const sql = (yield* SqlClient.SqlClient).withoutTransforms();
   const executor = yield* makeSqlCommitExecutor(unavailable);
   const crypto = yield* Crypto.Crypto;
   const external = yield* Effect.serviceOption(CurrentSqlCommit);
+  const provisioning = yield* PhoneRegistrationValues;
 
   const s = mapping.subject,
     i = mapping.identifier,
     c = mapping.credential;
+
+  const registration =
+    Option.isSome(provisioning) ||
+    (mapping.subjectIds.allocate !== undefined && s.encodeInsert !== undefined);
 
   const subject = tables(s.table),
     identifier = tables(i.table),
@@ -245,7 +264,7 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
 
     const eligible =
       input.action === "register"
-        ? destination === undefined
+        ? registration && destination === undefined
         : revision !== null &&
           input.subjectId === subjectId &&
           (destination === undefined ||
@@ -330,11 +349,7 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
           const rejected = () => prepare({ _tag: "Rejected" }, project);
 
           if (!(input.moduleId === mapping.moduleId)) return yield* invalidState();
-          if (
-            input.action === "register" &&
-            (mapping.subjectIds.allocate === undefined || s.encodeInsert === undefined)
-          )
-            return yield* rejected();
+          if (input.action === "register" && !registration) return yield* rejected();
           const policy = yield* Schema.decodeEffect(P.PhoneLifecyclePolicy)(input.policy);
 
           if (
@@ -469,10 +484,27 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
           if (result.decision !== "redeemed") return yield* rejected();
           freshness.push(result.validUntil);
 
+          const preparedSubject =
+            input.action === "register" && Option.isSome(provisioning)
+              ? yield* provisioning.value
+                  .values({
+                    requestId: `phone-registration:${mapping.moduleId}:${redemption.proofId}`,
+                    identifier: LoginIdentifier.make({
+                      namespace: "phone",
+                      value: target.phoneNumber,
+                    }),
+                  })
+                  .pipe(Effect.flatMap(Schema.decodeUnknownEffect(SubjectValues)))
+              : undefined;
+
           const subjectId =
             input.action === "register"
               ? yield* resolve(
-                  mapping.subjectIds.toSubject(yield* resolve(mapping.subjectIds.allocate!())),
+                  mapping.subjectIds.toSubject(
+                    preparedSubject === undefined
+                      ? yield* resolve(mapping.subjectIds.allocate!())
+                      : preparedSubject[s.id],
+                  ),
                 )
               : target.revision!.subjectId;
 
@@ -481,7 +513,12 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
           if (!((yield* resolve(mapping.subjectIds.toSubject(native))) === subjectId))
             return yield* invalidState();
 
-          const securityRevision = SecurityRevision.make(yield* randomId),
+          const securityRevision =
+              preparedSubject === undefined
+                ? SecurityRevision.make(yield* randomId)
+                : yield* Schema.decodeUnknownEffect(SecurityRevision)(
+                    preparedSubject[s.securityRevision],
+                  ),
             credentialRevision = SecurityRevision.make(yield* randomId),
             custodyRevision = SecurityRevision.make(yield* randomId);
 
@@ -510,11 +547,13 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
           let subjectRow = captured.subjectRow;
 
           if (input.action === "register") {
-            const inserted = s.encodeInsert!({
-              id: native,
-              securityRevision,
-              phoneNumber: target.phoneNumber,
-            });
+            const inserted =
+              preparedSubject ??
+              s.encodeInsert!({
+                id: native,
+                securityRevision,
+                phoneNumber: target.phoneNumber,
+              });
 
             yield* stage(subject.insert(inserted));
             // Native provisioning decodes database defaults in the final guarded

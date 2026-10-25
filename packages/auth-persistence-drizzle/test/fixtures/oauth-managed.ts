@@ -138,7 +138,7 @@ function quote(name: string): string {
   return '"' + name.replaceAll('"', '""') + '"';
 }
 
-const migrate = Effect.fnUntraced(function* (
+export const migrate = Effect.fnUntraced(function* (
   tables: ReadonlyArray<ManagedTable>,
 ): Effect.fn.Return<void, SqlError.SqlError, SqlClient.SqlClient> {
   const client = yield* SqlClient.SqlClient;

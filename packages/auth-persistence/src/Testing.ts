@@ -158,8 +158,7 @@ export const layer = <C extends ClaimsCodec, const Id extends string>(
         auth.sessionMode !== "stateful" ||
         strategies.length !== 1 ||
         feature?.kind !== "password" ||
-        feature.management ||
-        feature.lifecycle
+        feature.management
       ) {
         return yield* configurationError(
           "Testing.layer supports one sign-in-only Password.make() strategy and stateful sessions",

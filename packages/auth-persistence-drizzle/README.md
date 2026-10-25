@@ -20,7 +20,8 @@ Supply the primary D1 binding through `D1Client.layer` and apply generated SQL
 with `AuthPersistence.migrationsLayer({ migrations })` using bundled SQL,
 or with your existing D1 migration runner. Its composed services use atomic batches.
 OAuth sign-in and retained provider access use the same managed composition.
-Password provisioning returns subject values through `Persistence.Provisioning`;
+Phone sign-in and enabled lifecycle operations use the same composition.
+Password and phone provisioning return subject values through `Persistence.Provisioning`;
 the library commits the account and credentials together.
 
 SQLite/D1 and PostgreSQL driver modules also expose `OAuthProxyPersistence` for

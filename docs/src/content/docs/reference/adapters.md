@@ -106,8 +106,9 @@ before storage operations resume. Cookie-cached and anonymous session reads do
 not trigger initialization.
 
 Composition supports password sign-in, registration and management, email address
-verification and changes, phone sign-in, passkey sign-in and management, OAuth
-sign-in and connected grants, and stateful sessions on PostgreSQL and SQLite.
+verification and changes, phone sign-in and enabled lifecycle operations, passkey
+sign-in and management, OAuth sign-in and connected grants, and stateful sessions
+on PostgreSQL and SQLite.
 OAuth-only definitions also support `Sessions.stateless()`: flows, grants, and
 issuance authority remain durable; session verification uses signed credentials.
 Stateless sessions retain their configured lifetime after authority changes.
@@ -118,25 +119,30 @@ Email storage permits one verified address per subject and email module.
 Composed tables use canonical logical column names and text auth IDs; subject ID
 codecs and order-preserving timestamp codecs remain application-owned.
 
-For password registration, supply `Persistence.Provisioning` under the strategy's
-name:
+For password or phone registration, supply `Persistence.Provisioning` under each
+strategy's name:
 
 ```ts
 const ProvisioningLive = Layer.succeed(Persistence.Provisioning, {
   password: { values: customerValues },
+  phone: { values: phoneCustomerValues },
 });
 const PersistenceLive = Persistence.layer.pipe(Layer.provide(ProvisioningLive));
 ```
 
-`customerValues({ requestId, registration, identifier })` returns subject insert
-values, including the allocated ID, active status, and initial security revision.
-Use logical column names. Preparing values must not write to the database or perform
-external side effects. The library commits the subject and credentials together;
-an occupied identifier never overwrites a password. `requestId` is stable for the
-application operation.
+`customerValues({ requestId, registration, identifier })` prepares password signup;
+`phoneCustomerValues({ requestId, identifier })` prepares phone signup after number
+verification. The phone identifier is `{ namespace: "phone", value: phoneNumber }`;
+there is no registration payload. Both return subject insert values, including
+the allocated native ID, active status, initial security revision, and fields
+required by account policy. Use logical column names. Preparing values must not
+write to the database or perform external side effects. The library commits the
+subject and credentials together; an occupied identifier never overwrites a
+password. `requestId` is stable for the application operation.
 
 Interactive drivers also accept `password: createCustomer`, which inserts through
 the owning Effect SQL client and returns the subject ID. D1 requires `{ values }`.
+Phone provisioning requires `{ values }` on every driver.
 See the [managed wiring](https://github.com/yielded-dev/auth/blob/main/examples/persistence-drizzle-managed/src/live.ts).
 `subjects.actionRequirements` defaults to `subjects.requirements`; override it for
 a distinct recovery or credential-change policy.
@@ -206,7 +212,7 @@ Import `AuthPersistence` from `@yielded/auth-persistence-drizzle/D1` and supply
 passkeys. Use the original D1 database binding, not a
 [D1 read-replica session](https://developers.cloudflare.com/d1/best-practices/read-replication/).
 The same composed API uses atomic batches rather than interactive transactions;
-password provisioning must return subject values as described above.
+password and phone provisioning must return subject values as described above.
 
 Export the managed tables for Drizzle Kit. Bundle generated SQL and apply it before
 serving auth, or use your D1 migration runner:
@@ -539,8 +545,14 @@ revision and existing sessions.
 
 ## Phone
 
-The composed Layer supplies phone sign-in and proof services. For number lifecycle
-operations or specialized mappings, use the explicit services:
+The composed Layer supplies phone sign-in and proof services. With
+`PhoneOtp.make({ lifecycle: true })` or a lifecycle policy object, it also supplies
+`PhonePersistence` for registration, verification, and number changes using the
+existing tables. Supply phone provisioning as described above; delivery, claims,
+and `PhoneActionEvidence` for verification and changes remain application-owned.
+See the [phone guide](../guide/phone).
+
+For specialized mappings, use the explicit services:
 
 <!-- #region phone-layers -->
 

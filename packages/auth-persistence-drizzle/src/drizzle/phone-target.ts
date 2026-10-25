@@ -1,5 +1,6 @@
 import {
   makeNativePhoneServices,
+  PhoneRegistrationValues,
   type AnyPhoneMapping as SharedMapping,
 } from "@yielded/auth-persistence/Adapter";
 import {
@@ -43,7 +44,11 @@ const services = Effect.fnUntraced(function* (
   const target = yield* nativeTarget(configuration);
   const mapping: SharedMapping = { ...source, proofs: nativeProofMapping(source.proofs) };
 
-  return yield* target.provide(makeNativePhoneServices(target.tables, mapping));
+  return yield* target.provide(
+    makeNativePhoneServices(target.tables, mapping).pipe(
+      Effect.provide(PhoneRegistrationValues.defaultLayer),
+    ),
+  );
 });
 
 export const makeTargetPhonePersistenceServices = (
