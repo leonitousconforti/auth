@@ -8,9 +8,10 @@ Start with the [OAuth guide](../guide/oauth) for the flow and choice of API.
 ## Authorization server
 
 `OAuthServer.make(id, { scopes })` provides `Identity`, `Service`, `routes`,
-`middleware(requiredScopes)`, and `paths`. It supports authorization code with PKCE
-for MCP clients, including static registrations and Client ID Metadata Documents
-(CIMD). Use the [OpenID profile](#shared-openid-sign-in) for shared browser sign-in.
+`middleware(requiredScopes)`, `securityLayer(api)`, and `paths`. It supports
+authorization code with PKCE for MCP clients, including static registrations and
+Client ID Metadata Documents (CIMD). Use the [OpenID profile](#shared-openid-sign-in)
+for shared browser sign-in.
 
 Declare scopes with `OAuthScope.make("documents:read")` from `@yielded/auth`. The result
 is a branded `OAuthScope.OAuthScope<"documents:read">` value. Pass these values in `scopes`;
@@ -23,7 +24,7 @@ Provide these to `oauth.layer`:
 | Input            | Purpose                                                              |
 | ---------------- | -------------------------------------------------------------------- |
 | `origin`         | Public issuer origin                                                 |
-| `resource`       | Exact MCP resource URL on that origin                                |
+| `resource`       | Exact protected resource URL on that origin                          |
 | `clients`        | Static client registrations; may be empty with CIMD                  |
 | `clientMetadata` | Optional `{ allowedOrigins }` policy for metadata and JWKS discovery |
 | `loginPath`      | Login route that returns to `oauth.paths.authorize`                  |
@@ -91,17 +92,46 @@ Each assertion is single-use across server instances. A lost acknowledgment need
 a fresh assertion; an uncertain token-issuance outcome still requires a new
 authorization flow.
 
-### Protecting MCP routes
+### Protecting resources
 
-Provide `oauth.middleware(scopes).layer` to protected routes. It verifies the bearer
-grant and supplies `oauth.CurrentAccess` with the declared scope union for that request.
-The shared `OAuthServer.CurrentAccess` remains available with string scopes. Require
-a defined value and apply your application's account and operation permissions.
+Provide `oauth.middleware(scopes).layer` to protected router routes such as MCP; access
+must hold every listed scope. It verifies the bearer grant and supplies
+`oauth.CurrentAccess` with the declared scope union for that request. The shared
+`OAuthServer.CurrentAccess` remains available with string scopes. Require a defined
+value and apply your application's account and operation permissions.
+
+For an `HttpApi`, annotate groups or endpoints with `OAuthScope.Required` and attach
+`OAuthScope.RequireAccess` after adding their endpoints; generated clients need no
+middleware. Provide `oauth.securityLayer(Api)` to the group handler Layers, which read
+the same `CurrentAccess`. These endpoints share the server's `resource` and tokens; serve
+them under that URL so challenge metadata matches.
+
+```ts
+const Read = OAuthScope.make("documents:read");
+const Documents = OAuthScope.make("documents");
+
+export const DocumentGroup = HttpApiGroup.make("documents")
+  .add(HttpApiEndpoint.get("list", "/documents", { success: DocumentList }))
+  .annotate(OAuthScope.Required, {
+    anyOf: [{ name: Read, description: "Read your documents" }, Documents],
+  })
+  .middleware(OAuthScope.RequireAccess);
+```
+
+Access must hold every `allOf` scope and, when given, one `anyOf` scope; `{ allOf: [] }`
+accepts any valid access. An endpoint's requirement replaces its group's.
+`securityLayer` fails with `ConfigurationError` when a protected endpoint has no
+requirement, an annotated endpoint lacks the middleware, a requirement names an
+undeclared scope, or the `HttpApi` itself is annotated. `OAuthScope.catalog(Api)` lists
+described scopes for consent and scope pages; escape descriptions when rendering.
 
 Missing or invalid credentials return 401 with discovery information; insufficient
-scope returns 403; unavailable storage returns 503. Configure CORS for the MCP,
-token, metadata, and revocation routes, exposing `WWW-Authenticate` as needed.
-Keep the consent endpoint under its same-origin policy.
+scope returns 403; unavailable storage returns 503. HttpApi clients receive these as
+`HttpApiError.Unauthorized`, `Forbidden`, and `ServiceUnavailable`. HttpApi challenges
+advertise the `allOf` scopes and the first `anyOf` scope, so list the narrowest
+alternative first. Configure CORS for the protected, token, metadata, and revocation
+routes, exposing `WWW-Authenticate` as needed. Keep the consent endpoint under its
+same-origin policy.
 
 ### Token lifecycle and storage
 

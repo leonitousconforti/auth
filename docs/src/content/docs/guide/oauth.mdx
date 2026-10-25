@@ -256,6 +256,10 @@ Inside handlers, require `oauth.CurrentAccess` and apply your application
 permissions. Resolve provider connections from trusted storage when tools need
 upstream API access.
 
+An `HttpApi` resource annotates its shared groups with `OAuthScope.Required`, attaches
+`OAuthScope.RequireAccess`, and provides `oauth.securityLayer(Api)` on the server; see
+[protecting resources](../reference/oauth#protecting-resources).
+
 Clients can be pre-registered or use a
 [Client ID Metadata Document](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/client-registration).
 For metadata discovery, configure `clientMetadata.allowedOrigins` and an HTTP client

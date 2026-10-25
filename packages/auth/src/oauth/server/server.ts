@@ -5,9 +5,15 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
+import type * as Exit from "effect/Exit";
+import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
+import type * as HttpApiEndpoint from "effect/http-api/HttpApiEndpoint";
+import * as HttpApiError from "effect/http-api/HttpApiError";
+import type * as HttpApiGroup from "effect/http-api/HttpApiGroup";
 import * as HttpApiSecurity from "effect/http-api/HttpApiSecurity";
 import * as Cookies from "effect/http/Cookies";
+import * as HttpEffect from "effect/http/HttpEffect";
 import * as HttpRouter from "effect/http/HttpRouter";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
@@ -22,7 +28,7 @@ import type * as Types from "effect/Types";
 import { reportAuthFailure, ReportedOperationDefect } from "../../internal/diagnostics";
 import { origin as Origin } from "../../internal/origin";
 import { timeoutWithCause } from "../../internal/timeout";
-import type * as OAuthScope from "../../OAuthScope";
+import * as OAuthScope from "../../OAuthScope";
 import { SubjectId } from "../../Schema";
 import { makeSessionSigningCodec, type SessionSigningKeyring } from "../../sessions/crypto";
 import { makeAccessTokenVerifier } from "./access-token";
@@ -70,6 +76,46 @@ const noStore = {
   pragma: "no-cache",
   "referrer-policy": "no-referrer",
 };
+
+const bearerChallenge = (
+  resourceMetadata: string,
+  scope: string | undefined,
+  error?: "invalid_token" | "insufficient_scope",
+) =>
+  `Bearer resource_metadata="${resourceMetadata}"${scope === undefined ? "" : `, scope="${scope}"`}${error ? `, error="${error}"` : ""}`;
+
+/** Only InvalidToken is the caller's failure. Report other reasons; interrupts keep their cause. */
+const classifyVerification = Effect.fnUntraced(function* <A>(
+  verified: Exit.Exit<A, InvalidToken | Unavailable | Cause.TimeoutError>,
+) {
+  if (verified._tag === "Success") return verified.value;
+
+  const unexpected = Cause.fromReasons(
+    verified.cause.reasons.filter(
+      (reason) =>
+        Cause.isDieReason(reason) ||
+        (Cause.isFailReason(reason) && reason.error._tag !== "OAuthServerInvalidToken"),
+    ),
+  );
+
+  yield* reportAuthFailure("http", unexpected);
+  if (Cause.hasInterrupts(verified.cause))
+    return yield* Effect.failCause(
+      Cause.fromReasons<never>([
+        ...verified.cause.reasons.filter(Cause.isInterruptReason),
+        ...(unexpected.reasons.length === 0
+          ? []
+          : [Cause.makeDieReason(ReportedOperationDefect.make({}))]),
+      ]),
+    );
+
+  return unexpected.reasons.length === 0 ? "invalid_token" : "unavailable";
+});
+
+/** An endpoint's requirement replaces its group's. */
+const requirementOf = (group: HttpApiGroup.Top, endpoint: HttpApiEndpoint.Top) =>
+  Context.getOrUndefined(endpoint.annotations, OAuthScope.Required) ??
+  Context.getOrUndefined(group.annotations, OAuthScope.Required);
 
 const json = (value: Schema.Json, status = 200) =>
   Response.json(value, { status, headers: noStore });
@@ -1458,6 +1504,7 @@ const makeServer = <
 
   /** Attach only to protected resource routes; metadata and consent stay public.
    * It does not install, wrap or reimplement an MCP protocol server.
+   * Use `securityLayer` for HttpApi groups.
    */
   const middleware = (requiredScopes: ReadonlyArray<Scope>) =>
     HttpRouter.middleware(
@@ -1468,7 +1515,7 @@ const makeServer = <
           return yield* ConfigurationError.make({});
 
         const challenge = (error?: "invalid_token" | "insufficient_scope") =>
-          `Bearer resource_metadata="${server.resourceMetadata}", scope="${requiredScopes.join(" ")}"${error ? `, error="${error}"` : ""}`;
+          bearerChallenge(server.resourceMetadata, requiredScopes.join(" "), error);
 
         return (httpEffect) =>
           Effect.gen(function* () {
@@ -1480,38 +1527,21 @@ const makeServer = <
                 headers: { ...noStore, "www-authenticate": challenge() },
               });
 
-            const verified = yield* server
+            const access = yield* server
               .verify(credential)
-              .pipe(timeoutWithCause("30 seconds"), Effect.exit);
-
-            if (verified._tag === "Failure") {
-              const unexpected = Cause.fromReasons(
-                verified.cause.reasons.filter(
-                  (reason) =>
-                    Cause.isDieReason(reason) ||
-                    (Cause.isFailReason(reason) && reason.error._tag !== "OAuthServerInvalidToken"),
-                ),
+              .pipe(
+                timeoutWithCause("30 seconds"),
+                Effect.exit,
+                Effect.flatMap(classifyVerification),
               );
 
-              yield* reportAuthFailure("http", unexpected);
-              if (Cause.hasInterrupts(verified.cause))
-                return yield* Effect.failCause(
-                  Cause.fromReasons<never>([
-                    ...verified.cause.reasons.filter(Cause.isInterruptReason),
-                    ...(unexpected.reasons.length === 0
-                      ? []
-                      : [Cause.makeDieReason(ReportedOperationDefect.make({}))]),
-                  ]),
-                );
-
-              return unexpected.reasons.length === 0
-                ? HttpServerResponse.empty({
-                    status: 401,
-                    headers: { ...noStore, "www-authenticate": challenge("invalid_token") },
-                  })
-                : HttpServerResponse.empty({ status: 503, headers: noStore });
-            }
-            const access = verified.value;
+            if (access === "invalid_token")
+              return HttpServerResponse.empty({
+                status: 401,
+                headers: { ...noStore, "www-authenticate": challenge("invalid_token") },
+              });
+            if (access === "unavailable")
+              return HttpServerResponse.empty({ status: 503, headers: noStore });
 
             if (!requiredScopes.every((scope) => access.scopes.includes(scope)))
               return HttpServerResponse.empty({
@@ -1527,11 +1557,132 @@ const makeServer = <
       }),
     );
 
+  const isScope = Schema.is(ScopeSchema);
+
+  /** Declared names of a requirement; undefined when absent, malformed or undeclared. */
+  const declaredRequirement = (requirement: OAuthScope.Requirement | undefined) => {
+    if (
+      requirement === undefined ||
+      (requirement.allOf === undefined && requirement.anyOf === undefined) ||
+      requirement.anyOf?.length === 0
+    )
+      return undefined;
+
+    const names = (entries: ReadonlyArray<OAuthScope.OAuthScope | OAuthScope.Described> = []) =>
+      entries.map((entry) => (typeof entry === "string" ? entry : entry.name));
+
+    const allOf = names(requirement.allOf);
+    const anyOf = names(requirement.anyOf);
+
+    return allOf.every(isScope) && anyOf.every(isScope) ? { allOf, anyOf } : undefined;
+  };
+
+  /** Implement `OAuthScope.RequireAccess` for `api` with the verification, deadline,
+   * failure reporting and challenges of `middleware`; denials fail as HttpApiError
+   * Unauthorized or Forbidden. Construction fails with ConfigurationError unless every
+   * endpoint using the middleware has a requirement of declared scopes, every endpoint
+   * with a requirement uses it, and `api` itself has none. Handlers read `CurrentAccess`.
+   */
+  const securityLayer = <ApiId extends string, Groups extends HttpApiGroup.Constraint>(
+    api: HttpApi.HttpApi<ApiId, Groups>,
+  ) =>
+    Layer.effect(
+      OAuthScope.RequireAccess,
+      Effect.gen(function* () {
+        const server = yield* Service;
+        let configured = Context.getOrUndefined(api.annotations, OAuthScope.Required) === undefined;
+
+        HttpApi.reflect(api, {
+          onGroup: () => undefined,
+          onEndpoint: ({ group, endpoint }) => {
+            const requirement = requirementOf(group, endpoint);
+
+            if (
+              endpoint.middlewares.has(OAuthScope.RequireAccess)
+                ? declaredRequirement(requirement) === undefined
+                : requirement !== undefined
+            )
+              configured = false;
+          },
+        });
+
+        if (!configured) return yield* ConfigurationError.make({});
+
+        return OAuthScope.RequireAccess.of({
+          bearer: Effect.fn("OAuthServer.requireAccess")(function* (
+            httpEffect,
+            { credential, endpoint, group },
+          ) {
+            const required = declaredRequirement(requirementOf(group, endpoint));
+
+            const advertised = new Set(
+              required === undefined ? [] : [...required.allOf, ...required.anyOf.slice(0, 1)],
+            );
+
+            const deny = (
+              error: HttpApiError.Unauthorized | HttpApiError.Forbidden,
+              reason?: "invalid_token" | "insufficient_scope",
+            ) => {
+              const challenge = bearerChallenge(
+                server.resourceMetadata,
+                advertised.size === 0 ? undefined : [...advertised].join(" "),
+                reason,
+              );
+
+              return HttpEffect.appendPreResponseHandler((_request, response) =>
+                Effect.succeed(
+                  HttpServerResponse.setHeaders(response, {
+                    ...noStore,
+                    "www-authenticate": challenge,
+                  }),
+                ),
+              ).pipe(Effect.andThen(Effect.fail(error)));
+            };
+
+            if (Redacted.value(credential) === "")
+              return yield* deny(HttpApiError.Unauthorized.make({}));
+
+            const access = yield* server
+              .verify(credential)
+              .pipe(
+                timeoutWithCause("30 seconds"),
+                Effect.exit,
+                Effect.flatMap(classifyVerification),
+              );
+
+            if (access === "invalid_token")
+              return yield* deny(HttpApiError.Unauthorized.make({}), "invalid_token");
+            if (access === "unavailable")
+              return HttpServerResponse.empty({ status: 503, headers: noStore });
+
+            if (required === undefined) {
+              yield* reportAuthFailure("http", Cause.die(ConfigurationError.make({})));
+
+              return HttpServerResponse.empty({ status: 503, headers: noStore });
+            }
+
+            if (
+              !required.allOf.every((scope) => access.scopes.includes(scope)) ||
+              (required.anyOf.length !== 0 &&
+                !required.anyOf.some((scope) => access.scopes.includes(scope)))
+            )
+              return yield* deny(HttpApiError.Forbidden.make({}), "insufficient_scope");
+
+            return yield* httpEffect.pipe(
+              Effect.provideService(CurrentAccess, access),
+              Effect.provideService(ScopedCurrentAccess, access),
+            );
+          }),
+        });
+      }),
+    );
+
   return {
     Service,
     layer,
     routes,
     middleware,
+    securityLayer,
     paths,
     Scope: ScopeSchema,
     Access: AccessSchema,
@@ -1577,6 +1728,7 @@ export const make = <const Id extends string, const S extends ReadonlyArray<OAut
     CurrentAccess: server.CurrentAccess,
     routes: server.routes,
     middleware: server.middleware,
+    securityLayer: server.securityLayer,
     paths: server.paths,
     Identity,
     layer: (options: Options) => server.layer(options),
