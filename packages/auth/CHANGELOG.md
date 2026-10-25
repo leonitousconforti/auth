@@ -1,5 +1,21 @@
 # @yielded/auth
 
+## 0.1.0-beta.44
+
+### Minor Changes
+
+- [#269](https://github.com/yielded-dev/auth/pull/269) [`81d27d1`](https://github.com/yielded-dev/auth/commit/81d27d14918acdd48ac2e51c5f34a6af246ea983) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Remember a public session snapshot in application-supplied local storage and expose its verification state through `auth.identity`. Gate account-owned workflows with `auth.verifiedSession(subjectId)` while preserving remembered local work through offline session failures.
+
+  BEHAVIOR CHANGE: Rename custom actions called `identity` or `verifiedSession`, and use `SubjectId` values from `Schema.SubjectId` or an existing identity codec for custom action projections and lifetime inputs; wire values are unchanged.
+
+### Patch Changes
+
+- [#268](https://github.com/yielded-dev/auth/pull/268) [`11e04fb`](https://github.com/yielded-dev/auth/commit/11e04fb14edbc0d409b88540cd1538fbddf2ab74) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Expose no-argument session actions, TOTP entropy operations, and React Native passkey construction as reusable Effects. BEHAVIOR CHANGE: yield `auth.requireSession`, `auth.signOut`, `auth.renewSession`, `TotpCryptography.randomId`, `TotpCryptography.generateSecret`, and `ReactNativePasskey.make` instead of calling them; HTTP client methods keep their existing call signatures.
+- Updated dependencies []:
+  - @yielded/crypto@0.1.0-beta.44
+  - @yielded/jose@0.1.0-beta.44
+  - @yielded/oauth@0.1.0-beta.44
+
 ## 0.1.0-beta.43
 
 ### Minor Changes

@@ -1,5 +1,12 @@
 # @yielded/auth-simplewebauthn
 
+## 0.1.0-beta.44
+
+### Patch Changes
+
+- Updated dependencies [[`11e04fb`](https://github.com/yielded-dev/auth/commit/11e04fb14edbc0d409b88540cd1538fbddf2ab74), [`81d27d1`](https://github.com/yielded-dev/auth/commit/81d27d14918acdd48ac2e51c5f34a6af246ea983)]:
+  - @yielded/auth@0.1.0-beta.44
+
 ## 0.1.0-beta.43
 
 ### Patch Changes

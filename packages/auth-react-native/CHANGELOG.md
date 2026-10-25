@@ -1,5 +1,13 @@
 # @yielded/auth-react-native
 
+## 0.1.0-beta.44
+
+### Patch Changes
+
+- [#268](https://github.com/yielded-dev/auth/pull/268) [`11e04fb`](https://github.com/yielded-dev/auth/commit/11e04fb14edbc0d409b88540cd1538fbddf2ab74) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Expose no-argument session actions, TOTP entropy operations, and React Native passkey construction as reusable Effects. BEHAVIOR CHANGE: yield `auth.requireSession`, `auth.signOut`, `auth.renewSession`, `TotpCryptography.randomId`, `TotpCryptography.generateSecret`, and `ReactNativePasskey.make` instead of calling them; HTTP client methods keep their existing call signatures.
+- Updated dependencies [[`11e04fb`](https://github.com/yielded-dev/auth/commit/11e04fb14edbc0d409b88540cd1538fbddf2ab74), [`81d27d1`](https://github.com/yielded-dev/auth/commit/81d27d14918acdd48ac2e51c5f34a6af246ea983)]:
+  - @yielded/auth@0.1.0-beta.44
+
 ## 0.1.0-beta.43
 
 ### Patch Changes

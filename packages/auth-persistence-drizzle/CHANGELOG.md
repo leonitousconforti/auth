@@ -1,5 +1,14 @@
 # @yielded/auth-persistence-drizzle
 
+## 0.1.0-beta.44
+
+### Patch Changes
+
+- [#261](https://github.com/yielded-dev/auth/pull/261) [`05957ad`](https://github.com/yielded-dev/auth/commit/05957ad073cb71e60e7b45236139e5d68d79d356) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Require Drizzle ORM RC5 and use its native Effect 4 support. BEHAVIOR CHANGE: upgrade `drizzle-orm` to `1.0.0-rc.5` or later and remove the `@yielded/drizzle-effect-v4-patch` Bun patch before reinstalling dependencies.
+- Updated dependencies [[`11e04fb`](https://github.com/yielded-dev/auth/commit/11e04fb14edbc0d409b88540cd1538fbddf2ab74), [`81d27d1`](https://github.com/yielded-dev/auth/commit/81d27d14918acdd48ac2e51c5f34a6af246ea983)]:
+  - @yielded/auth@0.1.0-beta.44
+  - @yielded/auth-persistence@0.1.0-beta.44
+
 ## 0.1.0-beta.43
 
 ### Patch Changes
