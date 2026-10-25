@@ -35,6 +35,7 @@ import { makeAccessTokenVerifier } from "./access-token";
 import { makeAuthorization, standardOpenIdScopes } from "./authorization";
 import {
   makeClients,
+  makeClientStore,
   matchesRedirect,
   MetadataConfiguration,
   type MetadataOptions,
@@ -255,6 +256,7 @@ export interface Options {
   /** One authorization server per origin. HTTP is accepted only for loopback development. */
   readonly origin: string;
   readonly resource: string;
+  /** Static registrations; they take precedence over the server's Clients service. */
   readonly clients: ReadonlyArray<Client>;
   /** Enable public or private_key_jwt CIMD clients from these trusted HTTPS origins. */
   readonly clientMetadata?: MetadataOptions;
@@ -318,6 +320,7 @@ const makeServer = <
   const ScopesSchema = makeScopesSchema<Scope>(ScopeSchema);
   const AccessSchema = makeAccessSchema<Scope>(ScopeSchema);
   const authorizationSource = makeAuthorization<Id, Scope>(id, ScopeSchema);
+  const Clients = makeClientStore(id);
 
   const ScopedCurrentAccess = Context.Reference<Access<Scope> | undefined>(
     `effect-auth/OAuthServer/${id}/CurrentAccess/${JSON.stringify([...scopes].sort())}`,
@@ -403,13 +406,13 @@ const makeServer = <
           (resourceUrl.pathname !== "/" && resourceUrl.href !== config.resource) ||
           (options.identityKeys === undefined && resourceUrl.origin !== config.origin) ||
           resourceUrl.search ||
-          (config.clients.length === 0 && config.clientMetadata === undefined) ||
           config.loginPath === paths.authorize ||
           new Set(config.clients.map((client) => client.clientId)).size !== config.clients.length
         )
           return yield* ConfigurationError.make({});
 
         const clients = yield* makeClients(
+          id,
           config.clients,
           config.clientMetadata,
           config.origin,
@@ -549,17 +552,7 @@ const makeServer = <
 
         const clientFor = clients.resolve;
 
-        const validGrant = Effect.fnUntraced(function* (record: Record) {
-          const client = yield* clientFor(record.authorization.clientId).pipe(
-            Effect.catchCause((cause) =>
-              Effect.failCause(
-                Cause.map(cause, (error) =>
-                  error._tag === "OAuthServerRejected" ? InvalidToken.make({}) : error,
-                ),
-              ),
-            ),
-          );
-
+        const validGrant = Effect.fnUntraced(function* (record: Record, client: Client) {
           return (
             matchesRedirect(client, record.authorization.redirectUri) &&
             record.authorization.scopes.every(Schema.is(ScopeSchema)) &&
@@ -571,18 +564,34 @@ const makeServer = <
           );
         });
 
-        const read = Effect.fnUntraced(function* (token: Envelope) {
+        const read = Effect.fnUntraced(function* (token: Envelope, authenticatedClient?: Client) {
           const record = yield* store.get(namespace, token.grantId);
 
           if (
             !record ||
             record.status === "Revoked" ||
             record.expiresAtMillis <= (yield* now) ||
-            !(yield* validGrant(record))
+            (authenticatedClient !== undefined &&
+              authenticatedClient.clientId !== record.authorization.clientId)
           )
             return yield* InvalidToken.make({});
 
-          return record;
+          // Reuse only this request's exact client; later requests resolve it again.
+          const client =
+            authenticatedClient ??
+            (yield* clientFor(record.authorization.clientId).pipe(
+              Effect.catchCause((cause) =>
+                Effect.failCause(
+                  Cause.map(cause, (error) =>
+                    error._tag === "OAuthServerRejected" ? InvalidToken.make({}) : error,
+                  ),
+                ),
+              ),
+            ));
+
+          if (!(yield* validGrant(record, client))) return yield* InvalidToken.make({});
+
+          return { record, client };
         });
 
         const commit = Effect.fnUntraced(function* (
@@ -646,7 +655,7 @@ const makeServer = <
           const token = yield* decodeAccess(credential);
 
           if (token.kind !== "access") return yield* InvalidToken.make({});
-          const record = yield* read(token);
+          const { record } = yield* read(token);
 
           if (
             record.status !== "Active" ||
@@ -825,6 +834,7 @@ const makeServer = <
                 ).pipe(Effect.mapError(() => reject()));
 
                 const client = yield* clientFor(target.client_id);
+                const source = clients.source(client);
 
                 const redirectUri =
                   target.redirect_uri ??
@@ -862,6 +872,9 @@ const makeServer = <
                       query.max_age !== undefined)
                   )
                     return yield* reject();
+                  // Silent responses navigate without interaction.
+                  if (query.prompt === "none" && source === "stored")
+                    return yield* reject("unauthorized_client");
                   if (
                     client.grantTypes !== undefined &&
                     !client.grantTypes.includes("authorization_code")
@@ -891,10 +904,11 @@ const makeServer = <
                   );
 
                   // Static registrations and same-origin metadata callbacks are trusted.
-                  // Other registered callbacks require an explicit navigation decision.
+                  // Stored callbacks may be self-registered and need a navigation decision.
                   if (
-                    config.clients.some((entry) => entry.clientId === client.clientId) ||
-                    new URL(redirectUri).origin === new URL(client.clientId).origin
+                    source === "static" ||
+                    (source === "metadata" &&
+                      new URL(redirectUri).origin === new URL(client.clientId).origin)
                   )
                     return response;
 
@@ -949,7 +963,8 @@ const makeServer = <
 
               if (credential === undefined) return yield* reject();
               const token = yield* decode(Redacted.make(credential));
-              let record = yield* read(token);
+              const resolved = yield* read(token);
+              let record = resolved.record;
 
               if (
                 token.kind !== "consent" ||
@@ -1040,13 +1055,13 @@ const makeServer = <
                   yield* commit(token.grantId, record, next);
                   record = next;
                 }
-                const client = yield* clientFor(record.authorization.clientId);
+                const client = resolved.client;
 
                 return new Response(
                   yield* consentRenderer.render({
                     clientName: client.name,
                     clientId: client.clientId,
-                    registered: config.clients.some((value) => value.clientId === client.clientId),
+                    registered: clients.source(client) !== "metadata",
                     subjectId,
                     resource: config.resource,
                     scopes: record.authorization.scopes,
@@ -1138,13 +1153,9 @@ const makeServer = <
               const expected = query.grant_type === "authorization_code" ? "code" : "refresh";
 
               if (token.kind !== expected) return yield* reject("invalid_grant");
-              const record = yield* read(token);
+              const { record } = yield* read(token, client);
 
-              if (
-                record.authorization.clientId !== query.client_id ||
-                record.subjectId === undefined
-              )
-                return yield* reject("invalid_grant");
+              if (record.subjectId === undefined) return yield* reject("invalid_grant");
               if (query.grant_type === "authorization_code") {
                 const digest = yield* crypto
                   .digest("SHA-256", new TextEncoder().encode(query.code_verifier))
@@ -1688,6 +1699,7 @@ const makeServer = <
     Access: AccessSchema,
     CurrentAccess: ScopedCurrentAccess,
     Authorization: authorizationSource.Service,
+    Clients,
   };
 };
 
@@ -1731,6 +1743,7 @@ export const make = <const Id extends string, const S extends ReadonlyArray<OAut
     securityLayer: server.securityLayer,
     paths: server.paths,
     Identity,
+    Clients: server.Clients,
     layer: (options: Options) => server.layer(options),
   };
 };
@@ -1738,8 +1751,9 @@ export const make = <const Id extends string, const S extends ReadonlyArray<OAut
 /** Registered-client OpenID Connect code flow with PKCE, RS256 and explicit consent.
  * Standard OpenID scopes are included alongside application scopes.
  * Applications own authentication, current session validity and profile disclosure.
- * Resource JWTs and rotating refresh tokens are opt-in; dynamic registration and
- * front/back-channel logout are not enabled.
+ * Resource JWTs and rotating refresh tokens are opt-in. Clients are static or come
+ * from the Clients service; registration endpoints and front/back-channel logout
+ * are not provided.
  */
 export const makeOpenId = <
   const Id extends string,

@@ -93,6 +93,11 @@ export const Client = Schema.Struct({
   applicationType: Schema.optionalKey(Schema.Literals(["web", "native"])),
   /** Pre-registered confidential clients authenticate using Basic or form credentials. */
   clientSecret: Schema.optionalKey(Schema.Redacted(Text, { disallowJsonEncode: true })),
+  /** Unpadded base64url SHA-256 of a confidential client's secret, used instead of
+   * clientSecret when only the digest is kept. Only for generated secrets with at
+   * least 256 random bits; never digest a password.
+   */
+  clientSecretDigest: Schema.optionalKey(Random),
   /** Authenticate with private_key_jwt instead of a shared secret. */
   clientAssertion: Schema.optionalKey(ClientAssertion),
   grantTypes: Schema.optionalKey(
@@ -100,7 +105,10 @@ export const Client = Schema.Struct({
   ),
 }).check(
   Schema.makeFilter(
-    (value) => value.clientSecret === undefined || value.clientAssertion === undefined,
+    (value) =>
+      [value.clientSecret, value.clientSecretDigest, value.clientAssertion].filter(
+        (method) => method !== undefined,
+      ).length <= 1,
   ),
 );
 

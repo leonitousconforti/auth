@@ -7,11 +7,11 @@ Start with the [OAuth guide](../guide/oauth) for the flow and choice of API.
 
 ## Authorization server
 
-`OAuthServer.make(id, { scopes })` provides `Identity`, `Service`, `routes`,
+`OAuthServer.make(id, { scopes })` provides `Identity`, `Clients`, `Service`, `routes`,
 `middleware(requiredScopes)`, `securityLayer(api)`, and `paths`. It supports
-authorization code with PKCE for MCP clients, including static registrations and
-Client ID Metadata Documents (CIMD). Use the [OpenID profile](#shared-openid-sign-in)
-for shared browser sign-in.
+authorization code with PKCE for MCP clients, including static registrations,
+registrations stored by your application, and Client ID Metadata Documents (CIMD).
+Use the [OpenID profile](#shared-openid-sign-in) for shared browser sign-in.
 
 Declare scopes with `OAuthScope.make("documents:read")` from `@yielded/auth`. The result
 is a branded `OAuthScope.OAuthScope<"documents:read">` value. Pass these values in `scopes`;
@@ -25,11 +25,12 @@ Provide these to `oauth.layer`:
 | ---------------- | -------------------------------------------------------------------- |
 | `origin`         | Public issuer origin                                                 |
 | `resource`       | Exact protected resource URL on that origin                          |
-| `clients`        | Static client registrations; may be empty with CIMD                  |
+| `clients`        | Static registrations; may be empty with CIMD or `oauth.Clients`      |
 | `clientMetadata` | Optional `{ allowedOrigins }` policy for metadata and JWKS discovery |
 | `loginPath`      | Login route that returns to `oauth.paths.authorize`                  |
 | `keys`           | Signing keyring; use separate random material from session keys      |
 | `oauth.Identity` | Verify the current application session                               |
+| `oauth.Clients`  | Optional client registrations from your storage                      |
 
 Provide durable `OAuthServer.Persistence` plus `HttpClient`, `Crypto`, `Hmac`, and
 `Signature`.
@@ -54,17 +55,27 @@ returns 401 with a challenge, and unavailable dependencies return 503.
 ### Clients and metadata discovery
 
 Static clients configure `clientId`, `name`, and `redirectUris`. Add a redacted
-`clientSecret` for Basic/form-secret authentication, or `clientAssertion: { jwks }`
-or `{ jwksUri }` for `private_key_jwt`. Configure one authentication method.
-`grantTypes` permits `authorization_code` and/or `refresh_token`.
+`clientSecret` or its `clientSecretDigest` for Basic/form-secret authentication, or
+`clientAssertion: { jwks }` or `{ jwksUri }` for `private_key_jwt`. Configure one
+authentication method. `grantTypes` permits `authorization_code` and/or `refresh_token`.
 
 Callbacks match exactly. A native client's loopback callback may vary its port;
 the selected callback remains bound to the authorization code.
 
+Provide `oauth.Clients` to resolve registrations your application stores, such as
+clients from your registration endpoint. `get(clientId)` returns exactly the static
+client fields for that ID, omitting absent fields, or `undefined`, including for IDs
+your storage cannot represent. Store only `clientSecretDigest`, the unpadded base64url
+SHA-256 of a generated secret with at least 256 random bits. Stored `private_key_jwt`
+clients use inline `jwks`. Registrations reload on each request, so edits and deletion apply to the
+next request. Stored callbacks are untrusted: authorization errors show a confirmation
+page and `prompt=none` is refused.
+
 Set `clientMetadata.allowedOrigins` to enable trusted HTTPS metadata discovery.
 A document declares its exact URL as `client_id`, a `client_name`, and
 `redirect_uris`. It can declare public authentication or `private_key_jwt` with a
-public key source. Static registrations take precedence.
+public key source. Static registrations take precedence over stored ones, and both
+over metadata documents.
 
 Use an HTTP client and network policy that reject private, loopback, and link-local
 destinations after DNS resolution. Disable redirects and ambient credentials.
@@ -199,7 +210,8 @@ Optional OpenID server options are:
 | `POST /oauth/identity/revoke`           | Grant revocation                     |
 
 Request `openid`, optionally `profile` and `email`. Supported prompts are `login`,
-`select_account`, `consent`, and `none`; `max_age` requires recent authentication.
+`select_account`, `consent`, and, for static clients, `none`; `max_age` requires
+recent authentication.
 The default consent policy requires interaction. Supply `OAuthServer.OpenIdConsent`
 to recognize application-approved clients, callbacks, and claims.
 
@@ -209,8 +221,9 @@ by the original session expiry. Refresh checks `Identity.active` and application
 authorization without reading a browser session or contacting its upstream
 provider. It retains the original `auth_time`, rotates the refresh token, and can
 only retain or reduce granted scopes. Reusing a consumed refresh token revokes
-its grant. Applications own local logout; dynamic clients and coordinated browser
-logout are unsupported. Retain public verification keys through token expiry.
+its grant. Applications own local logout and any client registration endpoint;
+coordinated browser logout is unsupported. Retain public verification keys through
+token expiry.
 
 ### Application authorization and resource access
 
@@ -285,7 +298,8 @@ checks current session authority and the durable grant version.
 
 Both server profiles accept `OAuthServer.ConsentRenderer`. A custom renderer must
 escape displayed values and preserve the supplied POST action, CSRF field, and
-decision. See the [shared sign-in example](https://github.com/yielded-dev/auth/tree/main/examples/persistence-sql#hosted-yielded-sign-in).
+decision. `registered` is false only for metadata-document clients; stored client
+names are self-asserted. See the [shared sign-in example](https://github.com/yielded-dev/auth/tree/main/examples/persistence-sql#hosted-yielded-sign-in).
 
 ## Retained access
 
