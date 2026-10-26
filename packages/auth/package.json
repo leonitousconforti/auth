@@ -54,6 +54,7 @@
     "./Auth0": "./src/Auth0.ts",
     "./Atlassian": "./src/Atlassian.ts",
     "./Cognito": "./src/Cognito.ts",
+    "./Discord": "./src/Discord.ts",
     "./Dropbox": "./src/Dropbox.ts",
     "./Figma": "./src/Figma.ts",
     "./Keycloak": "./src/Keycloak.ts",

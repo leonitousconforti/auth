@@ -584,6 +584,7 @@ expired-row cleanup and ingress limits.
 | Atlassian          | [`Atlassian.provider`](../guide/atlassian)                             |
 | Auth0              | [`Auth0.provider`](../guide/enterprise-oidc)                           |
 | Cognito            | [`Cognito.provider`](../guide/enterprise-oidc)                         |
+| Discord            | [`Discord.provider`](../guide/discord)                                 |
 | Dropbox            | [`Dropbox.provider`](../guide/dropbox)                                 |
 | Figma              | [`Figma.provider`](../guide/figma)                                     |
 | GitHub             | [`GitHub.provider`](../guide/github)                                   |
@@ -657,8 +658,9 @@ the provider configuration and are independent of sign-in scopes.
 
 Keep S256 PKCE and issuer-response validation enabled for providers that support
 them. `pkceS256: false` and `responseIssuerMode: "unsupported"` are explicit provider
-configuration choices. `userInfo: "merge"` fills missing ID-token claims after
-checking the same subject; ID-token claims take precedence. Discovery accepts a
+configuration choices. `userInfo: "merge"` fills missing ID-token claims after checking
+the same subject; ID-token claims take precedence. Null standard profile claims are
+omitted; custom claims are preserved for `profileSchema`. Discovery accepts a
 `{tenantid}` path segment when it matches the configured authority; verification
 substitutes the signed `tid` and checks the selected signing key's issuer. A
 concrete GUID authority discovered from that template keeps its own issuer, and
@@ -707,7 +709,7 @@ opt-in verified email fields. Google exposes verified `hd` for
 [workspace policy](../guide/slack#identity-and-workspace-policy). LINE keeps
 optional `amr`. Roblox keeps optional `type` and `created_at` and preserves the
 trailing-slash issuer. Railway merges UserInfo because its ID token omits name,
-email, and picture. `Microsoft.provider` keeps `oid` and `tid`. The durable
+email, and picture. Discord merges UserInfo; its `nickname` is the display name. `Microsoft.provider` keeps `oid` and `tid`. The durable
 subject is `oid:tid` when the token issuer equals the configured authority, and
 `tid:oid:tid` when it does not. `Apple.provider` decodes string
 `email_verified` and `is_private_email` flags and merges the first-consent name.

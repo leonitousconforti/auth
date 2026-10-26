@@ -36,7 +36,7 @@ import {
   type OpenIdConnectConfigurationError,
 } from "./models";
 import { PrivateKeyClientSecret } from "./privateKeyJwt";
-import { decodeOidcProfile, mergeAppleCallbackUser } from "./profile";
+import { decodeOidcProfile, mergeAppleCallbackUser, mergeUserInfo } from "./profile";
 import { tokens } from "./receipt";
 import { subjectInTenant } from "./tenantSubject";
 
@@ -300,7 +300,7 @@ export const makeOpenIdConnectOAuthProtocol = Effect.fn("makeOpenIdConnectOAuthP
 
                   if (subject.sub !== verified.subject) return yield* rejected();
 
-                  return { ...userInfo, ...Redacted.value(verified.claims) };
+                  return mergeUserInfo(userInfo, Redacted.value(verified.claims));
                 })()
               : Redacted.value(verified.claims);
 

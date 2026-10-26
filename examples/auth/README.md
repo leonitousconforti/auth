@@ -69,8 +69,8 @@ form_post, and the client secret is an ES256 JWT minted from `APPLE_PRIVATE_KEY`
 `example:microsoft` is the same shape for Entra ID. The common authority stores
 `tid:oid:tid`. See the [Microsoft Entra ID guide](../../docs/src/content/docs/guide/microsoft.md).
 
-`example:x`, `example:figma`, `example:atlassian`, and `example:kick` are the same
-sign-in shape for those presets. Each allowlists one configured subject and stores
+`example:discord`, `example:x`, `example:figma`, `example:atlassian`, and `example:kick`
+are the same sign-in shape for those presets. Each allowlists one configured subject and stores
 development state in its own SQLite file.
 
 Provider-account management is denied until you install an application-owned

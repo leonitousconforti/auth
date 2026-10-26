@@ -27,6 +27,7 @@ export default defineConfig({
       "src/Auth0.ts",
       "src/Atlassian.ts",
       "src/Cognito.ts",
+      "src/Discord.ts",
       "src/Dropbox.ts",
       "src/Figma.ts",
       "src/GitHub.ts",
