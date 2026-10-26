@@ -1,5 +1,17 @@
 # @yielded/auth
 
+## 0.1.0-beta.46
+
+### Patch Changes
+
+- [#276](https://github.com/yielded-dev/auth/pull/276) [`c38c0f0`](https://github.com/yielded-dev/auth/commit/c38c0f0a3298f53938d18289d12e9d510ef6b525) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Prevent pending authentication responses from populating the public session and identity cache during concurrent account changes.
+
+- [#274](https://github.com/yielded-dev/auth/pull/274) [`6d219e8`](https://github.com/yielded-dev/auth/commit/6d219e89989e72793ba627e37b3a349745cd9f72) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Preserve confirmed signed-out identity during pending or failed session refreshes. Adopt the public session returned by declared authentication completions after credential settlement, including password sign-in, OAuth completion, and authenticating registration.
+- Updated dependencies []:
+  - @yielded/crypto@0.1.0-beta.46
+  - @yielded/jose@0.1.0-beta.46
+  - @yielded/oauth@0.1.0-beta.46
+
 ## 0.1.0-beta.45
 
 ### Minor Changes
