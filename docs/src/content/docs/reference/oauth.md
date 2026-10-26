@@ -17,7 +17,9 @@ Declare scopes with `OAuthScope.make("documents:read")` from `@yielded/auth`. Th
 is a branded `OAuthScope.OAuthScope<"documents:read">` value. Pass these values in `scopes`;
 middleware, authorization, and verified access retain their literal types. Plain
 strings are not accepted as scope declarations. `OAuthScope.OAuthScope` is the Effect schema
-for decoding scope strings at external boundaries.
+for decoding scope strings at external boundaries. Declare at most 1024 scopes whose names
+fit 8192 characters joined by spaces, or 4096 with JWT access tokens, so a client can
+request all of them at once.
 
 Provide these to `oauth.layer`:
 

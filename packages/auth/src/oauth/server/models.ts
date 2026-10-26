@@ -21,7 +21,10 @@ export class ConfigurationError extends Schema.TaggedError<ConfigurationError>()
 export const Text = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(2048));
 export const Random = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{43}$/));
 export const Scope = OAuthScope.OAuthScope;
-export const Scopes = Schema.NonEmptyArray(Scope).check(Schema.isMaxLength(32));
+export const maximumScopes = 1024;
+export const Scopes = Schema.NonEmptyArray(Scope).check(Schema.isMaxLength(maximumScopes));
+/** Space-separated scopes. Declared scopes must fit, so a client can request all of them. */
+export const ScopeText = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(8192));
 
 export const makeScopesSchema = <Scope extends OAuthScope.OAuthScope>(
   scope: Schema.Codec<Scope, string>,
@@ -123,7 +126,7 @@ export const TokenResponse = Schema.Struct({
   id_token: Schema.optionalKey(
     Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16384)),
   ),
-  scope: Text,
+  scope: ScopeText,
 });
 
 export const AuthorizationMetadata = Schema.Struct({

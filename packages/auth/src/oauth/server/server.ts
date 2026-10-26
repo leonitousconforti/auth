@@ -60,6 +60,7 @@ import {
   Persistence,
   Random,
   ResourceMetadata,
+  ScopeText,
   Text,
   TokenResponse,
   makeAccessSchema,
@@ -136,7 +137,7 @@ const AuthorizeQuery = Schema.Struct({
   ...AuthorizationCallback.fields,
   response_type: Schema.Literal("code"),
   resource: Schema.optionalKey(Url),
-  scope: Text,
+  scope: ScopeText,
   code_challenge: Random,
   code_challenge_method: Schema.Literal("S256"),
   nonce: Schema.optionalKey(Text),
@@ -161,7 +162,7 @@ const TokenRequest = Schema.Union([
     client_id: Text,
     resource: Schema.optionalKey(Url),
     refresh_token: Text,
-    scope: Schema.optionalKey(Text),
+    scope: Schema.optionalKey(ScopeText),
   }),
 ]);
 
@@ -220,6 +221,8 @@ const parameters = Effect.fnUntraced(function* (params: URLSearchParams) {
 });
 
 const maximumFormBytes = 16384;
+// JWT access carries its scopes; leave room for a reserved assertion in the revocation form.
+const maximumJwtScopeLength = 4096;
 
 const form = Effect.fnUntraced(function* (request: HttpServerRequest.HttpServerRequest) {
   if (
@@ -407,7 +410,11 @@ const makeServer = <
           (options.identityKeys === undefined && resourceUrl.origin !== config.origin) ||
           resourceUrl.search ||
           config.loginPath === paths.authorize ||
-          new Set(config.clients.map((client) => client.clientId)).size !== config.clients.length
+          new Set(config.clients.map((client) => client.clientId)).size !== config.clients.length ||
+          // Clients may request every declared scope at once.
+          !Schema.is(ScopeText)(config.scopes.join(" ")) ||
+          (config.accessTokenFormat === "jwt" &&
+            config.scopes.join(" ").length > maximumJwtScopeLength)
         )
           return yield* ConfigurationError.make({});
 
