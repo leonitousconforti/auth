@@ -206,8 +206,6 @@ const acquire = Effect.fn("Client.make")(function* <Actions extends AuthActions,
 
     const execute = Effect.gen(function* () {
       if (project !== undefined && action.mode === "mutation") {
-        const generation = state.generation;
-
         const settle = yield* makeAuthenticationSettlement((subject) =>
           publish(subject, String(name), callOptions?.origin),
         ).pipe(Effect.provideService(Client, transport));
@@ -221,11 +219,17 @@ const acquire = Effect.fn("Client.make")(function* <Actions extends AuthActions,
                 const value = yield* settle<Actions[Name]["route"]>(
                   action.route,
                   input,
-                  (success) => project.fromSuccess(success),
+                  (success) => {
+                    const subject = project.fromSuccess(success);
+
+                    // Only this response can complete authentication; an account
+                    // change while waiting for admission does not complete it.
+                    transitioned = subject !== undefined;
+
+                    return subject;
+                  },
                   { expectedGeneration: started },
                 );
-
-                transitioned = state.generation !== generation;
 
                 if (transitioned) {
                   yield* Effect.matchCauseEffect(
