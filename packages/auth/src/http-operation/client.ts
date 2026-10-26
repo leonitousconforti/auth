@@ -510,8 +510,9 @@ export const make = Effect.fn("OperationHttpClient.make")(function* <R = never, 
     // Hold admission for every write, including middleware that delays dispatch.
     // It cannot switch accounts while waiting to send with browser cookies.
     // Maintenance reads can overlap, but their credential responses must settle
-    // before sign-in, sign-out or explicit rotation. A local lifetime transition
-    // only fences results; it must not wait for the reads it is retiring.
+    // before sign-in, sign-out or explicit rotation. Queue read admission at the
+    // same gate so newer reads cannot starve a waiting writer. A local lifetime
+    // transition only fences results; it must not wait for the reads it is retiring.
     const admitted =
       route.operation.replay !== "read-only" ||
       route.operation.credentials ||
@@ -519,7 +520,11 @@ export const make = Effect.fn("OperationHttpClient.make")(function* <R = never, 
       (callOptions?.replaceSubject !== undefined && callOptions.replaceSubject !== false)
         ? gate.withPermits(1)(TxReentrantLock.withWriteLock(requests, Effect.uninterruptible(work)))
         : route.sessionRefresh
-          ? TxReentrantLock.withReadLock(requests, Effect.uninterruptible(work))
+          ? Effect.scoped(
+              gate
+                .withPermits(1)(TxReentrantLock.readLock(requests))
+                .pipe(Effect.andThen(Effect.uninterruptible(work))),
+            )
           : work;
 
     // The complete request Scope (including body cleanup) settles before the

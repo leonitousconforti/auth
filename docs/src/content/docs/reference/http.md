@@ -80,8 +80,10 @@ not cacheable. If you override `csrf` on the server,
 pass matching settings to `Client.make`.
 
 Session reads and authenticated actions maintain eligible sessions using the
-configured `renewAfter` interval. Responses can set the session cookie even for a
-query. HEAD, OPTIONS, prefetches, and requests identified as coming from an
+configured `renewAfter` interval. Stateful credentials are retained until absolute
+expiry; idle expiry remains a server check, and maintenance sends no session cookie.
+Due signed-session maintenance sets a replacement cookie even for a query.
+HEAD, OPTIONS, prefetches, and requests identified as coming from an
 untrusted origin do not maintain sessions. Low-level `verifySession()` is read-only;
 authentication outside this HTTP boundary requires its host to own delivery.
 See [session maintenance](../guide/sessions#session-maintenance).

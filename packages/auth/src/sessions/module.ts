@@ -225,8 +225,8 @@ export const makeSessionModule = <
     readonly renew: (
       credential: Redacted.Redacted<string>,
     ) => Effect.Effect<AuthOperationResult<Session>, Failure>;
-    /** Request-driven idle extension. Stateful bearers and credential versions stay
-     * stable; signed credentials overlap until their existing expiry. */
+    /** Request-driven idle extension. Stateful refresh emits no credentials or
+     * creation hooks; signed replacements overlap until the incoming token's expiry. */
     readonly refresh: (
       credential: Redacted.Redacted<string>,
     ) => Effect.Effect<AuthOperationResult<Session>, Failure>;
@@ -352,19 +352,23 @@ export const makeSessionModule = <
       Effect.mapError(() => SessionInvalid.make({})),
     );
 
-  const issue = (
+  const sessionResult = (
     session: Session,
-    credential: Redacted.Redacted<string>,
+    credential?: Redacted.Redacted<string>,
+    credentialExpiresAt = session.expiresAt,
   ): AuthOperationResult<Session> => ({
     value: Schema.decodeSync(publicSessionCodec)(Schema.encodeSync(publicSessionCodec)(session)),
-    credentialCommands: [
-      {
-        _tag: "Issue",
-        slot: "session",
-        credential,
-        expiresAtMillis: DateTime.toEpochMillis(session.expiresAt),
-      },
-    ],
+    credentialCommands:
+      credential === undefined
+        ? []
+        : [
+            {
+              _tag: "Issue",
+              slot: "session",
+              credential,
+              expiresAtMillis: DateTime.toEpochMillis(credentialExpiresAt),
+            },
+          ],
   });
 
   const inspectProvenance = Effect.fn("Session.inspectProvenance")(function* (
@@ -648,7 +652,9 @@ export const makeSessionModule = <
                 journal.stage(event);
                 journal.stage(creation);
 
-                return journal.prepare(issue(record, credential));
+                // Idle validity belongs to storage. A stable client credential
+                // needs no redelivery when a request extends that deadline.
+                return journal.prepare(sessionResult(record, credential, record.absoluteExpiresAt));
               },
             )
             .pipe(Effect.tapError(reportAuthorityFailure));
@@ -685,7 +691,7 @@ export const makeSessionModule = <
               DateTime.toEpochMillis(session.expiresAt) >=
                 DateTime.toEpochMillis(session.absoluteExpiresAt))
           )
-            return issue(session, credential);
+            return sessionResult(session);
           yield* checkRenewalDue(session, now, policy);
           const next = refresh ? credential : yield* secrets.generate();
           const nextDigest = refresh ? digest : yield* secrets.digest(next, "bearer");
@@ -694,9 +700,9 @@ export const makeSessionModule = <
             ? record.credentialVersion
             : SessionCredentialVersion.make(Redacted.value(yield* secrets.generate()));
 
-          const event = yield* prepareHooks("session-creation", session).pipe(
-            Effect.provide(services),
-          );
+          const event = refresh
+            ? undefined
+            : yield* prepareHooks("session-creation", session).pipe(Effect.provide(services));
 
           yield* validateSessionTimeline(session, policy);
           const commitNow = yield* DateTime.now;
@@ -717,9 +723,11 @@ export const makeSessionModule = <
               now: commitNow,
             },
             (rotated, journal) => {
-              journal.stage(event);
+              if (event !== undefined) journal.stage(event);
 
-              return journal.prepare(issue(rotated, next));
+              return journal.prepare(
+                sessionResult(rotated, refresh ? undefined : next, rotated.absoluteExpiresAt),
+              );
             },
           );
 
@@ -753,11 +761,18 @@ export const makeSessionModule = <
           }),
           renew: (credential) => renew(credential),
           refresh: (credential) =>
-            renew(credential, true).pipe(
-              Effect.catchTag("SessionConflict", () =>
-                inspect(credential).pipe(
-                  Effect.map((source) => issue(source.inspection.session, credential)),
-                ),
+            renew(credential, true).pipe((effect) =>
+              Effect.catchCauseIf(
+                effect,
+                (cause) =>
+                  cause.reasons.every(
+                    (reason) =>
+                      Cause.isFailReason(reason) && reason.error._tag === "SessionConflict",
+                  ),
+                () =>
+                  inspect(credential).pipe(
+                    Effect.map((source) => sessionResult(source.inspection.session)),
+                  ),
               ),
             ),
           signOut: Effect.fn("StatefulSession.signOut")(function* (
@@ -1021,7 +1036,7 @@ export const makeSessionModule = <
                 journal.stage(event);
                 journal.stage(creation);
 
-                return journal.prepare(issue(session, credential));
+                return journal.prepare(sessionResult(session, credential));
               },
             )
             .pipe(Effect.tapError(reportAuthorityFailure));
@@ -1043,7 +1058,7 @@ export const makeSessionModule = <
               DateTime.toEpochMillis(session.expiresAt) >=
                 DateTime.toEpochMillis(session.absoluteExpiresAt))
           )
-            return issue(session, credential);
+            return sessionResult(session);
           yield* checkRenewalDue(session, now, policy);
 
           const renewed = {
@@ -1072,7 +1087,7 @@ export const makeSessionModule = <
           yield* validateSessionTimeline(session, policy);
           yield* validateSessionTimeline(renewed, policy);
           // Signing grants no new authority; preserve the original absolute bound.
-          const result = issue(renewed, next);
+          const result = sessionResult(renewed, next);
 
           yield* hooks.after(event);
 
@@ -2116,7 +2131,13 @@ export const makeSessionModule = <
             });
 
             return yield* store.complete(plan, (_, journal) => {
-              const result = issue(output.session, planned.credential);
+              const result = sessionResult(
+                output.session,
+                planned.credential,
+                planned.replacement._tag === "Stateful"
+                  ? output.session.absoluteExpiresAt
+                  : output.session.expiresAt,
+              );
 
               journal.stage(event);
 

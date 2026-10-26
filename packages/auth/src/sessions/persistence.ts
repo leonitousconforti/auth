@@ -86,7 +86,8 @@ export interface StatefulSessionPersistence<Claims> {
   /** Extend a live session without changing its bearer or credential version.
    * CAS the captured owner, digest, issuedAt and expiry; recheck current authority
    * and both expiry bounds at commit. Never shorten expiry or change authentication
-   * evidence, claims, provenance or absolute expiry. A concurrent update conflicts. */
+   * evidence, provenance or absolute expiry. Project current account
+   * claims consistently with verify. A concurrent update conflicts. */
   readonly refresh: <A>(
     input: {
       readonly record: StatefulSessionRecord<Claims>;

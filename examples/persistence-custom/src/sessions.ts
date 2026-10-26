@@ -213,9 +213,11 @@ export const SessionsLive = Layer.effectContext(
           .transaction((state, journal, now) =>
             Effect.gen(function* () {
               const row = state.sessions.find((row) => row.sessionId === input.record.sessionId);
+              const account = row === undefined ? undefined : customer(state, row.subjectId);
 
               if (
                 row === undefined ||
+                account === undefined ||
                 !validSession(state, row, now) ||
                 now >=
                   Math.min(
@@ -242,6 +244,7 @@ export const SessionsLive = Layer.effectContext(
 
               const next: Session = {
                 ...row,
+                claims: claims(account),
                 issuedAt: DateTime.makeUnsafe(now),
                 expiresAt: input.nextExpiresAt,
               };

@@ -164,6 +164,16 @@ export const makeSessionApi = Effect.fnUntraced(function* <
     now >= DateTime.toEpochMillis(session.issuedAt) + strategy.policy.renewalIntervalMillis &&
     DateTime.toEpochMillis(session.expiresAt) < DateTime.toEpochMillis(session.absoluteExpiresAt);
 
+  // Named actions clone AuthRequest; the capture is the shared request lifetime.
+  // Keep maintenance results separate from evidence for the incoming credential.
+  const maintenance = new WeakMap<
+    SessionVerificationCapture["Service"],
+    {
+      readonly credential: Redacted.Redacted<string>;
+      readonly effect: ReturnType<typeof strategy.refresh>;
+    }
+  >();
+
   const maintain = Effect.fnUntraced(function* (
     session: typeof sessions.Session.Type | null,
     credential: Redacted.Redacted<string> | undefined,
@@ -178,9 +188,37 @@ export const makeSessionApi = Effect.fnUntraced(function* <
     const now = DateTime.toEpochMillis(yield* DateTime.now);
 
     if (refreshDue(session, now)) {
-      const refreshed = yield* strategy
-        .refresh(credential)
-        .pipe(Effect.catchTag("SessionInvalid", () => Effect.succeed(null)));
+      const capture = yield* Effect.serviceOption(SessionVerificationCapture);
+      let refresh = strategy.refresh(credential);
+
+      if (Option.isSome(capture) && capture.value.isActive()) {
+        refresh = yield* Effect.cached(refresh).pipe(
+          Effect.map((candidate) => {
+            const current = maintenance.get(capture.value);
+
+            if (
+              current !== undefined &&
+              Redacted.value(current.credential) === Redacted.value(credential)
+            )
+              return current.effect;
+
+            maintenance.set(capture.value, { credential, effect: candidate });
+
+            return candidate;
+          }),
+        );
+      }
+
+      const refreshed = yield* refresh.pipe((effect) =>
+        Effect.catchCauseIf(
+          effect,
+          (cause) =>
+            cause.reasons.every(
+              (reason) => Cause.isFailReason(reason) && reason.error._tag === "SessionInvalid",
+            ),
+          () => Effect.succeed(null),
+        ),
+      );
 
       if (refreshed === null) return null;
       yield* request.sessionRefresh(
@@ -189,16 +227,6 @@ export const makeSessionApi = Effect.fnUntraced(function* <
 
       return refreshed.value;
     }
-    // Re-deliver the authoritative expiry even after a previous response was
-    // lost. This reuses the incoming bearer and creates no new credential.
-    yield* request.sessionRefresh([
-      {
-        _tag: "Issue",
-        slot: "session",
-        credential,
-        expiresAtMillis: DateTime.toEpochMillis(session.expiresAt),
-      },
-    ]);
 
     return session;
   });

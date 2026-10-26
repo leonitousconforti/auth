@@ -413,7 +413,7 @@ export const layer = <C extends ClaimsCodec, const Id extends string>(
               !live(state, row, time) ||
               (!refresh && input.nextCredentialVersion === row.credentialVersion) ||
               expires <= time ||
-              expires < DateTime.toEpochMillis(row.expiresAt) ||
+              (refresh && expires < DateTime.toEpochMillis(row.expiresAt)) ||
               expires > DateTime.toEpochMillis(row.absoluteExpiresAt) ||
               state.sessions.some(
                 (session) =>

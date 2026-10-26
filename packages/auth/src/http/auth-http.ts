@@ -515,9 +515,14 @@ export const make = <
           withProofRequestContext,
         );
 
-        if (!commands.some((command) => command.slot === "session"))
-          commands.push(...refreshCommands);
         const now = DateTime.toEpochMillis(yield* DateTime.now);
+
+        if (!commands.some((command) => command.slot === "session"))
+          commands.push(
+            ...refreshCommands.filter(
+              (command) => command._tag === "Issue" && command.expiresAtMillis - now >= 1_000,
+            ),
+          );
 
         for (const command of commands) {
           const cookie = config.cookies[command.slot];

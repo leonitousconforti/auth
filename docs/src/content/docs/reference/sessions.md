@@ -86,8 +86,10 @@ platform Layers.
 Without `sessions` on `Auth.make`, provide the bound `statefulLayer(policy)`,
 `statelessLayer(policy)`, `stateAssistedLayer(policy)`, or your own `SessionStrategy`.
 Custom `SessionStrategy.refresh` implementations maintain idle expiry without
-invalidating the incoming credential. Stateful persistence implements `refresh`
-as a conditional lifetime update that preserves the bearer and credential version;
+invalidating the incoming credential. Stateful strategies issue credentials with
+absolute expiry and return no credential commands from `refresh`.
+Stateful persistence implements `refresh` as a conditional lifetime update that
+preserves the bearer and credential version;
 `rotate` remains the explicit credential replacement operation.
 
 Signed Layers use the same default signing service. Configure cookie caching on

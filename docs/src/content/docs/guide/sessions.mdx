@@ -92,9 +92,9 @@ const required = yield* auth.requireSession;          // Fails when anonymous
 Missing, invalid, or expired credentials return `null`; storage failures remain
 failures. `requireSession` allows caching and fails with `AuthenticationRequired`
 when anonymous. The HTTP boundary maintains eligible sessions automatically.
-A handler that already resolved an authoritative caller reuses that same private source for ordinary session
-reads; `{ fresh: true }` requests a new inspection. Cookie snapshots never become
-private authentication evidence.
+A handler that already resolved an authoritative caller reuses that private source
+for ordinary session reads; `{ fresh: true }` requests a new inspection. Cookie
+snapshots never become private authentication evidence.
 
 The Effect client accepts the same options: `client.auth.getSession({ fresh: true })`.
 See the [client guide](./client#read-a-session-and-sign-out) for Atom usage.
@@ -121,16 +121,21 @@ Its result distinguishes `revoked`, `already-invalid`, `client-only`, and
 Normal session reads and authenticated actions through the HTTP boundary extend
 idle expiry once `renewAfter` has elapsed. Application handlers using
 `http.middleware` get the same behavior through `getSession()` or `requireSession`.
-The server delivers the current credential and expiry in the response; clients
-need no timer or explicit renewal call. A page left open without requests does
+Clients need no timer or explicit renewal call. A page left open without requests does
 not keep a session alive.
 
-Stateful maintenance keeps the same bearer and credential version, so concurrent
-requests and lost responses do not invalidate other requests. Signed sessions
-receive an updated token; earlier tokens retain their original expiry. Maintenance
-preserves authentication assurance and never exceeds the original absolute
-lifetime. It cannot revive an expired or revoked session. Cookie-cache hits may
-avoid storage until maintenance is due, when the server checks authoritative state.
+Stateful credentials are retained in cookies and native storage until absolute
+expiry. The server still enforces idle expiry on every verification. Maintenance
+updates that idle deadline without replacing the bearer, rewriting its cookie, or
+running session-creation hooks. Overlapping requests and lost responses cannot
+undo a refresh.
+
+Signed sessions receive an updated token when maintenance is due; earlier tokens
+retain their original expiry. Concurrent signed responses can leave the client
+with the earlier replacement's expiry. Maintenance preserves authentication
+assurance and never exceeds the original absolute lifetime. It cannot revive an
+expired or revoked session. Cookie-cache hits may avoid storage until maintenance
+is due, when the server checks authoritative state.
 
 Use explicit renewal only when you need credential rotation:
 

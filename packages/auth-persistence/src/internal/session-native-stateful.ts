@@ -251,7 +251,7 @@ export const makeNativeStatefulSessionServices = Effect.fnUntraced(function* <Cl
           if (
             expires > absolute ||
             preparedAt >= expires ||
-            expires < DateTime.toEpochMillis(input.record.expiresAt) ||
+            (refresh && expires < DateTime.toEpochMillis(input.record.expiresAt)) ||
             (!refresh &&
               (input.nextDigest === input.record.digest ||
                 input.nextCredentialVersion === input.record.credentialVersion))

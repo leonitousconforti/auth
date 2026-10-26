@@ -319,10 +319,23 @@ const applyCommands = Effect.fnUntraced(function* (
   config: OperationHttpConfiguration,
   native: boolean,
   cacheEnabled: boolean,
+  refreshCommands: ReadonlyArray<AuthCredentialCommand> = [],
 ) {
   const now = DateTime.toEpochMillis(yield* DateTime.now);
 
-  for (const command of commands) {
+  // A delayed maintenance response must not turn its old expiry into a deletion.
+  // Browser Max-Age rounds down to seconds; explicit mutations retain precedence.
+  const delivery = commands.some((command) => command.slot === "session")
+    ? commands
+    : [
+        ...commands,
+        ...refreshCommands.filter(
+          (command) =>
+            command._tag === "Issue" && command.expiresAtMillis - now >= (native ? 1 : 1_000),
+        ),
+      ];
+
+  for (const command of delivery) {
     if (command.slot === "session-cache") {
       if (native || !cacheEnabled) continue;
       const cookie = yield* snapshotCookie(config.cookies["session-cache"], command, now);
@@ -603,8 +616,6 @@ export const make = Effect.fnUntraced(function* <
         ),
       );
 
-      if (!commands.some((command) => command.slot === "session"))
-        commands.push(...refreshCommands);
       const headers = baseHeaders();
 
       if (
@@ -667,6 +678,7 @@ export const make = Effect.fnUntraced(function* <
           config,
           security.native,
           cacheTransport !== undefined,
+          refreshCommands,
         );
       if (callback !== undefined) {
         if (callback.respond !== undefined) {
@@ -691,6 +703,7 @@ export const make = Effect.fnUntraced(function* <
             config,
             security.native,
             cacheTransport !== undefined,
+            refreshCommands,
           );
 
           const customHeaders = new Headers(response.headers);
