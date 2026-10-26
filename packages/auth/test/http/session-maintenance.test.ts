@@ -22,6 +22,7 @@ import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { expect } from "vite-plus/test";
 
@@ -305,4 +306,123 @@ it.effect("admits a queued credential mutation before newer maintenance reads", 
 
     expect(calls).toEqual(["read", "mutation", "read"]);
   }),
+);
+
+// https://github.com/yielded-dev/auth/commit/001e478c8010216fc15c5897d054b68483e802d1
+// Native headers can expire while the response body is consumed. The response
+// ordering tests above do not cover client-side expiry or its credential store.
+it.effect(
+  "discards expired optional native maintenance without weakening credential validation",
+  () =>
+    Effect.gen(function* () {
+      class Credentials extends Context.Service<
+        Credentials,
+        OperationHttpClient.NativeCredentials
+      >()("test/session-maintenance/Credentials") {}
+
+      const headers = {
+        session: "x-session",
+        "session-cache": "x-session-cache",
+        "pending-proof": "x-pending-proof",
+        registration: "x-registration",
+        "request-binding": "x-request-binding",
+        "session-step-up": "x-session-step-up",
+      };
+
+      const consuming = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      let responseHeader = headers.session;
+      let accepted = 0;
+
+      const transport = HttpClient.make((request) =>
+        Effect.gen(function* () {
+          const mutation =
+            new URL(request.url).pathname === app.contract.actions.signOut.route.path;
+
+          const body = yield* Stream.toReadableStreamEffect(
+            Stream.fromEffect(
+              Effect.gen(function* () {
+                yield* Deferred.succeed(consuming, undefined);
+                yield* Deferred.await(release);
+
+                return new TextEncoder().encode(
+                  JSON.stringify({
+                    _tag: "Success",
+                    value: mutation
+                      ? { clearCredential: true, invalidation: "already-invalid" }
+                      : null,
+                  }),
+                );
+              }),
+            ),
+          );
+
+          return HttpClientResponse.fromWeb(
+            request,
+            new Response(body, {
+              headers: {
+                "content-type": "application/json",
+                [responseHeader]: JSON.stringify({
+                  _tag: "Issue",
+                  credential: "synthetic-maintenance-credential",
+                  expiresAtMillis: 1_000,
+                }),
+              },
+            }),
+          );
+        }),
+      );
+
+      const client = yield* OperationHttpClient.make({
+        baseUrl: origin,
+        csrfHeader: "x-csrf",
+        csrfValue: "1",
+        native: {
+          modeHeader: "x-mode",
+          requestHeaders: headers,
+          responseHeaders: headers,
+          credentials: Credentials,
+        },
+      }).pipe(
+        Effect.provideService(HttpClient.HttpClient, transport),
+        Effect.provideService(Credentials, {
+          read: Effect.succeed({ session: Redacted.make("synthetic-existing-credential") }),
+          accept: () =>
+            Effect.sync(() => {
+              accepted++;
+            }),
+        }),
+      );
+
+      const pending = yield* client
+        .call(app.contract.actions.getSession.route, undefined)
+        .pipe(Effect.result, Effect.forkChild);
+
+      yield* Deferred.await(consuming);
+      yield* TestClock.adjust("2 seconds");
+      yield* Deferred.succeed(release, undefined);
+      const maintenance = yield* Fiber.join(pending);
+
+      const explicit = yield* client
+        .call(app.contract.actions.signOut.route, undefined)
+        .pipe(Effect.result);
+
+      expect(explicit).toMatchObject({
+        _tag: "Failure",
+        failure: { _tag: "OperationHttpError", reason: "credentials" },
+      });
+      responseHeader = headers["request-binding"];
+
+      const unexpected = yield* client
+        .call(app.contract.actions.getSession.route, undefined)
+        .pipe(Effect.result);
+
+      expect(unexpected).toMatchObject({
+        _tag: "Failure",
+        failure: { _tag: "OperationHttpError", reason: "credentials" },
+      });
+      expect(accepted).toBe(0);
+      expect(maintenance._tag).toBe("Success");
+      if (maintenance._tag === "Success") expect(maintenance.success).toBeNull();
+    }),
 );

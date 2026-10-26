@@ -479,8 +479,12 @@ export const make = Effect.fn("OperationHttpClient.make")(function* <R = never, 
 
           if (!route.operation.credentials && command._tag !== "Issue")
             return yield* OperationHttpError.make({ reason: "credentials" });
-          if (command._tag === "Issue" && command.expiresAtMillis <= now)
+          if (command._tag === "Issue" && command.expiresAtMillis <= now) {
+            if (!route.operation.credentials && route.sessionRefresh && slot === "session")
+              continue;
+
             return yield* OperationHttpError.make({ reason: "credentials" });
+          }
           commands.push(
             command._tag === "Clear"
               ? { _tag: "Clear", slot }

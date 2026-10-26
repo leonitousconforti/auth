@@ -25,7 +25,7 @@ import { AuthRequest } from "../auth/AuthRequest";
 import { maintainSession, type SessionApi, type SessionApiError } from "../auth/session";
 import { HookDenied } from "../hooks/models";
 import { OperationHttpConfigurationError, OperationHttpError } from "../http-operation/errors";
-import type { HttpCredentials, OperationHttpConfiguration } from "../http-operation/models";
+import type { HttpCredentials } from "../http-operation/models";
 import { OperationHttpInvocation } from "../http-operation/OperationHttpInvocation";
 import {
   configurationLayer,
@@ -288,11 +288,9 @@ export const make = <
     }),
   );
 
-  const resolve = Effect.fnUntraced(function* (
-    api: Pick<SessionApi<S>, "verifySession" | typeof maintainSession>,
-    credential: Redacted.Redacted<string> | undefined,
-  ) {
+  const resolve = Effect.fnUntraced(function* (credential: Redacted.Redacted<string> | undefined) {
     if (credential === undefined) return guest;
+    const api = yield* auth;
     const capture = yield* Effect.serviceOption(SessionVerificationCapture);
     const now = DateTime.toEpochMillis(yield* DateTime.now);
 
@@ -349,7 +347,8 @@ export const make = <
             _request: Request,
             credentials: HttpCredentials,
           ) {
-            return yield* resolve(api, credentials.session).pipe(
+            return yield* resolve(credentials.session).pipe(
+              Effect.provideService(auth, api),
               Effect.catchCause((cause) =>
                 Effect.failCause(
                   Cause.map(cause, () => OperationHttpError.make({ reason: "unavailable" })),
@@ -411,209 +410,206 @@ export const make = <
       }),
     );
 
-  const wrap = (api: Api, config: OperationHttpConfiguration) =>
-    Effect.fn("AuthHttp.request")(function* <E, R>(
-      effect: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,
-    ) {
-      const incoming = yield* HttpServerRequest.HttpServerRequest;
+  const wrap = Effect.fn("AuthHttp.request")(function* <E, R>(
+    effect: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,
+  ) {
+    const api = yield* auth;
+    const config = yield* OperationHttpServerConfig;
+    const incoming = yield* HttpServerRequest.HttpServerRequest;
 
-      const request = yield* HttpServerRequest.toWeb(incoming).pipe(
-        Effect.mapError(() => OperationHttpError.make({ reason: "request" })),
-      );
+    const request = yield* HttpServerRequest.toWeb(incoming).pipe(
+      Effect.mapError(() => OperationHttpError.make({ reason: "request" })),
+    );
 
-      if (new TextEncoder().encode(request.url).byteLength > config.maximumUrlBytes) {
-        return yield* OperationHttpError.make({ reason: "too-large" });
-      }
+    if (new TextEncoder().encode(request.url).byteLength > config.maximumUrlBytes) {
+      return yield* OperationHttpError.make({ reason: "too-large" });
+    }
 
-      const security = yield* requestSecurity(request, "request").pipe(
+    const security = yield* requestSecurity(request, "request").pipe(
+      Effect.provideService(OperationHttpServerConfig, config),
+    );
+
+    const commands: AuthCredentialCommand[] = [];
+    const refreshCommands: AuthCredentialCommand[] = [];
+    const mutationCookies: Cookies.Cookie[] = [];
+    const cacheTransport = security.native ? undefined : api[sessionCacheTransport];
+    let mutationAdmitted = false;
+
+    const rotateCache = yield* Effect.cached(
+      Effect.gen(function* () {
+        if (cacheTransport === undefined) return;
+        const generation = yield* cacheTransport.rotate;
+
+        mutationCookies.push(
+          ...(yield* rotationCookies(
+            config.cookies["session-cache"],
+            generation,
+            cacheTransport.lifetimeMillis,
+          )),
+        );
+      }),
+    );
+
+    const beforeMutation = yield* Effect.cached(
+      mutationSecurity(request).pipe(
         Effect.provideService(OperationHttpServerConfig, config),
-      );
-
-      const commands: AuthCredentialCommand[] = [];
-      const refreshCommands: AuthCredentialCommand[] = [];
-      const mutationCookies: Cookies.Cookie[] = [];
-      const cacheTransport = security.native ? undefined : api[sessionCacheTransport];
-      let mutationAdmitted = false;
-
-      const rotateCache = yield* Effect.cached(
-        Effect.gen(function* () {
-          if (cacheTransport === undefined) return;
-          const generation = yield* cacheTransport.rotate;
-
-          mutationCookies.push(
-            ...(yield* rotationCookies(
-              config.cookies["session-cache"],
-              generation,
-              cacheTransport.lifetimeMillis,
-            )),
-          );
-        }),
-      );
-
-      const beforeMutation = yield* Effect.cached(
-        mutationSecurity(request).pipe(
-          Effect.provideService(OperationHttpServerConfig, config),
-          Effect.mapError(() => HookDenied.make({ reason: "policy" })),
-          Effect.andThen(
-            Effect.gen(function* () {
-              yield* rotateCache;
-              mutationAdmitted = true;
-            }).pipe(
-              Effect.catchCause((cause) =>
-                Effect.failCause(
-                  Cause.map(cause, () => HookDenied.make({ reason: "unavailable" })),
-                ),
-              ),
+        Effect.mapError(() => HookDenied.make({ reason: "policy" })),
+        Effect.andThen(
+          Effect.gen(function* () {
+            yield* rotateCache;
+            mutationAdmitted = true;
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Effect.failCause(Cause.map(cause, () => HookDenied.make({ reason: "unavailable" }))),
             ),
           ),
         ),
+      ),
+    );
+
+    const sink = Effect.fnUntraced(function* (values: ReadonlyArray<AuthCredentialCommand>) {
+      if (!mutationAdmitted) return yield* Effect.die(OperationOutputError.make({}));
+      commands.push(...values);
+    });
+
+    const resolveInvocation = yield* cacheSessionInvocation(
+      resolve(security.credentials.session).pipe(Effect.provideService(auth, api)),
+    );
+
+    return yield* Effect.gen(function* () {
+      let response = yield* effect.pipe(
+        Effect.provideService(auth, api),
+        Effect.provideService(AuthRequest, {
+          invocation: guest,
+          credentials: security.credentials,
+          // Only named actions grant query mode; other HTTP methods stay fresh.
+          ...(["GET", "HEAD"].includes(request.method) ? {} : { actionMode: "mutation" as const }),
+          ...(security.sessionCacheGeneration === undefined
+            ? {}
+            : { sessionCacheGeneration: security.sessionCacheGeneration }),
+          resolveInvocation,
+          beforeMutation,
+          ...(allowsSessionRefresh(request, config, security.native)
+            ? {
+                sessionRefresh: (values: ReadonlyArray<AuthCredentialCommand>) =>
+                  Effect.sync(() => {
+                    refreshCommands.splice(0, refreshCommands.length, ...values);
+                  }),
+              }
+            : {}),
+          credentialCommandSink: sink,
+          ...(cacheTransport === undefined
+            ? {}
+            : {
+                initializeSessionCache: rotateCache,
+                sessionCacheCommandSink: (command) =>
+                  Effect.sync(() => {
+                    commands.push(command);
+                  }),
+              }),
+        }),
+        withProofRequestContext,
       );
 
-      const sink = Effect.fnUntraced(function* (values: ReadonlyArray<AuthCredentialCommand>) {
-        if (!mutationAdmitted) return yield* Effect.die(OperationOutputError.make({}));
-        commands.push(...values);
-      });
+      const now = DateTime.toEpochMillis(yield* DateTime.now);
 
-      const resolveInvocation = yield* cacheSessionInvocation(
-        resolve(api, security.credentials.session),
-      );
-
-      return yield* Effect.gen(function* () {
-        let response = yield* effect.pipe(
-          Effect.provideService(auth, api),
-          Effect.provideService(AuthRequest, {
-            invocation: guest,
-            credentials: security.credentials,
-            // Only named actions grant query mode; other HTTP methods stay fresh.
-            ...(["GET", "HEAD"].includes(request.method)
-              ? {}
-              : { actionMode: "mutation" as const }),
-            ...(security.sessionCacheGeneration === undefined
-              ? {}
-              : { sessionCacheGeneration: security.sessionCacheGeneration }),
-            resolveInvocation,
-            beforeMutation,
-            ...(allowsSessionRefresh(request, config, security.native)
-              ? {
-                  sessionRefresh: (values: ReadonlyArray<AuthCredentialCommand>) =>
-                    Effect.sync(() => {
-                      refreshCommands.splice(0, refreshCommands.length, ...values);
-                    }),
-                }
-              : {}),
-            credentialCommandSink: sink,
-            ...(cacheTransport === undefined
-              ? {}
-              : {
-                  initializeSessionCache: rotateCache,
-                  sessionCacheCommandSink: (command) =>
-                    Effect.sync(() => {
-                      commands.push(command);
-                    }),
-                }),
-          }),
-          withProofRequestContext,
+      if (!commands.some((command) => command.slot === "session"))
+        commands.push(
+          ...refreshCommands.filter(
+            (command) => command._tag === "Issue" && command.expiresAtMillis - now >= 1_000,
+          ),
         );
 
-        const now = DateTime.toEpochMillis(yield* DateTime.now);
+      for (const command of commands) {
+        const cookie = config.cookies[command.slot];
 
-        if (!commands.some((command) => command.slot === "session"))
-          commands.push(
-            ...refreshCommands.filter(
-              (command) => command._tag === "Issue" && command.expiresAtMillis - now >= 1_000,
-            ),
-          );
+        if (command.slot === "session-cache") {
+          if (cacheTransport === undefined) continue;
+          const snapshot = yield* snapshotCookie(cookie, command, now);
 
-        for (const command of commands) {
-          const cookie = config.cookies[command.slot];
-
-          if (command.slot === "session-cache") {
-            if (cacheTransport === undefined) continue;
-            const snapshot = yield* snapshotCookie(cookie, command, now);
-
-            if (snapshot !== undefined)
-              response = yield* HttpServerResponse.setCookie(
-                response,
-                snapshot.name,
-                snapshot.value,
-                snapshot.options,
-              ).pipe(Effect.orDie);
-            continue;
-          }
-
-          const sameSite =
-            command._tag === "Issue" && command.sameSite === "none" ? "none" : cookie.sameSite;
-
-          if (sameSite === "none" && !cookie.secure)
-            return yield* OperationHttpError.make({ reason: "credentials" });
-
-          response = yield* HttpServerResponse.setCookie(
-            response,
-            cookie.name,
-            command._tag === "Issue" ? Redacted.value(command.credential) : "",
-            {
-              ...cookie,
-              sameSite,
-              httpOnly: true,
-              maxAge: Duration.millis(
-                command._tag === "Issue" ? Math.max(0, command.expiresAtMillis - now) : 0,
-              ),
-            },
-          ).pipe(Effect.mapError(() => OperationHttpError.make({ reason: "response" })));
+          if (snapshot !== undefined)
+            response = yield* HttpServerResponse.setCookie(
+              response,
+              snapshot.name,
+              snapshot.value,
+              snapshot.options,
+            ).pipe(Effect.orDie);
+          continue;
         }
 
-        for (const cookie of mutationCookies)
-          response = yield* HttpServerResponse.setCookie(
-            response,
-            cookie.name,
-            cookie.value,
-            cookie.options,
-          ).pipe(Effect.orDie);
+        const sameSite =
+          command._tag === "Issue" && command.sameSite === "none" ? "none" : cookie.sameSite;
 
-        return HttpServerResponse.setHeader(response, "cache-control", "no-store");
-      }).pipe(
-        Effect.tapCause(() => {
-          if (cacheTransport === undefined) return Effect.void;
+        if (sameSite === "none" && !cookie.secure)
+          return yield* OperationHttpError.make({ reason: "credentials" });
 
-          const clearSnapshot = commands.some(
-            (command) => command.slot === "session-cache" && command._tag === "Clear",
-          );
+        response = yield* HttpServerResponse.setCookie(
+          response,
+          cookie.name,
+          command._tag === "Issue" ? Redacted.value(command.credential) : "",
+          {
+            ...cookie,
+            sameSite,
+            httpOnly: true,
+            maxAge: Duration.millis(
+              command._tag === "Issue" ? Math.max(0, command.expiresAtMillis - now) : 0,
+            ),
+          },
+        ).pipe(Effect.mapError(() => OperationHttpError.make({ reason: "response" })));
+      }
 
-          if (mutationCookies.length === 0 && !clearSnapshot) return Effect.void;
+      for (const cookie of mutationCookies)
+        response = yield* HttpServerResponse.setCookie(
+          response,
+          cookie.name,
+          cookie.value,
+          cookie.options,
+        ).pipe(Effect.orDie);
 
-          // Errors are rendered outside this middleware, including failures during
-          // cookie delivery. Preserve invalidation only, never credential issuance.
-          return HttpEffect.appendPreResponseHandler((_request, response) =>
-            Effect.gen(function* () {
-              if (clearSnapshot && mutationCookies.length === 0) {
-                const clear = yield* snapshotCookie(
-                  config.cookies["session-cache"],
-                  { _tag: "Clear", slot: "session-cache" },
-                  0,
-                );
+      return HttpServerResponse.setHeader(response, "cache-control", "no-store");
+    }).pipe(
+      Effect.tapCause(() => {
+        if (cacheTransport === undefined) return Effect.void;
 
-                if (clear !== undefined)
-                  response = yield* HttpServerResponse.setCookie(
-                    response,
-                    clear.name,
-                    clear.value,
-                    clear.options,
-                  ).pipe(Effect.orDie);
-              }
-              for (const cookie of mutationCookies)
+        const clearSnapshot = commands.some(
+          (command) => command.slot === "session-cache" && command._tag === "Clear",
+        );
+
+        if (mutationCookies.length === 0 && !clearSnapshot) return Effect.void;
+
+        // Errors are rendered outside this middleware, including failures during
+        // cookie delivery. Preserve invalidation only, never credential issuance.
+        return HttpEffect.appendPreResponseHandler((_request, response) =>
+          Effect.gen(function* () {
+            if (clearSnapshot && mutationCookies.length === 0) {
+              const clear = yield* snapshotCookie(
+                config.cookies["session-cache"],
+                { _tag: "Clear", slot: "session-cache" },
+                0,
+              );
+
+              if (clear !== undefined)
                 response = yield* HttpServerResponse.setCookie(
                   response,
-                  cookie.name,
-                  cookie.value,
-                  cookie.options,
+                  clear.name,
+                  clear.value,
+                  clear.options,
                 ).pipe(Effect.orDie);
+            }
+            for (const cookie of mutationCookies)
+              response = yield* HttpServerResponse.setCookie(
+                response,
+                cookie.name,
+                cookie.value,
+                cookie.options,
+              ).pipe(Effect.orDie);
 
-              return response;
-            }),
-          );
-        }),
-      );
-    }, withSessionRequest);
+            return response;
+          }),
+        );
+      }),
+    );
+  }, withSessionRequest);
 
   const requestLayer = HttpRouter.middleware<{
     provides: I | AuthRequest | ProofRequestContext;
@@ -629,10 +625,9 @@ export const make = <
         Types.unhandled,
         HttpServerRequest.HttpServerRequest
       > =>
-        wrap(
-          api,
-          config,
-        )(effect).pipe(
+        wrap(effect).pipe(
+          Effect.provideService(auth, api),
+          Effect.provideService(OperationHttpServerConfig, config),
           Effect.catchCause((cause) => {
             const unhandled = cause.reasons.filter(
               (reason): reason is Cause.Reason<Types.unhandled> =>
@@ -682,10 +677,7 @@ export const make = <
   const withRequest = Effect.fnUntraced(function* <E, R>(
     effect: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,
   ) {
-    const api = yield* auth;
-    const config = yield* OperationHttpServerConfig;
-
-    return yield* wrap(api, config)(effect);
+    return yield* wrap(effect);
   }, Effect.provide(configuration));
 
   /** Mount the shared contract. Each route calls the same local method, and
@@ -754,7 +746,7 @@ export const make = <
           ...(cacheTransport === undefined ? {} : { [sessionCacheTransport]: cacheTransport }),
           resolve: () => Effect.succeed(guest),
           request: (_request: Request, credentials: HttpCredentials) =>
-            resolve(api, credentials.session),
+            resolve(credentials.session).pipe(Effect.provideService(auth, api)),
         };
       }),
     );
