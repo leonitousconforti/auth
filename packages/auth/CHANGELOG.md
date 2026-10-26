@@ -1,5 +1,21 @@
 # @yielded/auth
 
+## 0.1.0-beta.45
+
+### Minor Changes
+
+- [#271](https://github.com/yielded-dev/auth/pull/271) [`3f063b5`](https://github.com/yielded-dev/auth/commit/3f063b51533c64b118ee3325efd7795c26e66ddc) Thanks [@leonitousconforti](https://github.com/leonitousconforti)! - Protect `HttpApi` groups and endpoints with `OAuthScope.Required` scope requirements, the browser-safe `OAuthScope.RequireAccess` middleware, and an authorization server's `securityLayer(api)`. List described scopes for consent and scope pages with `OAuthScope.catalog(api)`.
+
+- [#270](https://github.com/yielded-dev/auth/pull/270) [`12c4b81`](https://github.com/yielded-dev/auth/commit/12c4b812aa09f2898573da0d41fae8af886055b8) Thanks [@leonitousconforti](https://github.com/leonitousconforti)! - Resolve OAuth and OpenID server clients from application storage with the optional per-server `Clients` service. Clients can authenticate with a `clientSecretDigest` instead of a stored plaintext secret.
+
+### Patch Changes
+
+- [#272](https://github.com/yielded-dev/auth/pull/272) [`267b2f4`](https://github.com/yielded-dev/auth/commit/267b2f4118de57829f98421e64e210a5df927db3) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Enable managed and mapped phone registration through `Persistence.Provisioning`, using application-supplied account values and the existing phone lifecycle.
+- Updated dependencies []:
+  - @yielded/crypto@0.1.0-beta.45
+  - @yielded/jose@0.1.0-beta.45
+  - @yielded/oauth@0.1.0-beta.45
+
 ## 0.1.0-beta.44
 
 ### Minor Changes

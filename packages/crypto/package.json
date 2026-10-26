@@ -1,6 +1,6 @@
 {
   "name": "@yielded/crypto",
-  "version": "0.1.0-beta.44",
+  "version": "0.1.0-beta.45",
   "description": "Effect cryptography services with explicit native and portable backends.",
   "homepage": "https://yielded.dev/auth/",
   "bugs": {
