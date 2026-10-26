@@ -61,13 +61,12 @@ const cacheFallback =
       ),
     );
 
-/** Internal HTTP hook; explicit verification remains independent of request delivery. */
+/** Internal HTTP resolution and maintenance; explicit verification remains read-only. */
 export const maintainSession = Symbol.for("effect-auth/internal/maintainSession");
 
 /** Private transport capability, kept separate from named session operations. */
 export type SessionMaintenanceOwner<Session> = {
   readonly [maintainSession]?: (
-    session: Session,
     credential: Redacted.Redacted<string>,
   ) => Effect.Effect<Session | null, SessionApiError>;
 };
@@ -160,6 +159,23 @@ export const makeSessionApi = Effect.fnUntraced(function* <
     );
   });
 
+  const capturedSession = (credential: Redacted.Redacted<string>) =>
+    sessions
+      .capturedSession(credential)
+      .pipe(
+        Effect.provide(services),
+        Effect.provideService(sessions.SessionStrategy, strategy),
+        (effect) =>
+          Effect.catchCauseIf(
+            effect,
+            (cause) =>
+              cause.reasons.every(
+                (reason) => Cause.isFailReason(reason) && reason.error._tag === "SessionInvalid",
+              ),
+            () => Effect.succeedNone,
+          ),
+      );
+
   const refreshDue = (session: typeof sessions.Session.Type, now: number) =>
     now >= DateTime.toEpochMillis(session.issuedAt) + strategy.policy.renewalIntervalMillis &&
     DateTime.toEpochMillis(session.expiresAt) < DateTime.toEpochMillis(session.absoluteExpiresAt);
@@ -231,6 +247,16 @@ export const makeSessionApi = Effect.fnUntraced(function* <
     return session;
   });
 
+  const resolveSession = Effect.fnUntraced(function* (credential: Redacted.Redacted<string>) {
+    const original = yield* capturedSession(credential);
+
+    const session = Option.isSome(original)
+      ? original.value.session
+      : yield* verifySession(credential);
+
+    return yield* maintain(session, credential);
+  });
+
   const getSession = Effect.fn("Auth.getSession")(function* (options?: SessionReadOptions) {
     const request = yield* AuthRequest;
     const credential = request.credentials.session;
@@ -247,22 +273,7 @@ export const makeSessionApi = Effect.fnUntraced(function* <
 
     const original =
       credential !== undefined && options?.fresh !== true
-        ? yield* sessions
-            .capturedSession(credential)
-            .pipe(
-              Effect.provide(services),
-              Effect.provideService(sessions.SessionStrategy, strategy),
-              (effect) =>
-                Effect.catchCauseIf(
-                  effect,
-                  (cause) =>
-                    cause.reasons.every(
-                      (reason) =>
-                        Cause.isFailReason(reason) && reason.error._tag === "SessionInvalid",
-                    ),
-                  () => Effect.succeedNone,
-                ),
-            )
+        ? yield* capturedSession(credential)
         : Option.none();
 
     if (
@@ -375,7 +386,7 @@ export const makeSessionApi = Effect.fnUntraced(function* <
   });
 
   const api: SessionApi<typeof sessions.Session.Type> = {
-    [maintainSession]: maintain,
+    [maintainSession]: resolveSession,
     ...(Option.isSome(cache) ? { [sessionCacheTransport]: cache.value.transport } : {}),
     verifySession,
     getSession,

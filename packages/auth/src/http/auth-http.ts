@@ -57,11 +57,7 @@ import type { RequestBindingConfig } from "../operations/RequestBindingConfig";
 import { ProofUnavailable } from "../proofs/errors";
 import { ProofRequestContext } from "../proofs/ProofRequestContext";
 import { sessionCacheTransport } from "../sessions/cookieCache";
-import {
-  cacheSessionInvocation,
-  SessionVerificationCapture,
-  withSessionRequest,
-} from "../sessions/invocation";
+import { cacheSessionInvocation, withSessionRequest } from "../sessions/invocation";
 import type { SessionMetadata } from "../sessions/models";
 import { httpGroup, matchesEndpoint } from "./auth-contract";
 import { makeOAuth, type OAuthOptions } from "./oauth";
@@ -291,36 +287,19 @@ export const make = <
   const resolve = Effect.fnUntraced(function* (credential: Redacted.Redacted<string> | undefined) {
     if (credential === undefined) return guest;
     const api = yield* auth;
-    const capture = yield* Effect.serviceOption(SessionVerificationCapture);
-    const now = DateTime.toEpochMillis(yield* DateTime.now);
 
-    const original =
-      Option.isSome(capture) && capture.value.isActive()
-        ? capture.value.sessions.findLast(
-            (value) =>
-              value.moduleId === auth.sessions.moduleId &&
-              Redacted.value(value.credential) === Redacted.value(credential) &&
-              now < value.expiresAtMillis &&
-              now < value.absoluteExpiresAtMillis,
-          )
-        : undefined;
-
-    const session =
-      original ??
-      (yield* api.verifySession(credential).pipe(
-        Effect.flatMap(
-          (session) => api[maintainSession]?.(session, credential) ?? Effect.succeed(session),
-        ),
-        (effect) =>
-          Effect.catchCauseIf(
-            effect,
-            (cause) =>
-              cause.reasons.every(
-                (reason) => Cause.isFailReason(reason) && reason.error._tag === "SessionInvalid",
-              ),
-            () => Effect.succeed(null),
+    const session = yield* (
+      api[maintainSession]?.(credential) ?? api.verifySession(credential)
+    ).pipe((effect) =>
+      Effect.catchCauseIf(
+        effect,
+        (cause) =>
+          cause.reasons.every(
+            (reason) => Cause.isFailReason(reason) && reason.error._tag === "SessionInvalid",
           ),
-      ));
+        () => Effect.succeed(null),
+      ),
+    );
 
     return session === null
       ? guest

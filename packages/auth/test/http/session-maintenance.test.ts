@@ -1,9 +1,11 @@
 import { it } from "@effect/vitest";
 import {
   Auth,
+  AuthContract,
   Hooks,
   Http,
   OperationHttpClient,
+  Operations,
   Schema as AuthSchema,
   Sessions,
   WebCrypto,
@@ -27,7 +29,38 @@ import * as TestClock from "effect/testing/TestClock";
 import { expect } from "vite-plus/test";
 
 const origin = "https://example.test";
-const app = Auth.make("test/session-maintenance", { claims: Schema.Struct({}) });
+
+const contract = AuthContract.make("test/session-maintenance", {
+  claims: Schema.Struct({}),
+  actions: () => ({
+    currentMember: AuthContract.action({
+      payload: Schema.Void,
+      success: AuthSchema.SubjectId,
+      error: Operations.AuthenticationRequired,
+      mode: "query",
+      strategy: "member",
+    }),
+  }),
+});
+
+const app = Auth.make(contract, {
+  strategies: {
+    member: Auth.makeStrategy(
+      {
+        currentMember: Effect.fnUntraced(function* (
+          invocation: Operations.AuthInvocation,
+          _input: void,
+        ) {
+          const caller = yield* Operations.requireAuthenticated(invocation);
+
+          return caller.subjectId;
+        }),
+      },
+      Layer.empty,
+    ),
+  },
+});
+
 const http = Http.make(app, { origin });
 
 const policy = Sessions.stateless({
@@ -210,6 +243,69 @@ it.effect("shares one signed maintenance result across parallel reads of one req
         Effect.provide(context),
       );
     expect(events).toHaveLength(1);
+  }),
+);
+
+// https://github.com/yielded-dev/auth/commit/001e478c8010216fc15c5897d054b68483e802d1
+// getSession and requireSession maintain their own results; they cannot expose
+// HTTP caller resolution skipping maintenance after explicit verification.
+it.effect("maintains a captured session when a protected named query resolves its caller", () =>
+  Effect.gen(function* () {
+    const { context, credential, events } = yield* fixture;
+
+    yield* TestClock.adjust("6 seconds");
+
+    const verificationOnly = yield* http
+      .withRequest(
+        Effect.gen(function* () {
+          const auth = yield* app;
+          const session = yield* auth.verifySession(credential);
+
+          expect(DateTime.toEpochMillis(session.expiresAt)).toBe(10_000);
+
+          return HttpServerResponse.empty();
+        }),
+      )
+      .pipe(
+        Effect.provideService(HttpServerRequest.HttpServerRequest, request(credential)),
+        Effect.provide(context),
+      );
+
+    expect(HttpServerResponse.toWeb(verificationOnly).headers.getSetCookie()).toHaveLength(0);
+    expect(events).toHaveLength(0);
+
+    const protectedResponse = yield* http
+      .withRequest(
+        Effect.gen(function* () {
+          const auth = yield* app;
+
+          yield* auth.verifySession(credential);
+
+          const callers = yield* Effect.all([auth.currentMember(), auth.currentMember()], {
+            concurrency: 2,
+          });
+
+          expect(callers).toEqual(["member", "member"]);
+
+          return HttpServerResponse.empty();
+        }),
+      )
+      .pipe(
+        Effect.provideService(HttpServerRequest.HttpServerRequest, request(credential)),
+        Effect.provide(context),
+      );
+
+    expect(HttpServerResponse.toWeb(protectedResponse).headers.getSetCookie()).toHaveLength(1);
+    expect(events).toHaveLength(1);
+    const replacement = protectedResponse.cookies.cookies["__Host-effect-auth-session"];
+
+    if (replacement === undefined) return yield* Effect.die("Missing maintained session cookie");
+
+    const session = yield* Context.get(context, app)
+      .verifySession(Redacted.make(replacement.value))
+      .pipe(Effect.provide(context));
+
+    expect(DateTime.toEpochMillis(session.expiresAt)).toBe(16_000);
   }),
 );
 
