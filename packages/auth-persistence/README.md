@@ -28,15 +28,16 @@ Applications own subject provisioning, policy, claims, delivery, and their datab
 connection and migration runner. On Workers, use a [request-scoped SQL connection](../../docs/src/content/docs/reference/adapters.md#workers-and-request-scoped-sql)
 and shared `WorkerdServices`.
 
-The composed Layer covers password sign-in and management, email address verification
-and changes, phone sign-in and enabled lifecycle operations, passkey sign-in and
-management, OAuth sign-in with optional retained access, and connected accounts
-with stateful sessions on PostgreSQL and SQLite.
-OAuth-only definitions also support stateless sessions without a session table; identity
-authority and OAuth flows remain durable. Other stateless combinations and state-assisted
-sessions require explicit persistence services.
+The composed Layer covers password sign-in and management, email codes, magic links
+and address management, phone sign-in and enabled lifecycle operations, passkey sign-in
+and management, OAuth sign-in with optional retained access, and connected accounts
+with stateful sessions on PostgreSQL and SQLite. OAuth and email sign-in also support
+stateless sessions without a session table; identity authority, proofs, and OAuth flows
+remain durable. Other stateless combinations and state-assisted sessions require explicit
+persistence services.
 Phone signup supplies subject values through `Persistence.Provisioning`; applications
 retain delivery, claims, and authorization for number verification and changes.
+Guest email registration requires explicit services.
 OAuth registration and login linking/unlinking still use explicit `OAuthPersistence`
 mappings. Applications provision login identities and supply OAuth action evidence,
 use authorization, provider configuration, and encryption keys.

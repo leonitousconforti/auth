@@ -105,17 +105,17 @@ running for other waiting callers. Interrupted setup requires rebuilding the Lay
 before storage operations resume. Cookie-cached and anonymous session reads do
 not trigger initialization.
 
-Composition supports password sign-in, registration and management, email address
-verification and changes, phone sign-in and enabled lifecycle operations, passkey
-sign-in and management, OAuth sign-in and connected grants, and stateful sessions
-on PostgreSQL and SQLite.
-OAuth-only definitions also support `Sessions.stateless()`: flows, grants, and
-issuance authority remain durable; session verification uses signed credentials.
+Composition supports password sign-in, registration and management, email codes,
+magic links and address management, phone sign-in and enabled lifecycle operations,
+passkey sign-in and management, OAuth sign-in and connected grants, and stateful
+sessions on PostgreSQL and SQLite.
+OAuth and email sign-in also support `Sessions.stateless()`: proofs, flows, grants,
+and issuance authority remain durable; session verification uses signed credentials.
 Stateless sessions retain their configured lifetime after authority changes.
 State-assisted sessions and other stateless strategy combinations use explicit
 storage Layers.
 
-Email storage permits one verified address per subject and email module.
+Composed email address management permits one verified address per subject and email module.
 Composed tables use canonical logical column names and text auth IDs; subject ID
 codecs and order-preserving timestamp codecs remain application-owned.
 
@@ -406,8 +406,12 @@ are permanent and are never removed by cleanup.
 
 ## Email
 
-`makeEmailSignInServices` supplies lookup. `makeEmailRegistrationServices` and
-`makeEmailAddressServices` supply account creation and address changes. For explicit
+`Email.makeCode()` and `Email.makeLink()` use `AuthPersistence` for verified-email
+lookup and proof storage. Applications supply existing email identities, claims,
+keys, and delivery. Guest registration uses explicit services.
+
+For explicit composition, `makeEmailSignInServices` supplies lookup.
+`makeEmailRegistrationServices` and `makeEmailAddressServices` supply account creation and address changes. For explicit
 mappings over an existing layout, use `.emails()` and `.proofs()` from
 `yield* makeStorageMappings(storage)`.
 

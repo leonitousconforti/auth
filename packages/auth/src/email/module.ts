@@ -448,6 +448,7 @@ export const makeEmailSignInModule = <
 
   return Object.freeze({
     ...makeSignIn(options.mode),
+    persistence: Object.freeze({ kind: "email" as const, moduleId, signIn: true as const }),
     binding,
     Begin,
     beginLayer,

@@ -1,4 +1,4 @@
-import type { EmailAction, EmailAddressPersistence } from "@yielded/auth/Email";
+import type { EmailAction, EmailAddressPersistence, EmailSignInTargets } from "@yielded/auth/Email";
 import type { LoginIdentifier } from "@yielded/auth/Identity";
 import type {
   OAuthConnectedPersistence,
@@ -83,9 +83,14 @@ export interface Strategy {
     | OAuthFeature
     | PhoneFeature
     | {
-        readonly kind: "password" | "email";
+        readonly kind: "password";
         readonly moduleId: string;
         readonly management?: boolean;
+      }
+    | {
+        readonly kind: "email";
+        readonly moduleId: string;
+        readonly signIn?: boolean;
         readonly addresses?: boolean;
       };
   readonly RegistrationAuthority?: Context.Key<unknown, unknown>;
@@ -112,6 +117,14 @@ type ManagedPhone<A extends { readonly strategies: Readonly<Record<string, Strat
   Enabled<A, "phone">,
   { persistence: { lifecycle: true } }
 >;
+
+type EmailSignIn<A extends { readonly strategies: Readonly<Record<string, Strategy>> }> = Extract<
+  Enabled<A, "email">,
+  { persistence: { signIn: true } }
+>;
+
+type EmailAddresses<A extends { readonly strategies: Readonly<Record<string, Strategy>> }> =
+  Extract<Enabled<A, "email">, { persistence: { addresses: true } }>;
 
 type ManagedPasskey<A extends { readonly strategies: Readonly<Record<string, Strategy>> }> =
   Extract<Enabled<A, "passkey">, { persistence: { management: true } }>;
@@ -214,7 +227,8 @@ export type Ports<C extends ClaimsCodec, Id extends string, A extends Definition
   | KeyId<RegistrationKey<ManagedPassword<A>>>
   | (Enabled<A, "passkey"> extends never ? never : PasskeyPersistence | PasskeyCredentials)
   | (ManagedPasskey<A> extends never ? never : PasskeyManagementPersistence)
-  | (Enabled<A, "email"> extends never ? never : EmailAddressPersistence)
+  | (EmailSignIn<A> extends never ? never : EmailSignInTargets)
+  | (EmailAddresses<A> extends never ? never : EmailAddressPersistence)
   | (UsesProofs<A> extends never ? never : ProofPersistence)
   | (Enabled<A, "phone"> extends never ? never : PhoneSignInTargets)
   | (ManagedPhone<A> extends never ? never : PhonePersistence)
@@ -318,8 +332,8 @@ export interface BoundPersistence<
    * or perform external side effects while preparing a subject.
    */
   readonly Provisioning: Context.Service<ProvisioningRequirement<A>, Provisioning<A>>;
-  /** Stateful sessions and OAuth-only stateless sessions are supported. Other session
-   * configurations fail acquisition with PersistenceConfigurationError.
+  /** Stateful sessions and stateless sessions with OAuth or email sign-in are supported.
+   * Other session configurations fail acquisition with PersistenceConfigurationError.
    * Capture dependencies at acquisition; validate SQL metadata and configure storage
    * once on the first service operation. The configured SQL client's acquirer can
    * resolve services from that operation's request context. Initialization failures become

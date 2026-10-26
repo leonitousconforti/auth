@@ -1,4 +1,4 @@
-import { EmailAddressPersistence, EmailUnavailable } from "@yielded/auth/Email";
+import { EmailAddressPersistence, EmailSignInTargets, EmailUnavailable } from "@yielded/auth/Email";
 import type { LifecycleHooks } from "@yielded/auth/Hooks";
 import { CurrentCommitJournal, hasCommitScope } from "@yielded/auth/Hooks";
 import {
@@ -49,7 +49,7 @@ import {
   type PasskeyRequirement,
   type OAuthFeature,
 } from "./configuration";
-import { makeNativeEmailAddressServices } from "./email-native";
+import { makeNativeEmailAddressServices, makeNativeEmailSignInServices } from "./email-native";
 import { PersistenceMappingError } from "./mapping-error";
 import type { NativeSqlTables } from "./native-sql-table";
 import { makeManagedOAuth } from "./oauth-managed";
@@ -149,13 +149,23 @@ export const createPersistence = <T extends object, R, Database extends object =
     const stateless =
       auth.sessionMode === "stateless" &&
       features.length > 0 &&
-      features.every((feature) => feature?.kind === "oauth");
+      features.every(
+        (feature) =>
+          feature.kind === "oauth" ||
+          (feature.kind === "email" && feature.signIn && !feature.addresses),
+      );
 
     const management = features.some(
       (feature) => feature.kind === "password" && feature.management,
     );
 
-    const email = features.some((feature) => feature.kind === "email" && feature.addresses);
+    const emailSignIn = features.some((feature) => feature.kind === "email" && feature.signIn);
+
+    const emailAddresses = features.some(
+      (feature) => feature.kind === "email" && feature.addresses,
+    );
+
+    const email = emailSignIn || emailAddresses;
     const proofs = phone || management || email;
 
     const roles: StorageRole[] = ["identifiers", "credentials"];
@@ -327,7 +337,11 @@ export const createPersistence = <T extends object, R, Database extends object =
 
           if (dialect === undefined)
             return yield* configError("Use an explicit adapter for this SQL dialect");
-          if (features.some((feature) => feature.kind === "email" && !feature.addresses))
+          if (
+            features.some(
+              (feature) => feature.kind === "email" && !feature.signIn && !feature.addresses,
+            )
+          )
             return yield* configError(
               "Use explicit services for strategies without composed persistence support",
             );
@@ -473,16 +487,23 @@ export const createPersistence = <T extends object, R, Database extends object =
 
             context = Context.add(context, key, registration);
           }
-          if (email)
-            context = Context.add(
-              context,
-              EmailAddressPersistence,
-              (yield* makeNativeEmailAddressServices(
-                backend.nativeTables(database),
-                yield* mappings.emails(),
-                proofMapping,
-              )).emailAddressPersistence,
-            );
+          if (email) {
+            const mapping = yield* mappings.emails();
+
+            if (emailSignIn)
+              context = Context.add(
+                context,
+                EmailSignInTargets,
+                (yield* makeNativeEmailSignInServices(nativeTables, mapping)).emailSignInTargets,
+              );
+            if (emailAddresses)
+              context = Context.add(
+                context,
+                EmailAddressPersistence,
+                (yield* makeNativeEmailAddressServices(nativeTables, mapping, proofMapping))
+                  .emailAddressPersistence,
+              );
+          }
 
           if (phone) {
             const services = yield* makeComposedPhoneServices(
@@ -540,11 +561,11 @@ export const createPersistence = <T extends object, R, Database extends object =
         if (!stateful && !stateless) {
           if (auth.sessionMode === "stateless")
             return yield* configError(
-              "Composed stateless sessions support only OAuth strategies; use explicit persistence for other strategies",
+              "Composed stateless sessions support only OAuth and email sign-in strategies; use explicit persistence for other strategies",
             );
 
           return yield* configError(
-            "Composed persistence supports stateful or OAuth-only stateless sessions; state-assisted validity and other session modes require explicit persistence",
+            "Composed persistence supports stateful or OAuth/email sign-in stateless sessions; state-assisted validity and other session modes require explicit persistence",
           );
         }
         const scope = yield* Effect.scope;
@@ -747,7 +768,14 @@ export const createPersistence = <T extends object, R, Database extends object =
               Effect.flatMap(registration, (s) => s.register(input, prepare)),
           } satisfies PasswordRegistrationAuthority<unknown>);
         }
-        if (email) {
+        if (emailSignIn) {
+          const targets = service(EmailSignInTargets, () => EmailUnavailable.make({}));
+
+          context = Context.add(context, EmailSignInTargets, {
+            lookup: (input) => Effect.flatMap(targets, (s) => s.lookup(input)),
+          });
+        }
+        if (emailAddresses) {
           const persistence = service(EmailAddressPersistence, () => EmailUnavailable.make({}));
 
           context = Context.add(context, EmailAddressPersistence, {
