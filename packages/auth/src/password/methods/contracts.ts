@@ -43,5 +43,6 @@ export const signIn = <S extends Schema.Codec<Completion, unknown, unknown, unkn
     subject: {
       fromSuccess: (value) =>
         value._tag === "Authenticated" ? value.session.subjectId : undefined,
+      sessionFromSuccess: (value) => (value._tag === "Authenticated" ? value.session : undefined),
     },
   });

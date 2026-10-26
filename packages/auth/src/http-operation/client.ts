@@ -115,17 +115,17 @@ export interface OperationAuthenticationCompletion {
   >;
 }
 
-/** The caller owns the lifecycle gate and publisher. Publishers must not call
- * the transport: they run under credential admission, before reveal acceptance. */
-export const makeAuthenticationCompletion = Effect.fnUntraced(function* (
-  gate: Semaphore.Semaphore,
+/** The caller holds its lifecycle gate and masks interruption through settlement
+ * and any subsequent publication. Subject publication precedes reveal acceptance
+ * and must not call the transport. */
+export const makeAuthenticationSettlement = Effect.fnUntraced(function* (
   publishSubject: (subject: SubjectId | null) => Effect.Effect<void>,
 ) {
   const client = yield* Client;
 
-  const complete: OperationAuthenticationCompletion = Effect.fn(
-    "OperationHttpClient.completeAuthentication",
-  )(function* <R extends AnyRoute>(
+  const complete: OperationAuthenticationCompletion = Effect.fnUntraced(function* <
+    R extends AnyRoute,
+  >(
     route: R,
     input: RouteInput<R>,
     fromSuccess: (success: RouteSuccess<R>) => SubjectId | null | undefined,
@@ -136,42 +136,36 @@ export const makeAuthenticationCompletion = Effect.fnUntraced(function* (
   ) {
     const started = options?.expectedGeneration ?? (yield* client.generation);
 
-    return yield* gate.withPermits(1)(
-      Effect.gen(function* () {
-        if ((yield* client.generation) !== started)
-          return yield* OperationHttpError.make({ reason: "stale-response" });
+    if ((yield* client.generation) !== started)
+      return yield* OperationHttpError.make({ reason: "stale-response" });
 
-        return yield* Effect.uninterruptible(
-          Effect.gen(function* () {
-            let nextSubject: SubjectId | null | undefined;
+    return yield* Effect.gen(function* () {
+      let nextSubject: SubjectId | null | undefined;
 
-            return yield* client.call(route, input, {
-              replaceSubject: (value) => {
-                nextSubject = fromSuccess(value);
+      return yield* client.call(route, input, {
+        replaceSubject: (value) => {
+          nextSubject = fromSuccess(value);
 
-                return nextSubject !== undefined;
-              },
-              onTransition: Effect.suspend(() =>
-                nextSubject === undefined
-                  ? Effect.void
-                  : publishSubject(nextSubject).pipe(
-                      Effect.andThen(options?.onTransition ?? Effect.void),
-                    ),
+          return nextSubject !== undefined;
+        },
+        onTransition: Effect.suspend(() =>
+          nextSubject === undefined
+            ? Effect.void
+            : publishSubject(nextSubject).pipe(
+                Effect.andThen(options?.onTransition ?? Effect.void),
               ),
-            });
-          }).pipe(
-            // A failed response can follow a cookie already accepted by the
-            // browser. Remove the old account state without replaying the call.
-            Effect.onError(() =>
-              Effect.gen(function* () {
-                yield* client.transition;
-                yield* publishSubject(null);
-                yield* options?.onTransition ?? Effect.void;
-              }),
-            ),
-          ),
-        );
-      }),
+        ),
+      });
+    }).pipe(
+      // A failed response can follow a cookie already accepted by the
+      // browser. Remove the old account state without replaying the call.
+      Effect.onError(() =>
+        Effect.gen(function* () {
+          yield* client.transition;
+          yield* publishSubject(null);
+          yield* options?.onTransition ?? Effect.void;
+        }),
+      ),
     );
   });
 

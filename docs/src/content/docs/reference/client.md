@@ -96,6 +96,15 @@ Write an input to execute a mutation; refreshing its result does not repeat it.
 Custom contracts must expose a `getSession` query accepting no input; `session`,
 `identity`, `verifiedSession`, `runtime`, and `client` are reserved aliases.
 
+Authentication completions can supply their decoded public session through
+`subject.sessionFromSuccess`, alongside `subject.fromSuccess`. Password sign-in,
+OAuth completion, and authenticating OAuth registration declare this projection.
+After credential and private-output settlement, Atom validates the projected
+session against the `getSession` schema and subject, then publishes and caches it.
+Return `undefined` for pending or non-authenticated outcomes. Custom completions
+without this projection continue to refresh the session query. Invalid projections
+produce diagnostics and leave verification to that query.
+
 - **`runtime`**: Application runtime factory for shared Layers and invalidation; defaults to `Atom.runtime`.
 - **`reactivityKeys`**: Additional keys invalidated by each successful named mutation.
 - **`services`**: Decoder service Layer; required by the types when response codecs need services.
@@ -129,12 +138,12 @@ focus and reconnect refresh, without automatic retries.
 
 `auth.identity` is an `Atom<AuthIdentity<Session>>`:
 
-| State        | Meaning                                                                            |
-| ------------ | ---------------------------------------------------------------------------------- |
-| `Unknown`    | No known identity, including failed verification without a remembered snapshot.    |
-| `Remembered` | Unverified `subjectId` and public session `snapshot`, usable to select local data. |
-| `Verified`   | `subjectId` and `snapshot` confirmed by the live session read.                     |
-| `SignedOut`  | Server-confirmed absence of a session.                                             |
+| State        | Meaning                                                                                  |
+| ------------ | ---------------------------------------------------------------------------------------- |
+| `Unknown`    | No known identity, including failed verification without a remembered snapshot.          |
+| `Remembered` | Unverified `subjectId` and public session `snapshot`, usable to select local data.       |
+| `Verified`   | `subjectId` and `snapshot` confirmed by a live session read or completed authentication. |
+| `SignedOut`  | Confirmed absence of a session, retained through pending or failed session reads.        |
 
 Neither remembered snapshots nor SSR seeds authorize requests. Read session errors
 from `auth.session`. Offline failures retain a remembered snapshot; same-subject
@@ -143,7 +152,7 @@ retires it under the [account lifetime](#account-lifetime).
 
 `auth.verifiedSession(subjectId)` accepts a branded `SubjectId` from
 `@yielded/auth/Schema` and returns an `AsyncResult` query atom backed by the shared
-live session read, including when composed through `auth.runtime`.
+live session, including when composed through `auth.runtime`.
 It excludes remembered snapshots and SSR seeds. Await it in workflows with
 `get.result(atom, { suspendOnWaiting: true })` so a pending refresh settles first.
 It fails with `IdentityNotVerified` for `signed-out`, `subject-mismatch`, or

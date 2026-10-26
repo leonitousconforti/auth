@@ -95,6 +95,8 @@ export const accountActions = <
       subject: {
         fromSuccess: (result) =>
           result._tag === "Authenticated" ? result.session.subjectId : undefined,
+        sessionFromSuccess: (result) =>
+          result._tag === "Authenticated" ? result.session : undefined,
       },
     },
   ),

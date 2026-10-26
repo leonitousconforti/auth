@@ -11,14 +11,289 @@ import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as KeyValueStore from "effect/persistence/KeyValueStore";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import * as Scheduler from "effect/Scheduler";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
 import * as TestClock from "effect/testing/TestClock";
 import * as Tracer from "effect/Tracer";
 import { expect, test } from "vite-plus/test";
+
+// https://github.com/yielded-dev/auth/commit/81d27d14918acdd48ac2e51c5f34a6af246ea983
+// A confirmed sign-out was lost while a subsequent session read waited or failed.
+test.each(["session read", "signOut"] as const)(
+  "preserves a confirmed signed-out identity from %s through unavailable session reads",
+  (confirmation) =>
+    Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const contract = AuthContract.make("test/confirmed-sign-out", {
+            claims: Schema.Struct({}),
+          });
+
+          const entered = yield* Deferred.make<void>();
+          const release = yield* Deferred.make<void>();
+          let refreshing = false;
+
+          const http = HttpClient.make((request) =>
+            Effect.gen(function* () {
+              if (request.url.endsWith("/signOut")) {
+                refreshing = true;
+
+                return HttpClientResponse.fromWeb(
+                  request,
+                  Response.json({
+                    _tag: "Success",
+                    value: { clearCredential: true, invalidation: "revoked" },
+                  }),
+                );
+              }
+              if (refreshing) {
+                yield* Deferred.succeed(entered, undefined);
+                yield* Deferred.await(release);
+
+                return HttpClientResponse.fromWeb(
+                  request,
+                  Response.json(
+                    { _tag: "Failure", error: { _tag: "SessionUnavailable", message: "offline" } },
+                    { status: 503 },
+                  ),
+                );
+              }
+
+              return HttpClientResponse.fromWeb(
+                request,
+                Response.json({ _tag: "Success", value: null }),
+              );
+            }),
+          );
+
+          const AppClient = Client.make(contract, { baseUrl: "https://example.test" });
+
+          const auth = AuthAtom.make(AppClient, {
+            layer: AppClient.layer.pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, http))),
+          });
+
+          const registry = yield* Effect.acquireRelease(
+            Effect.sync(() => AtomRegistry.make()),
+            (value) => Effect.sync(() => value.dispose()),
+          );
+
+          yield* AtomRegistry.mount(registry, auth.identity);
+          yield* AtomRegistry.getResult(registry, auth.session, { suspendOnWaiting: true });
+          expect(registry.get(auth.identity)).toEqual({ _tag: "SignedOut" });
+          if (confirmation === "signOut") {
+            yield* AtomRegistry.mount(registry, auth.signOut);
+            registry.set(auth.signOut, undefined);
+            yield* AtomRegistry.getResult(registry, auth.signOut, { suspendOnWaiting: true });
+          } else {
+            refreshing = true;
+            registry.refresh(auth.session);
+          }
+          yield* Deferred.await(entered);
+          expect(registry.get(auth.identity)).toEqual({ _tag: "SignedOut" });
+          yield* Deferred.succeed(release, undefined);
+          yield* AtomRegistry.getResult(registry, auth.session, {
+            suspendOnWaiting: true,
+          }).pipe(Effect.result);
+          expect(registry.get(auth.session)._tag).toBe("Failure");
+          expect(registry.get(auth.identity)).toEqual({ _tag: "SignedOut" });
+        }),
+      ),
+    ),
+);
+
+// https://github.com/yielded-dev/auth/commit/81d27d14918acdd48ac2e51c5f34a6af246ea983
+// Authentication returned a session but left identity/cache empty until another read.
+// Hold response cleanup and the next read to observe settlement and adoption separately.
+test.each(["password", "oauth", "registration", "custom"] as const)(
+  "adopts the settled %s session before revalidation and retains its offline account",
+  (completion) =>
+    Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const contract = AuthContract.make("test/adopt-session", {
+            claims: Schema.Struct({ name: Schema.String }),
+            actions: (sessions) => ({
+              signIn: AuthContract.passwordSignIn(sessions),
+              completeSignIn: AuthContract.oauthCompleteSignIn(sessions),
+              register: AuthContract.oauthRegister(sessions, Schema.Struct({}), {
+                authenticate: true,
+              }),
+              custom: AuthContract.action({
+                payload: Schema.Void,
+                success: Schema.Struct({ account: sessions.Session }),
+                error: Schema.Never,
+                mode: "mutation",
+                credentials: true,
+                subject: {
+                  fromSuccess: (value) => value.account.subjectId,
+                  sessionFromSuccess: (value) => value.account,
+                },
+              }),
+            }),
+          });
+
+          const session = {
+            sessionId: "session",
+            subjectId: "member",
+            securityRevision: "1",
+            assurance: { method: "password", factors: ["knowledge"], authenticatedAt: 0 },
+            issuedAt: 0,
+            expiresAt: 3_600_000,
+            absoluteExpiresAt: 3_600_000,
+            claims: { name: "confirmed" },
+          } satisfies typeof contract.sessions.Session.Encoded;
+
+          const settling = yield* Deferred.make<void>();
+          const settled = yield* Deferred.make<void>();
+          const reading = yield* Deferred.make<void>();
+          const unavailable = yield* Deferred.make<void>();
+          let authenticated = false;
+
+          const http = HttpClient.make((request) =>
+            Effect.gen(function* () {
+              if (request.url.endsWith("/getSession")) {
+                if (!authenticated)
+                  return HttpClientResponse.fromWeb(
+                    request,
+                    Response.json({ _tag: "Success", value: null }),
+                  );
+                yield* Deferred.succeed(reading, undefined);
+                yield* Deferred.await(unavailable);
+
+                return HttpClientResponse.fromWeb(
+                  request,
+                  Response.json(
+                    { _tag: "Failure", error: { _tag: "SessionUnavailable", message: "offline" } },
+                    { status: 503 },
+                  ),
+                );
+              }
+              authenticated = true;
+              const requestScope = yield* Effect.serviceOption(Scope.Scope);
+
+              if (Option.isNone(requestScope)) return yield* Effect.die("Missing request Scope");
+              yield* Scope.addFinalizer(
+                requestScope.value,
+                Deferred.succeed(settling, undefined).pipe(Effect.andThen(Deferred.await(settled))),
+              );
+
+              const result = { _tag: "Authenticated", session };
+
+              return HttpClientResponse.fromWeb(
+                request,
+                Response.json({
+                  _tag: "Success",
+                  value:
+                    completion === "oauth"
+                      ? { completion: result, returnTarget: "/" }
+                      : completion === "custom"
+                        ? { account: session }
+                        : result,
+                }),
+              );
+            }),
+          );
+
+          const store = Context.get(
+            yield* Layer.build(KeyValueStore.layerMemory),
+            KeyValueStore.KeyValueStore,
+          );
+
+          const AppClient = Client.make(contract, { baseUrl: "https://example.test" });
+
+          const auth = AuthAtom.make(AppClient, {
+            layer: AppClient.layer.pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, http))),
+            identityCache: {
+              key: "identity",
+              storage: Layer.succeed(KeyValueStore.KeyValueStore, store),
+            },
+          });
+
+          const registry = yield* Effect.acquireRelease(
+            Effect.sync(() => AtomRegistry.make()),
+            (value) => Effect.sync(() => value.dispose()),
+          );
+
+          const dispatch = Effect.fnUntraced(function* <I, A, E>(
+            atom: Atom.AtomResultFn<I, A, E>,
+            input: I,
+          ) {
+            yield* AtomRegistry.mount(registry, atom);
+            registry.set(atom, input);
+            yield* AtomRegistry.getResult(registry, atom, { suspendOnWaiting: true });
+          });
+
+          yield* AtomRegistry.mount(registry, auth.identity);
+          yield* AtomRegistry.getResult(registry, auth.session, { suspendOnWaiting: true });
+
+          const call =
+            completion === "password"
+              ? dispatch(auth.signIn, { email: "member@example.test", password: "fixture" })
+              : completion === "oauth"
+                ? dispatch(auth.completeSignIn, {
+                    flowId: "flow",
+                    provider: "provider",
+                    callbackId: "callback",
+                    response: { _tag: "Code", code: "code", state: "state" },
+                  })
+                : completion === "registration"
+                  ? dispatch(auth.register, {
+                      reference: "r".repeat(43),
+                      flowId: "flow",
+                      commandId: "command",
+                      registration: {},
+                    })
+                  : dispatch(auth.custom, undefined);
+
+          const fiber = yield* Effect.forkChild(call);
+
+          yield* Deferred.await(settling);
+          expect(registry.get(auth.identity)._tag).not.toBe("Verified");
+          yield* Deferred.succeed(settled, undefined);
+          yield* Fiber.join(fiber);
+          expect(registry.get(auth.identity)).toMatchObject({
+            _tag: "Verified",
+            subjectId: "member",
+            snapshot: { claims: { name: "confirmed" } },
+          });
+          expect(registry.get(auth.session)).toMatchObject({
+            _tag: "Success",
+            waiting: false,
+            value: { subjectId: "member", claims: { name: "confirmed" } },
+          });
+          expect(JSON.parse((yield* store.get("identity")) ?? "null")).toMatchObject(session);
+
+          let opened = 0;
+          const account = auth.runtime.atom(Effect.sync(() => ++opened));
+
+          yield* AtomRegistry.mount(registry, account);
+          expect(yield* AtomRegistry.getResult(registry, account)).toBe(1);
+          registry.refresh(auth.session);
+          expect(registry.get(auth.session).waiting).toBe(true);
+          yield* Deferred.await(reading);
+          expect(registry.get(auth.identity)).toMatchObject({
+            _tag: "Remembered",
+            subjectId: "member",
+          });
+          yield* Deferred.succeed(unavailable, undefined);
+          yield* AtomRegistry.getResult(registry, auth.session, { suspendOnWaiting: true }).pipe(
+            Effect.result,
+          );
+          expect(registry.get(auth.identity)).toMatchObject({
+            _tag: "Remembered",
+            subjectId: "member",
+          });
+          expect(yield* AtomRegistry.getResult(registry, account)).toBe(1);
+          expect(JSON.parse((yield* store.get("identity")) ?? "null")).toMatchObject(session);
+        }),
+      ),
+    ),
+);
 
 // d1f2799 retires the SSR seed between confirming its subject and publishing the
 // session result. Observe every notification; a browser can batch away this gap.

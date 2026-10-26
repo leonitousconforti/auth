@@ -80,6 +80,10 @@ export const completeSignIn = <S extends Schema.Codec<Completion, unknown, unkno
         "completion" in value && value.completion._tag === "Authenticated"
           ? value.completion.session.subjectId
           : undefined,
+      sessionFromSuccess: (value) =>
+        "completion" in value && value.completion._tag === "Authenticated"
+          ? value.completion.session
+          : undefined,
     },
   });
 
@@ -120,6 +124,7 @@ export const register = <
     subject: {
       fromSuccess: (value) =>
         value._tag === "Authenticated" ? value.session.subjectId : undefined,
+      sessionFromSuccess: (value) => (value._tag === "Authenticated" ? value.session : undefined),
     },
   });
 };

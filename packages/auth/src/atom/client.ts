@@ -112,7 +112,7 @@ export type AuthAtoms<
 > = AuthActionAtoms<Actions, E> & {
   /** Local display identity, with live verification distinguished from remembered data. */
   readonly identity: Atom.Atom<AuthIdentity<RouteSuccess<Actions["getSession"]["route"]>>>;
-  /** Observe the shared live session read for an expected subject, excluding display seeds. */
+  /** Observe the shared live session for an expected subject, excluding display seeds. */
   readonly verifiedSession: (
     subjectId: SubjectId,
   ) => QueryAtom<Actions["getSession"], E | IdentityNotVerified>;
@@ -362,16 +362,30 @@ export const make = <
       completeAuthentication: controller.completeAuthentication,
     };
 
+    let adoptedSession = Option.none<Session>();
+
     const session = Atom.make((get) =>
       Effect.gen(function* () {
         const origin = {};
+        let active = true;
 
+        get.addFinalizer(() => {
+          active = false;
+        });
         get.addFinalizer(
           binding.subscribe((event) => {
             get.setSelf(AsyncResult.initial(true));
             if (event.origin !== origin) get.refreshSelf();
           }),
         );
+
+        if (Option.isSome(adoptedSession)) {
+          const value = adoptedSession.value;
+
+          adoptedSession = Option.none();
+
+          return value;
+        }
 
         const value = yield* controller.call("getSession", sessionInput, { origin });
 
@@ -382,6 +396,7 @@ export const make = <
           catch: () => OperationHttpError.make({ reason: "response" }),
         });
 
+        if (!active) return yield* Effect.interrupt;
         controlRegistry.set(
           snapshot,
           typeof subject === "string"
@@ -408,13 +423,10 @@ export const make = <
       const result = get(session);
       const saved = get(snapshot);
 
-      if (AsyncResult.isSuccess(result) && !result.waiting) {
-        if (saved._tag === "Remembered") return { ...saved, _tag: "Verified" };
+      if (AsyncResult.isSuccess(result) && !result.waiting && saved._tag === "Remembered")
+        return { ...saved, _tag: "Verified" };
 
-        return saved;
-      }
-
-      return saved._tag === "Remembered" ? saved : { _tag: "Unknown" };
+      return saved;
     });
 
     const binding: AuthAtomBinding["Service"] = {
@@ -437,6 +449,43 @@ export const make = <
     yield* controller.subscribe((event) =>
       Effect.gen(function* () {
         if (closed) return;
+        if (event._tag === "Authentication") {
+          if (current.generation !== event.state.generation) return;
+          if (event.state.subject === null) {
+            controlRegistry.set(snapshot, { _tag: "SignedOut" });
+
+            return;
+          }
+          if (event.session === undefined) return;
+
+          yield* Effect.gen(function* () {
+            const value = yield* Schema.decodeUnknownEffect(Schema.toType(sessionSchema))(
+              event.session,
+            );
+
+            const subject = yield* Effect.try({
+              try: () => actions.getSession.subject?.fromSuccess(value),
+              catch: () => OperationHttpError.make({ reason: "response" }),
+            });
+
+            if (typeof subject !== "string" || subject !== event.state.subject)
+              return yield* OperationHttpError.make({ reason: "response" });
+            if (current.generation !== event.state.generation) return;
+
+            Atom.batch(() => {
+              adoptedSession = Option.some(value);
+              controlRegistry.set(snapshot, {
+                _tag: "Remembered",
+                subjectId: subject,
+                snapshot: value,
+              });
+              controlRegistry.refresh(session);
+            });
+            if (Option.isSome(cache)) yield* cache.value.write(value, event.state.generation);
+          }).pipe(Effect.catchCause((cause) => reportAuthFailure("client-workflow", cause)));
+
+          return;
+        }
         if (event._tag === "Mutation") {
           controlRegistry.refresh(session);
           yield* reactivity.invalidate(queryKeys);
@@ -447,6 +496,7 @@ export const make = <
           return;
         }
         if (current.generation === event.state.generation) return;
+        adoptedSession = Option.none();
         // Initial verification may acquire the already displayed account before
         // its query publishes the result. Explicit replacement still retires it.
         binding.seedAvailable =

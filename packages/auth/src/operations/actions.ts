@@ -37,6 +37,9 @@ export interface ActionOptions<
   readonly oauthCallback?: true;
   readonly subject?: {
     fromSuccess(value: Success["Type"]): SubjectId | null | undefined;
+    /** Optional decoded public session for a completed authentication. Atom validates
+     * it against getSession before adopting it; undefined preserves pending flows. */
+    sessionFromSuccess?(value: Success["Type"]): unknown;
   };
 }
 
@@ -94,7 +97,7 @@ export const fromOperation = <
     readonly requestFields?: RequestFields &
       Record<Exclude<keyof RequestFields, Extract<keyof Fields, string>>, never>;
     readonly mode?: Mode;
-    readonly subject?: { fromSuccess(value: Success["Type"]): SubjectId | null | undefined };
+    readonly subject?: NonNullable<ActionOptions<Schema.Top, Success, Failure>["subject"]>;
   } = {},
 ) => {
   if (operation.exposure !== "public")
@@ -215,7 +218,7 @@ export interface AnyAuthAction {
   readonly strategy: string | undefined;
   readonly requestFields: Readonly<Record<string, CredentialSlot>>;
   readonly oauthCallback?: true | undefined;
-  readonly subject?: { fromSuccess(value: unknown): SubjectId | null | undefined } | undefined;
+  readonly subject?: ActionOptions<Schema.Top, Schema.Top, Schema.Top>["subject"];
 }
 
 export type AuthActions = Readonly<Record<string, AnyAuthAction>>;

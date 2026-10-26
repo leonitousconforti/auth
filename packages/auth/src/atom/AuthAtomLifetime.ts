@@ -7,10 +7,11 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import {
   Client,
-  makeAuthenticationCompletion,
+  makeAuthenticationSettlement,
   type OperationAuthenticationCompletion,
   type OperationFetchClient,
 } from "../http-operation/client";
+import type { AnyRoute, RouteInput, RouteSuccess } from "../http-operation/contract";
 import type { SubjectId } from "../Schema";
 import { reportAtomDefects } from "./failures";
 
@@ -62,6 +63,28 @@ export const makeLifetime = Effect.fn("AuthAtom.makeLifetime")(
         });
       });
 
+      const settleAuthentication = yield* makeAuthenticationSettlement(publishSubject);
+
+      const completeAuthentication: OperationAuthenticationCompletion = Effect.fn(
+        "OperationHttpClient.completeAuthentication",
+      )(function* <Route extends AnyRoute>(
+        route: Route,
+        input: RouteInput<Route>,
+        fromSuccess: (success: RouteSuccess<Route>) => SubjectId | null | undefined,
+        options?: {
+          readonly onTransition?: Effect.Effect<void>;
+          readonly expectedGeneration?: number;
+        },
+      ) {
+        const expectedGeneration = options?.expectedGeneration ?? (yield* client.generation);
+
+        return yield* gate.withPermits(1)(
+          Effect.uninterruptible(
+            settleAuthentication(route, input, fromSuccess, { ...options, expectedGeneration }),
+          ),
+        );
+      });
+
       const replaceSubject = Effect.fn("AuthAtom.replaceSubject")(function* (
         subject: SubjectId | null,
       ) {
@@ -96,7 +119,7 @@ export const makeLifetime = Effect.fn("AuthAtom.makeLifetime")(
         get: SubscriptionRef.get(state),
         controlRegistry,
         replaceSubject,
-        completeAuthentication: yield* makeAuthenticationCompletion(gate, publishSubject),
+        completeAuthentication,
       };
     }).pipe(reportAtomDefects),
 );
