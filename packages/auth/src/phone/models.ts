@@ -1,7 +1,8 @@
 import * as Schema from "effect/Schema";
 
 import { RequestBindingCredential, RequestBindingFlowId } from "../operations/requestBinding";
-import { ProofReference } from "../proofs/models";
+import { ProofReference, ProofRequestReceipt } from "../proofs/models";
+import { Locale } from "../Schema";
 import {
   AuthenticationRequirement,
   AuthenticationRevision,
@@ -11,6 +12,20 @@ import {
 /** Canonical international input. Country eligibility belongs to the application. */
 export const PhoneNumber = Schema.String.check(Schema.isPattern(/^\+[1-9][0-9]{1,14}$/));
 export type PhoneNumber = typeof PhoneNumber.Type;
+
+export const PhoneOtpRequest = Schema.Struct({
+  phoneNumber: PhoneNumber,
+  locale: Schema.optionalKey(Locale),
+});
+
+export type PhoneOtpRequest = typeof PhoneOtpRequest.Type;
+
+export const PhoneOtpChallenge = Schema.Struct({
+  ...ProofRequestReceipt.fields,
+  flowId: RequestBindingFlowId,
+});
+
+export type PhoneOtpChallenge = typeof PhoneOtpChallenge.Type;
 
 export const PhoneOtpComplete = Schema.Struct({
   flowId: RequestBindingFlowId,

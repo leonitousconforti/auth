@@ -12,7 +12,7 @@ import { operationGroup } from "../operations/operation";
 import { snapshotPhoneConfiguration } from "./configuration";
 import { defaultPhoneLifecyclePolicy, makePhoneLifecycle } from "./lifecycle";
 import type { PhoneLifecyclePolicy } from "./lifecycleModels";
-import { makePhoneOtp } from "./module";
+import { makePhoneOtp, makePhoneSignInOrSignUp } from "./module";
 
 export type PhoneOtpOptions<Namespace extends string | undefined = undefined> = Omit<
   Parameters<typeof makePhoneOtp>[1],
@@ -79,7 +79,7 @@ const define = <const Namespace extends string | undefined>(
   return Object.freeze(definition);
 };
 
-/** Opt into phone registration, verification, and number changes. Delivery remains a Layer. */
+/** Enable combined sign-in/signup, explicit registration, verification, and number changes. */
 export type PhoneLifecycleOptions<Namespace extends string | undefined = undefined> =
   PhoneOtpOptions<Namespace> & { readonly lifecycle: true | PhoneLifecyclePolicy };
 
@@ -122,27 +122,51 @@ const bindLifecycle = <
     sessions: binding.sessions,
   });
 
+  const login = makePhoneSignInOrSignUp<Id, SessionId, Claims>(binding.namespace, {
+    ...phoneOptions,
+    lifecycle: lifecyclePolicy,
+    sessions: binding.sessions,
+  });
+
   return Object.freeze({
     ...phone,
     persistence: { ...phone.persistence, lifecycle: true as const, lifecyclePolicy },
     lifecycle,
-    operations: { ...phone.operations, ...lifecycle.operations },
+    login,
+    operations: {
+      ...phone.operations,
+      ...lifecycle.operations,
+      SignInOrSignUp: login.operations.SignIn,
+      CompleteSignInOrSignUp: login.operations.Complete,
+    },
     group: operationGroup(
       phone.operations.SignIn,
       phone.operations.Complete,
       lifecycle.operations.Begin,
       lifecycle.operations.CompleteLifecycle,
       lifecycle.operations.Cancel,
+      login.operations.SignIn,
+      login.operations.Complete,
     ),
-    layer: Layer.merge(phone.layer, lifecycle.layer),
-    handlersLayer: Layer.merge(phone.handlersLayer, lifecycle.handlersLayer),
+    layer: Layer.mergeAll(phone.layer, lifecycle.layer, login.layer),
+    handlersLayer: Layer.mergeAll(
+      phone.handlersLayer,
+      lifecycle.handlersLayer,
+      login.handlersLayer,
+    ),
     strategy: {
       completion: true as const,
       make: Effect.gen(function* () {
         const signIn = yield* phone.strategy.make;
         const management = yield* lifecycle.strategy.make;
+        const combined = yield* login.strategy.make;
 
-        return { ...signIn, ...management };
+        return {
+          ...signIn,
+          ...management,
+          signInOrSignUp: combined.signIn,
+          completeSignInOrSignUp: combined.completeSignIn,
+        };
       }),
     },
   });

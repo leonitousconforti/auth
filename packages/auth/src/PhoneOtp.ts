@@ -1,6 +1,8 @@
 export {
   PhoneCredentialSnapshot,
   PhoneNumber,
+  PhoneOtpRequest,
+  PhoneOtpChallenge,
   PhoneOtpComplete,
   PhoneOtpRejected,
   PhoneOtpUnavailable,

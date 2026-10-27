@@ -25,7 +25,11 @@ export interface PhoneMutation {
 
 /** Custody tombstones are permanent. Recycled numbers never create, transfer or
  * merge accounts automatically. Verification/change and proof redemption
- * share one native owner; a failed protected write cannot consume the proof. */
+ * share one native owner; a failed protected write cannot consume the proof.
+ * Registration accepts /lifecycle proofs with purpose phone-lifecycle, or
+ * /sign-in-or-sign-up proofs with purpose phone-otp-sign-in-or-sign-up, relative
+ * to moduleId. Both require an
+ * Identifier binding; the combined flow never authorizes verification/change. */
 export class PhonePersistence extends Context.Service<
   PhonePersistence,
   {

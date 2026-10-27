@@ -1,30 +1,45 @@
 ---
 title: Phone codes
-description: Sign in, register an account, or update a phone number with an SMS code.
+description: Sign in or create an account through one SMS-code flow.
 ---
 
-Use `PhoneOtp` to sign in existing accounts with an SMS code. Enable lifecycle
-operations to register accounts, verify their numbers, or change them.
+Use `PhoneOtp` to sign in or create an account through one SMS-code flow. The
+server signs in an existing verified number or registers an unused number after
+code verification. Both paths return the same challenge and authentication result.
 
 For managed or application-declared SQL storage, the [composed persistence Layer](../reference/adapters#compose-persistence-once)
 supplies phone and proof services together, including enabled lifecycle operations.
 The explicit mappings below support specialized storage layouts.
 
-The snippets below are local calls inside existing Effect request handlers, with
-`AppAuth` and the HTTP request boundary provided. Publish selected methods through
-a [shared contract](./http-and-client#expose-another-method) for browser clients.
+The [shared contract](./http-and-client#expose-another-method) below gives server
+and browser callers the same API. Server calls run inside an Effect request
+handler with `AppAuth` and the HTTP request boundary provided.
 
 ## Enable phone sign-in
 
-```ts title="apps/server/auth.ts"
+```ts title="packages/domain/auth-contract.ts"
 import { Schema } from "effect";
-import { Auth, PhoneOtp, Sessions } from "@yielded/auth";
+import { AuthContract, PhoneOtp } from "@yielded/auth";
 
-export const AppAuth = Auth.make("app/Auth", {
+export const AuthApi = AuthContract.make("app/Auth", {
   claims: Schema.Struct({ phoneNumber: PhoneOtp.PhoneNumber }),
+  actions: (sessions) => ({
+    signInOrSignUp: AuthContract.phoneSignInOrSignUp(),
+    completeSignInOrSignUp: AuthContract.phoneCompleteSignInOrSignUp(sessions),
+  }),
+});
+```
+
+Bind the contract to the phone strategy on the server:
+
+```ts title="apps/server/auth.ts"
+import { Auth, PhoneOtp, Sessions } from "@yielded/auth";
+import { AuthApi } from "@app/domain/auth-contract";
+
+export const AppAuth = Auth.make(AuthApi, {
   sessions: Sessions.stateful(),
   strategies: {
-    phone: PhoneOtp.make(),
+    phone: PhoneOtp.make({ lifecycle: true }),
   },
   defaultStrategy: "phone",
 });
@@ -32,6 +47,8 @@ export const AppAuth = Auth.make("app/Auth", {
 
 The default code has six digits and expires after five minutes. Override `digits`
 or `policy` only to change that behavior. Keys and delivery come from Layers.
+Use `PhoneOtp.make()` with `signIn` and `completeSignIn` when only existing
+accounts may sign in.
 
 ## Send a code
 
@@ -39,7 +56,7 @@ With `Effect` imported from `effect`, supply the request's host-verified network
 
 ```ts
 const auth = yield* AppAuth;
-const started = yield* auth.signIn({ phoneNumber, locale: "en" }).pipe(
+const started = yield* auth.signInOrSignUp({ phoneNumber, locale: "en" }).pipe(
   Effect.provideService(PhoneOtp.PhoneRequestContext, { networkKey }),
 );
 ```
@@ -52,17 +69,14 @@ your SMS service receives the code.
 
 ## Complete sign-in
 
-Use the original `flowId` and `reference`. The server resolves `requestBinding`
-from private request credentials. In a shared action, map it with
-`requestFields: { requestBinding: "request-binding" }`; the named server and client
-calls then take only the public fields.
+Use the original `flowId` and `reference`. The contract supplies `requestBinding`
+from private request credentials, so the browser sends only the public fields.
 
 ```ts
 const auth = yield* AppAuth;
-const result = yield* auth.completeSignIn({
+const result = yield* auth.completeSignInOrSignUp({
   flowId,
   phoneNumber,
-  requestBinding,
   reference,
   code,
 }).pipe(
@@ -71,11 +85,12 @@ const result = yield* auth.completeSignIn({
 ```
 
 Grant access only when the result is `Authenticated`; otherwise complete the
-required additional factor. A consumed code cannot be reused if session issuance
-fails: start a new ceremony. The strategy's lower-level `operations.SignIn` accepts
-the original flow and private `requestBinding` for resends after cooldown. The
-convenience `signIn` call starts a new flow, which cannot replace a live code.
-SMS proves possession, without phishing resistance.
+required additional factor. If the number's ownership changes while a code is
+outstanding, request a new code. A consumed code cannot be reused if session
+issuance fails. The strategy's lower-level `operations.SignInOrSignUp` accepts the
+original flow and private `requestBinding` for resends after cooldown. The
+convenience `signInOrSignUp` call starts a new flow, which cannot replace a live
+code. SMS proves possession, without phishing resistance.
 
 `PhoneAdmission.layer(policy)` controls network and message limits. Defaults are
 10 requests and 100 attempts per network per minute, plus 10 message reservations
@@ -90,12 +105,21 @@ The strategy handles code generation and verification. Supply these implementati
 - **`PhonePersistenceLive`**: Finds the account and owns protected number changes. Your database, using a library adapter below.
 - **`ProofPersistenceLive`**: Stores code digests, expiry, failed attempts, and consumption. Your database, using a library adapter below.
 - **`PhoneDeliveryEligibility`**: Decides which destination numbers you support. Your application policy.
+- **`PhoneActionEvidence`**: Authorizes number verification and changes. The example below rejects them.
 - **`SessionClaims`**: Returns the session fields declared in `AppAuth.claims`. Your application.
 - **`SmsDelivery`**: Sends the message. `Twilio.layer` or another transport.
 
 `PhonePersistenceLive` and `ProofPersistenceLive` are names for the Layers you build
 below, not package exports. The adapters implement the storage operations; you
 supply your table mappings and migrations.
+
+For managed or mapped account signup, supply `Persistence.Provisioning` under the
+phone strategy's name. Its `values({ requestId, identifier })` prepares the new
+account's native ID, active status, initial security revision, and application
+fields. `identifier` contains the `phone` namespace and verified number.
+Preparation must not write to the database or perform external side effects;
+persistence commits the account, identifier, credential, and proof consumption
+together. See the [provisioning example](../reference/adapters#compose-persistence-once).
 
 <details>
 <summary>Build the database Layers — SQLite on Bun</summary>
@@ -135,6 +159,9 @@ export const PhoneLive = Layer.mergeAll(
   ProofPersistenceLive,
   Layer.succeed(PhoneOtp.PhoneDeliveryEligibility, {
     allowed: (number) => Effect.succeed(number.startsWith("+1")),
+  }),
+  Layer.succeed(PhoneOtp.PhoneActionEvidence, {
+    verify: () => Effect.fail(PhoneOtp.PhoneActionRequired.make({})),
   }),
   Layer.succeed(AppAuth.strategies.phone.SessionClaims, {
     resolve: ({ credential }) => Effect.succeed({ phoneNumber: credential.phoneNumber }),
@@ -178,34 +205,22 @@ and expiry as its second argument. Text stays private through delivery.
 </details>
 
 <details>
-<summary>Register accounts or update phone numbers</summary>
+<summary>Explicit registration and phone-number changes</summary>
 
-Enable lifecycle operations on the same strategy:
-
-```ts
-phone: PhoneOtp.make({ lifecycle: true });
-```
-
-Use a lifecycle policy object instead of `true` to customize its behavior. With
-`Sessions.stateful()`, managed and mapped composition supplies the required
+The enabled lifecycle also exposes separate registration, verification, and
+number-change operations. Use a lifecycle policy object instead of `true` to
+customize its behavior. With `Sessions.stateful()`, managed and mapped composition supplies the required
 `PhonePersistence` and `PhoneSignInTargets` without additional tables.
 
-For account signup, supply `Persistence.Provisioning` under the phone strategy's
-name. Its `values({ requestId, identifier })` prepares the new account's native ID,
-active status, initial security revision, and required application fields.
-`identifier` contains the `phone` namespace and verified number. Preparation must
-not write to the database or perform external side effects; persistence commits
-the account, identifier, credential, and proof consumption together. See the
-[provisioning example](../reference/adapters#compose-persistence-once).
-
-Start signup with `auth.begin({ action: "register", ... })`, then pass the code,
-reference, original flow and command IDs, and private request binding to
+For a separate signup flow, call `auth.begin({ action: "register", ... })`, then
+pass the code, reference, original flow and command IDs, and private request binding to
 `auth.completeLifecycle(input)`. A `Registered` result contains `completion`;
 grant access only when that completion is `Authenticated`, as for sign-in.
 
 Verifying an existing account's number (`action: "verify"`) or replacing it
 (`action: "change"`, with `sourcePhoneNumber`) requires an authenticated caller
-and independent authorization. Add it to `PhoneLive`:
+and independent authorization. Replace the rejecting `PhoneActionEvidence` Layer
+in `PhoneLive` with your application's check:
 
 ```ts
 Layer.succeed(PhoneOtp.PhoneActionEvidence, { verify: authorizePhoneChange });

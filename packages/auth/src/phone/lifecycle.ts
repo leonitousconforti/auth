@@ -7,8 +7,6 @@ import * as Schema from "effect/Schema";
 import { makeAuthStrategy } from "../auth/AuthStrategy";
 import { defaultLayer, hooksLayer } from "../auth/defaults";
 import { hasCommitScope } from "../hooks/commit";
-import { LifecycleHooks } from "../hooks/LifecycleHooks";
-import { lifecycleEvent, lifecycleSnapshotEffect, LifecycleEventId } from "../hooks/models";
 import { LoginIdentifier } from "../identity/models";
 import type { AuthInvocation } from "../operations/context";
 import { makeOperation, operationGroup } from "../operations/operation";
@@ -58,6 +56,7 @@ import {
   PhoneOtpRejected,
   PhoneOtpUnavailable,
 } from "./models";
+import { commitPhoneMutation } from "./mutation";
 import { PhoneActionEvidence } from "./PhoneActionEvidence";
 import { defaultPhoneAdmissionLayer } from "./PhoneAdmission";
 import { PhoneDeliveryEligibility } from "./PhoneDeliveryEligibility";
@@ -393,50 +392,20 @@ export const makePhoneLifecycle = <
         }
 
         const now = yield* DateTime.now;
-        const hooks = yield* LifecycleHooks;
 
-        const snapshot = yield* lifecycleSnapshotEffect({
-          action: input.action === "register" ? "registration" : "identifier-change",
-          operation: `${moduleId}/${input.action}`,
-          method: "phone-otp",
-          identifiers: [current.binding.identifier],
-          ...(current.target.revision === null
-            ? {}
-            : { subjectId: current.target.revision.subjectId }),
-        }).pipe(Effect.orDie);
+        const credential = yield* commitPhoneMutation(
+          {
+            moduleId,
+            action: input.action,
+            commandId: input.commandId,
+            target: current.target,
+            policy,
+            redemption,
+            ...(authorization === undefined ? {} : { authorization }),
+          },
+          now,
+        );
 
-        yield* hooks.before(snapshot);
-
-        const decision = yield* (yield* PhonePersistence)
-          .mutate(
-            {
-              moduleId,
-              action: input.action,
-              commandId: input.commandId,
-              target: current.target,
-              policy,
-              redemption,
-              ...(authorization === undefined ? {} : { authorization }),
-            },
-            (decision, journal) => {
-              if (decision._tag === "Accepted")
-                journal.stage(
-                  lifecycleEvent({
-                    id: LifecycleEventId.make(`phone/${moduleId}/${input.commandId}`),
-                    occurredAtMillis: now.epochMilliseconds,
-                    snapshot: { ...snapshot, subjectId: decision.credential.revision.subjectId },
-                  }),
-                );
-
-              return journal.prepare(decision);
-            },
-          )
-          .pipe(
-            Effect.flatMap((receipt) => receipt.read),
-            Effect.mapError(phoneFailure),
-          );
-
-        if (decision._tag !== "Accepted") return yield* PhoneOtpRejected.make({});
         if (input.action !== "register")
           return {
             value: {
@@ -450,22 +419,21 @@ export const makePhoneLifecycle = <
             credentialCommands: [{ _tag: "Clear" as const, slot: "request-binding" as const }],
           };
 
-        const credential = decision.credential,
-          evidence: AuthenticationEvidence = {
-            flowId: AuthenticationFlowId.make(input.flowId),
-            bindingDigest: current.binding.contextDigest,
-            revision: credential.revision,
-            proofs: [
-              {
-                method: "phone-otp",
-                credentialId: credential.credentialId,
-                factors: ["possession"],
-                userVerified: false,
-                phishingResistant: false,
-                verifiedAt: now,
-              },
-            ],
-          };
+        const evidence: AuthenticationEvidence = {
+          flowId: AuthenticationFlowId.make(input.flowId),
+          bindingDigest: current.binding.contextDigest,
+          revision: credential.revision,
+          proofs: [
+            {
+              method: "phone-otp",
+              credentialId: credential.credentialId,
+              factors: ["possession"],
+              userVerified: false,
+              phishingResistant: false,
+              verifiedAt: now,
+            },
+          ],
+        };
 
         const claimCredential = yield* Schema.encodeEffect(
           Schema.toCodecJson(PhoneCredentialSnapshot),

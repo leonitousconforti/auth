@@ -355,7 +355,7 @@ export const phoneConsumer = Effect.gen(function* () {
     const signIn = Effect.fn("PhoneConsumer.signIn")(function* (number: string) {
       const challenge = yield* as(
         Operations.guest,
-        auth.signIn({ phoneNumber: number, locale: "en-ZA" }),
+        auth.signInOrSignUp({ phoneNumber: number, locale: "en-ZA" }),
       );
 
       const requestBinding = yield* token("request-binding"),
@@ -365,7 +365,7 @@ export const phoneConsumer = Effect.gen(function* () {
 
       const result = yield* as(
         Operations.guest,
-        auth.completeSignIn({
+        auth.completeSignInOrSignUp({
           flowId: challenge.flowId,
           phoneNumber: number,
           requestBinding,

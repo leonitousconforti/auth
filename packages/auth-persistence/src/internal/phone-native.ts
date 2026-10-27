@@ -388,9 +388,17 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
             return yield* rejected();
           const binding = redemption.binding;
 
+          const lifecycleProof =
+            redemption.moduleId === `${mapping.moduleId}/lifecycle` &&
+            redemption.purpose === "phone-lifecycle";
+
+          const registrationProof =
+            input.action === "register" &&
+            redemption.moduleId === `${mapping.moduleId}/sign-in-or-sign-up` &&
+            redemption.purpose === "phone-otp-sign-in-or-sign-up";
+
           if (
-            redemption.moduleId !== `${mapping.moduleId}/lifecycle` ||
-            redemption.purpose !== "phone-lifecycle" ||
+            (!lifecycleProof && !registrationProof) ||
             binding.identifier.namespace !== "phone" ||
             binding.identifier.value !== target.phoneNumber
           )

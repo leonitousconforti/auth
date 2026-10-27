@@ -15,6 +15,11 @@ export {
 export { signIn as passwordSignIn } from "./password/methods/contracts";
 
 export {
+  signInOrSignUp as phoneSignInOrSignUp,
+  completeSignInOrSignUp as phoneCompleteSignInOrSignUp,
+} from "./phone/contracts";
+
+export {
   signIn as oauthSignIn,
   completeSignIn as oauthCompleteSignIn,
   register as oauthRegister,
