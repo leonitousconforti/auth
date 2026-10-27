@@ -36,11 +36,12 @@ export const makeComposedPhoneServices = Effect.fnUntraced(function* <R>(
     const { moduleId } = feature;
     let values: Option.Option<PhoneSubjectProvisioning> = Option.none();
 
-    if (feature.lifecycle) {
-      if (feature.lifecyclePolicy === undefined)
-        return yield* PersistenceConfigurationError.make({
-          reason: `Missing phone lifecycle policy for ${name}`,
-        });
+    if (feature.lifecycle && feature.lifecyclePolicy === undefined)
+      return yield* PersistenceConfigurationError.make({
+        reason: `Missing phone lifecycle policy for ${name}`,
+      });
+
+    if (feature.allowSignUp || feature.lifecycle) {
       // The heterogeneous service map is narrowed to the configured phone strategy.
       const creators = (yield* provisioning) as Readonly<Record<string, PhoneSubjectProvisioning>>;
       const creator = creators[name];
@@ -112,7 +113,8 @@ export const makeComposedPhoneServices = Effect.fnUntraced(function* <R>(
     );
 
     targets.set(moduleId, services.phoneSignInTargets);
-    if (feature.lifecycle) lifecycles.set(moduleId, services.phonePersistence);
+    if (feature.allowSignUp || feature.lifecycle)
+      lifecycles.set(moduleId, services.phonePersistence);
   }
 
   return {

@@ -13,23 +13,29 @@ import type {
 } from "./lifecycleModels";
 import type { PhoneNumber, PhoneOtpUnavailable } from "./models";
 
-export interface PhoneMutation {
+interface PhoneMutationInput {
   readonly moduleId: string;
-  readonly action: PhoneLifecycleAction;
   readonly commandId: string;
   readonly target: PhoneLifecycleTarget;
-  readonly authorization?: PhoneActionAuthorization;
   readonly redemption: ProofRedemptionPlan;
-  readonly policy: PhoneLifecyclePolicy;
 }
+
+export type PhoneMutation = PhoneMutationInput &
+  (
+    | { readonly action: "register"; readonly authorization?: never; readonly policy?: never }
+    | {
+        readonly action: "verify" | "change";
+        readonly authorization: PhoneActionAuthorization;
+        readonly policy: PhoneLifecyclePolicy;
+      }
+  );
 
 /** Custody tombstones are permanent. Recycled numbers never create, transfer or
  * merge accounts automatically. Verification/change and proof redemption
  * share one native owner; a failed protected write cannot consume the proof.
  * Registration accepts /lifecycle proofs with purpose phone-lifecycle, or
- * /sign-in-or-sign-up proofs with purpose phone-otp-sign-in-or-sign-up, relative
- * to moduleId. Both require an
- * Identifier binding; the combined flow never authorizes verification/change. */
+ * /sign-in proofs with purpose phone-otp-sign-in, relative to moduleId. Both
+ * require an Identifier binding; sign-in never authorizes verification/change. */
 export class PhonePersistence extends Context.Service<
   PhonePersistence,
   {

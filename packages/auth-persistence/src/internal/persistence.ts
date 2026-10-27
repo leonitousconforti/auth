@@ -134,7 +134,7 @@ export const createPersistence = <T extends object, R, Database extends object =
     );
 
     const phone = phones.length > 0;
-    const phoneLifecycle = phones.some(({ feature }) => feature.lifecycle);
+    const phoneMutations = phones.some(({ feature }) => feature.allowSignUp || feature.lifecycle);
     const password = features.some((feature) => feature.kind === "password");
 
     const passkeys = features.filter(
@@ -515,7 +515,7 @@ export const createPersistence = <T extends object, R, Database extends object =
             );
 
             context = Context.add(context, PhoneSignInTargets, services.phoneSignInTargets);
-            if (phoneLifecycle)
+            if (phoneMutations)
               context = Context.add(context, PhonePersistence, services.phonePersistence);
           }
 
@@ -795,7 +795,7 @@ export const createPersistence = <T extends object, R, Database extends object =
               lookup: (input) => Effect.flatMap(targets, (s) => s.lookup(input)),
             }),
           );
-          if (phoneLifecycle) {
+          if (phoneMutations) {
             const persistence = service(PhonePersistence, unavailable);
 
             context = Context.add(context, PhonePersistence, {

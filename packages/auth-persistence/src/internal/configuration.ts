@@ -71,6 +71,7 @@ export interface OAuthFeature {
 export interface PhoneFeature {
   readonly kind: "phone";
   readonly moduleId: string;
+  readonly allowSignUp?: boolean;
   readonly lifecycle?: boolean;
   readonly lifecyclePolicy?: PhoneLifecyclePolicy;
 }
@@ -115,7 +116,7 @@ type ManagedPassword<A extends { readonly strategies: Readonly<Record<string, St
 
 type ManagedPhone<A extends { readonly strategies: Readonly<Record<string, Strategy>> }> = Extract<
   Enabled<A, "phone">,
-  { persistence: { lifecycle: true } }
+  { persistence: { allowSignUp: true } | { lifecycle: true } }
 >;
 
 type EmailSignIn<A extends { readonly strategies: Readonly<Record<string, Strategy>> }> = Extract<
@@ -192,11 +193,17 @@ export interface PhoneSubjectProvisioning {
 
 export type Provisioning<A extends { readonly strategies: Readonly<Record<string, Strategy>> }> = {
   readonly [
-    K in keyof A["strategies"] as A["strategies"][K] extends {
-      persistence: { kind: "password"; management: true } | { kind: "phone"; lifecycle: true };
-    }
-      ? K
-      : never
+    K in keyof A["strategies"] as Extract<
+      A["strategies"][K],
+      {
+        persistence:
+          | { kind: "password"; management: true }
+          | { kind: "phone"; allowSignUp: true }
+          | { kind: "phone"; lifecycle: true };
+      }
+    > extends never
+      ? never
+      : K
   ]: A["strategies"][K] extends { persistence: { kind: "phone" } }
     ? PhoneSubjectProvisioning
     : SubjectProvisioning<Registration<A["strategies"][K]>>;

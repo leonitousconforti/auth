@@ -549,12 +549,13 @@ revision and existing sessions.
 
 ## Phone
 
-The composed Layer supplies phone sign-in and proof services. With
-`PhoneOtp.make({ lifecycle: true })` or a lifecycle policy object, it also supplies
-`PhonePersistence` for combined sign-in/signup, explicit registration, verification,
-and number changes using the existing tables. Supply phone provisioning as described
-above; delivery, claims,
-and `PhoneActionEvidence` for verification and changes remain application-owned.
+The composed Layer supplies phone sign-in and proof services.
+`PhoneOtp.make({ allowSignUp: true })` also supplies `PhonePersistence` for account
+creation through `signIn` and `completeSignIn`. Independently, `lifecycle: true`
+or a lifecycle policy object enables explicit registration, verification, and
+number changes using the same tables. Either option requires phone provisioning
+as described above. Delivery and claims remain application-owned; enabling
+`lifecycle` also requires `PhoneActionEvidence` for verification and changes.
 See the [phone guide](../guide/phone).
 
 For specialized mappings, use the explicit services:

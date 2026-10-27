@@ -31,7 +31,7 @@ import { phoneAdmission, phoneAttemptAdmission } from "./admission";
 import { makePhoneClaims } from "./claims";
 import { deliveryLayer } from "./delivery";
 import { phoneFailure } from "./failure";
-import type { PhoneLifecyclePolicy, PhoneLifecycleTarget } from "./lifecycleModels";
+import type { PhoneLifecycleTarget } from "./lifecycleModels";
 import type { PhoneOtpRequest } from "./models";
 import {
   PhoneCredentialSnapshot,
@@ -75,21 +75,18 @@ const makePhoneCode = <
   const Id extends string,
   const SessionId extends string,
   Claims extends Schema.Codec<unknown, unknown, unknown, unknown>,
-  const StartName extends string,
-  const CompleteName extends string,
 >(
   moduleId: Id,
   options: PhoneCodeOptions<SessionId, Claims>,
-  names: { readonly start: StartName; readonly complete: CompleteName },
 ) => {
   const { sessions } = options;
-  const binding = makeRequestBinding(moduleId, `phone-otp-${names.start}`);
+  const binding = makeRequestBinding(moduleId, "phone-otp-sign-in");
 
-  const proof = makeProofModule(`${moduleId}/${names.start}`, {
-    purpose: ProofPurpose.make(`phone-otp-${names.start}`),
+  const proof = makeProofModule(`${moduleId}/sign-in`, {
+    purpose: ProofPurpose.make("phone-otp-sign-in"),
     binding: ProofBinding,
     channel: "sms",
-    template: `phone-otp-${names.start}`,
+    template: "phone-otp-sign-in",
     secret: { _tag: "NumericCode", digits: options.digits ?? 6 },
     policy: options.policy ?? defaultProofPolicy,
   });
@@ -146,7 +143,7 @@ const makePhoneCode = <
     registrationTarget?: PhoneLifecycleTarget,
   ) {
     const encoded = yield* Schema.encodeEffect(tuple)([
-      `effect-auth/phone-otp-${names.start}/v1`,
+      "effect-auth/phone-otp-sign-in/v1",
       moduleId,
       current.flowId,
       current.verifier,
@@ -177,7 +174,7 @@ const makePhoneCode = <
     if (!(yield* phoneAdmission(moduleId, "request"))) return yield* PhoneOtpRejected.make({});
   });
 
-  const SignIn = makeOperation(`${moduleId}/${names.start}`, {
+  const SignIn = makeOperation(`${moduleId}/sign-in`, {
     payload: Start,
     authorize: admitSignIn,
     success: PhoneOtpChallenge,
@@ -188,7 +185,7 @@ const makePhoneCode = <
     credentials: true,
   });
 
-  const Complete = makeOperation(`${moduleId}/${names.complete}`, {
+  const Complete = makeOperation(`${moduleId}/complete`, {
     payload: PhoneOtpComplete,
     authorize: () => phoneAttemptAdmission(moduleId),
     success: sessions.CompletionResult,
@@ -326,7 +323,10 @@ const makePhoneCode = <
     };
   });
 
-  const withHandlers = <Handlers, E, R>(handlersLayer: Layer.Layer<Handlers, E, R>) => {
+  const withHandlers = <const AllowSignUp extends boolean, Handlers, E, R>(
+    allowSignUp: AllowSignUp,
+    handlersLayer: Layer.Layer<Handlers, E, R>,
+  ) => {
     const layer = handlersLayer.pipe(
       Layer.provide(defaultLayer(binding.RequestBinding, binding.layer)),
       Layer.provide(defaultLayer(proof.Proofs, proof.smsLayer.pipe(Layer.provide(deliveryLayer)))),
@@ -334,7 +334,7 @@ const makePhoneCode = <
     );
 
     return Object.freeze({
-      persistence: { kind: "phone" as const, moduleId, lifecycle: false as const },
+      persistence: { kind: "phone" as const, moduleId, allowSignUp },
       SessionClaims,
       binding,
       proof,
@@ -379,6 +379,7 @@ const makePhoneCode = <
   return {
     signIn: () =>
       withHandlers(
+        false,
         Layer.mergeAll(
           SignIn.credentialHandlerLayer(
             Effect.fn("PhoneOtp.signIn")(function* (input, invocation) {
@@ -399,8 +400,9 @@ const makePhoneCode = <
           ),
         ),
       ),
-    signInOrSignUp: (policy: PhoneLifecyclePolicy) =>
+    signUp: () =>
       withHandlers(
+        true,
         Layer.mergeAll(
           SignIn.credentialHandlerLayer(
             Effect.fn("PhoneOtp.signIn")(function* (input, invocation) {
@@ -459,7 +461,6 @@ const makePhoneCode = <
                     commandId: input.flowId,
                     target: registrationTarget,
                     redemption,
-                    policy,
                   },
                   verifiedAt,
                 );
@@ -473,28 +474,35 @@ const makePhoneCode = <
   };
 };
 
-/** Existing-account SMS sign-in. Proof consumption precedes session issuance;
- * failure after consumption requires a fresh code. */
-export const makePhoneOtp = <
-  const Id extends string,
-  const SessionId extends string,
+type PhoneModule<
+  Id extends string,
+  SessionId extends string,
   Claims extends Schema.Codec<unknown, unknown, unknown, unknown>,
->(
-  moduleId: Id,
-  options: PhoneCodeOptions<SessionId, Claims>,
-) => makePhoneCode(moduleId, options, { start: "sign-in", complete: "complete" }).signIn();
+  AllowSignUp extends boolean,
+> = ReturnType<
+  ReturnType<typeof makePhoneCode<Id, SessionId, Claims>>[AllowSignUp extends true
+    ? "signUp"
+    : "signIn"]
+>;
 
-/** Both paths use one proof purpose and private binding. A changed target cannot
- * redeem the original proof, and registration never adopts an occupied number. */
-export const makePhoneSignInOrSignUp = <
+/** One SMS sign-in flow. Signup is opt-in and uses the phone persistence owner;
+ * a changed target or failure after proof consumption requires a fresh code. */
+export function makePhoneOtp<
   const Id extends string,
   const SessionId extends string,
   Claims extends Schema.Codec<unknown, unknown, unknown, unknown>,
+  const AllowSignUp extends boolean = false,
 >(
   moduleId: Id,
-  options: PhoneCodeOptions<SessionId, Claims> & { readonly lifecycle: PhoneLifecyclePolicy },
-) =>
-  makePhoneCode(moduleId, options, {
-    start: "sign-in-or-sign-up",
-    complete: "complete-sign-in-or-sign-up",
-  }).signInOrSignUp(options.lifecycle);
+  options: PhoneCodeOptions<SessionId, Claims> & { readonly allowSignUp?: AllowSignUp },
+): PhoneModule<Id, SessionId, Claims, AllowSignUp>;
+
+export function makePhoneOtp<
+  const Id extends string,
+  const SessionId extends string,
+  Claims extends Schema.Codec<unknown, unknown, unknown, unknown>,
+>(moduleId: Id, options: PhoneCodeOptions<SessionId, Claims> & { readonly allowSignUp?: boolean }) {
+  const phone = makePhoneCode(moduleId, options);
+
+  return options.allowSignUp === true ? phone.signUp() : phone.signIn();
+}

@@ -350,13 +350,6 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
 
           if (!(input.moduleId === mapping.moduleId)) return yield* invalidState();
           if (input.action === "register" && !registration) return yield* rejected();
-          const policy = yield* Schema.decodeEffect(P.PhoneLifecyclePolicy)(input.policy);
-
-          if (
-            policy.maximumEvidenceAgeMillis !== mapping.policy.maximumEvidenceAgeMillis ||
-            policy.requireImmediateInvalidation !== mapping.policy.requireImmediateInvalidation
-          )
-            return yield* rejected();
           if (target.revision !== null) {
             const native = yield* resolve(mapping.subjectIds.toNative(target.revision.subjectId));
 
@@ -394,8 +387,8 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
 
           const registrationProof =
             input.action === "register" &&
-            redemption.moduleId === `${mapping.moduleId}/sign-in-or-sign-up` &&
-            redemption.purpose === "phone-otp-sign-in-or-sign-up";
+            redemption.moduleId === `${mapping.moduleId}/sign-in` &&
+            redemption.purpose === "phone-otp-sign-in";
 
           if (
             (!lifecycleProof && !registrationProof) ||
@@ -419,6 +412,13 @@ export const makeNativePhoneServices = Effect.fnUntraced(function* (
           const freshness: Statement.Fragment[] = [];
 
           if (input.action !== "register") {
+            const policy = yield* Schema.decodeEffect(P.PhoneLifecyclePolicy)(input.policy);
+
+            if (
+              policy.maximumEvidenceAgeMillis !== mapping.policy.maximumEvidenceAgeMillis ||
+              policy.requireImmediateInvalidation !== mapping.policy.requireImmediateInvalidation
+            )
+              return yield* rejected();
             const authorization = input.authorization;
 
             if (

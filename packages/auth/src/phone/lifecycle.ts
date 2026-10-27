@@ -48,7 +48,6 @@ import {
   PhoneLifecycleAction,
   PhoneLifecycleFailure,
   PhoneLifecyclePolicy,
-  type PhoneActionAuthorization,
 } from "./lifecycleModels";
 import {
   PhoneCredentialSnapshot,
@@ -60,7 +59,7 @@ import { commitPhoneMutation } from "./mutation";
 import { PhoneActionEvidence } from "./PhoneActionEvidence";
 import { defaultPhoneAdmissionLayer } from "./PhoneAdmission";
 import { PhoneDeliveryEligibility } from "./PhoneDeliveryEligibility";
-import { PhonePersistence } from "./PhonePersistence";
+import { PhonePersistence, type PhoneMutation } from "./PhonePersistence";
 const Code = Schema.RedactedFromValue(Schema.String.check(Schema.isMaxLength(4096)));
 const ActionProof = Schema.RedactedFromValue(Schema.String.check(Schema.isMaxLength(4096)));
 
@@ -331,7 +330,14 @@ export const makePhoneLifecycle = <
           .pipe(Effect.mapError(phoneFailure));
 
         if (!current.target.eligible) return yield* PhoneOtpRejected.make({});
-        let authorization: PhoneActionAuthorization | undefined;
+
+        let mutation: PhoneMutation = {
+          moduleId,
+          action: "register",
+          commandId: input.commandId,
+          target: current.target,
+          redemption,
+        };
 
         if (input.action !== "register") {
           if (current.challenge === null) return yield* PhoneActionRequired.make({});
@@ -383,28 +389,22 @@ export const makePhoneLifecycle = <
           }).pipe(Effect.mapError(phoneActionFailure));
 
           if (!actionAssessment.satisfied) return yield* PhoneActionRequired.make({});
-          authorization = {
-            challenge: current.challenge,
-            evidence,
-            requirement,
-            actionRequirement,
+          mutation = {
+            ...mutation,
+            action: input.action,
+            policy,
+            authorization: {
+              challenge: current.challenge,
+              evidence,
+              requirement,
+              actionRequirement,
+            },
           };
         }
 
         const now = yield* DateTime.now;
 
-        const credential = yield* commitPhoneMutation(
-          {
-            moduleId,
-            action: input.action,
-            commandId: input.commandId,
-            target: current.target,
-            policy,
-            redemption,
-            ...(authorization === undefined ? {} : { authorization }),
-          },
-          now,
-        );
+        const credential = yield* commitPhoneMutation(mutation, now);
 
         if (input.action !== "register")
           return {

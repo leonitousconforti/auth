@@ -15,8 +15,8 @@ const Failure = Schema.Union([PhoneOtpRejected, PhoneOtpUnavailable, HookDenied]
 const { flowId, phoneNumber, reference, code } = PhoneOtpComplete.fields;
 const CompleteInput = Schema.Struct({ flowId, phoneNumber, reference, code });
 
-/** Request one phone challenge without disclosing whether the account exists. */
-export const signInOrSignUp = (options?: { readonly strategy?: string }) =>
+/** Request a phone challenge. The strategy's server policy controls signup. */
+export const signIn = (options?: { readonly strategy?: string }) =>
   action({
     payload: PhoneOtpRequest,
     success: PhoneOtpChallenge,
@@ -24,7 +24,7 @@ export const signInOrSignUp = (options?: { readonly strategy?: string }) =>
     mode: "mutation",
     credentials: true,
     replay: "non-idempotent",
-    method: "signInOrSignUp",
+    method: "signIn",
     ...options,
   });
 
@@ -33,9 +33,7 @@ type Completion =
   | { readonly _tag: "PendingAuthentication" };
 
 /** Redeem the phone challenge with the request binding supplied privately by the server. */
-export const completeSignInOrSignUp = <
-  S extends Schema.Codec<Completion, unknown, unknown, unknown>,
->(
+export const completeSignIn = <S extends Schema.Codec<Completion, unknown, unknown, unknown>>(
   schemas: { readonly CompletionResult: S },
   options?: { readonly strategy?: string },
 ) =>
@@ -46,7 +44,7 @@ export const completeSignInOrSignUp = <
     mode: "mutation",
     credentials: true,
     replay: "single-use",
-    method: "completeSignInOrSignUp",
+    method: "completeSignIn",
     requestFields: { requestBinding: "request-binding" },
     subject: {
       fromSuccess: (value) =>

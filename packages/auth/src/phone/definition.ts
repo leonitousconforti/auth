@@ -12,44 +12,40 @@ import { operationGroup } from "../operations/operation";
 import { snapshotPhoneConfiguration } from "./configuration";
 import { defaultPhoneLifecyclePolicy, makePhoneLifecycle } from "./lifecycle";
 import type { PhoneLifecyclePolicy } from "./lifecycleModels";
-import { makePhoneOtp, makePhoneSignInOrSignUp } from "./module";
+import { makePhoneOtp, type PhoneCodeOptions } from "./module";
 
-export type PhoneOtpOptions<Namespace extends string | undefined = undefined> = Omit<
-  Parameters<typeof makePhoneOtp>[1],
-  "sessions"
-> & { readonly namespace?: Namespace };
-
-/** Bind the phone method to its Auth definition; runtime authorities come from Layers. */
-const captureDefine = <const Namespace extends string | undefined>(
-  _namespace: Namespace,
-  input: PhoneOtpOptions<Namespace>,
-) => {
-  const options = snapshotPhoneConfiguration(input);
-
-  return { options };
+export type PhoneOtpOptions<
+  Namespace extends string | undefined = undefined,
+  AllowSignUp extends boolean = boolean,
+> = Omit<PhoneCodeOptions<string, ClaimsCodec>, "sessions"> & {
+  readonly namespace?: Namespace;
+  /** Create an account after verification when the number is unused. Defaults to false. */
+  readonly allowSignUp?: AllowSignUp;
 };
 
 const bindDefine = <
   const Namespace extends string | undefined,
+  const AllowSignUp extends boolean,
   Claims extends ClaimsCodec,
   const Id extends string,
   const SessionId extends string,
 >(
   binding: StrategyBinding<Claims, Id, SessionId>,
-  captured: ReturnType<typeof captureDefine<Namespace>>,
-) => {
-  const { options } = captured;
-
-  return makePhoneOtp<Id, SessionId, Claims>(binding.namespace, {
+  options: PhoneOtpOptions<Namespace, AllowSignUp>,
+) =>
+  makePhoneOtp<Id, SessionId, Claims, AllowSignUp>(binding.namespace, {
     ...options,
     sessions: binding.sessions,
   });
-};
 
-export interface DefineStrategy<Namespace extends string | undefined> extends StrategyTypeLambda {
+export interface DefineStrategy<
+  Namespace extends string | undefined,
+  AllowSignUp extends boolean,
+> extends StrategyTypeLambda {
   readonly type: ReturnType<
     typeof bindDefine<
       Namespace,
+      AllowSignUp,
       BindingOf<this>["claims"],
       BindingOf<this>["namespace"],
       BindingOf<this>["sessionNamespace"]
@@ -57,11 +53,11 @@ export interface DefineStrategy<Namespace extends string | undefined> extends St
   >;
 }
 
-const define = <const Namespace extends string | undefined>(
+const define = <const Namespace extends string | undefined, const AllowSignUp extends boolean>(
   namespace: Namespace,
-  input: PhoneOtpOptions<Namespace>,
+  input: PhoneOtpOptions<Namespace, AllowSignUp>,
 ) => {
-  const captured = captureDefine<Namespace>(namespace, input);
+  const options = snapshotPhoneConfiguration(input);
 
   const bind = <
     Claims extends ClaimsCodec,
@@ -69,9 +65,9 @@ const define = <const Namespace extends string | undefined>(
     const SessionId extends string,
   >(
     binding: StrategyBinding<Claims, Id, SessionId>,
-  ) => bindDefine<Namespace, Claims, Id, SessionId>(binding, captured);
+  ) => bindDefine<Namespace, AllowSignUp, Claims, Id, SessionId>(binding, options);
 
-  const definition: StrategyDefinition<DefineStrategy<Namespace>, Namespace> = {
+  const definition: StrategyDefinition<DefineStrategy<Namespace, AllowSignUp>, Namespace> = {
     namespace,
     bind,
   };
@@ -79,14 +75,84 @@ const define = <const Namespace extends string | undefined>(
   return Object.freeze(definition);
 };
 
-/** Enable combined sign-in/signup, explicit registration, verification, and number changes. */
-export type PhoneLifecycleOptions<Namespace extends string | undefined = undefined> =
-  PhoneOtpOptions<Namespace> & { readonly lifecycle: true | PhoneLifecyclePolicy };
+/** Add explicit registration, verification, and number changes independently of login signup. */
+export type PhoneLifecycleOptions<
+  Namespace extends string | undefined = undefined,
+  AllowSignUp extends boolean = boolean,
+> = PhoneOtpOptions<Namespace, AllowSignUp> & {
+  readonly lifecycle: true | PhoneLifecyclePolicy;
+};
 
-/** Bind the phone method to its Auth definition; runtime authorities come from Layers. */
-const captureLifecycle = <const Namespace extends string | undefined>(
-  _namespace: Namespace,
-  input: PhoneLifecycleOptions<Namespace>,
+const bindLifecycle = <
+  const Namespace extends string | undefined,
+  const AllowSignUp extends boolean,
+  Claims extends ClaimsCodec,
+  const Id extends string,
+  const SessionId extends string,
+>(
+  binding: StrategyBinding<Claims, Id, SessionId>,
+  options: PhoneOtpOptions<Namespace, AllowSignUp> & { readonly lifecycle: PhoneLifecyclePolicy },
+) => {
+  const phone = bindDefine<Namespace, AllowSignUp, Claims, Id, SessionId>(binding, options);
+
+  const lifecycle = makePhoneLifecycle<Id, SessionId, Claims>(binding.namespace, {
+    ...options,
+    sessions: binding.sessions,
+  });
+
+  return Object.freeze({
+    persistence: {
+      ...phone.persistence,
+      lifecycle: true as const,
+      lifecyclePolicy: options.lifecycle,
+    },
+    SessionClaims: phone.SessionClaims,
+    binding: phone.binding,
+    proof: phone.proof,
+    lifecycle,
+    operations: { ...phone.operations, ...lifecycle.operations },
+    group: operationGroup(
+      phone.operations.SignIn,
+      phone.operations.Complete,
+      lifecycle.operations.Begin,
+      lifecycle.operations.CompleteLifecycle,
+      lifecycle.operations.Cancel,
+    ),
+    layer: Layer.merge(phone.layer, lifecycle.layer),
+    handlersLayer: Layer.merge(phone.handlersLayer, lifecycle.handlersLayer),
+    strategy: {
+      completion: true as const,
+      make: Effect.gen(function* () {
+        const signIn = yield* phone.strategy.make;
+        const management = yield* lifecycle.strategy.make;
+
+        return { ...signIn, ...management };
+      }),
+    },
+  });
+};
+
+export interface LifecycleStrategy<
+  Namespace extends string | undefined,
+  AllowSignUp extends boolean,
+> extends StrategyTypeLambda {
+  readonly type: ReturnType<
+    typeof bindLifecycle<
+      Namespace,
+      AllowSignUp,
+      BindingOf<this>["claims"],
+      BindingOf<this>["namespace"],
+      BindingOf<this>["sessionNamespace"]
+    >
+  >;
+}
+
+const defineLifecycle = <
+  const Namespace extends string | undefined,
+  const AllowSignUp extends boolean,
+>(
+  namespace: Namespace,
+  input: PhoneLifecycleOptions<Namespace, AllowSignUp>,
 ) => {
   const options = snapshotPhoneConfiguration({
     ...input,
@@ -95,111 +161,15 @@ const captureLifecycle = <const Namespace extends string | undefined>(
     }),
   });
 
-  return { options };
-};
-
-const bindLifecycle = <
-  const Namespace extends string | undefined,
-  Claims extends ClaimsCodec,
-  const Id extends string,
-  const SessionId extends string,
->(
-  binding: StrategyBinding<Claims, Id, SessionId>,
-  captured: ReturnType<typeof captureLifecycle<Namespace>>,
-) => {
-  const { options } = captured;
-
-  const phone = makePhoneOtp<Id, SessionId, Claims>(binding.namespace, {
-    ...options,
-    sessions: binding.sessions,
-  });
-
-  const { lifecycle: lifecyclePolicy, ...phoneOptions } = options;
-
-  const lifecycle = makePhoneLifecycle<Id, SessionId, Claims>(binding.namespace, {
-    ...phoneOptions,
-    lifecycle: lifecyclePolicy,
-    sessions: binding.sessions,
-  });
-
-  const login = makePhoneSignInOrSignUp<Id, SessionId, Claims>(binding.namespace, {
-    ...phoneOptions,
-    lifecycle: lifecyclePolicy,
-    sessions: binding.sessions,
-  });
-
-  return Object.freeze({
-    ...phone,
-    persistence: { ...phone.persistence, lifecycle: true as const, lifecyclePolicy },
-    lifecycle,
-    login,
-    operations: {
-      ...phone.operations,
-      ...lifecycle.operations,
-      SignInOrSignUp: login.operations.SignIn,
-      CompleteSignInOrSignUp: login.operations.Complete,
-    },
-    group: operationGroup(
-      phone.operations.SignIn,
-      phone.operations.Complete,
-      lifecycle.operations.Begin,
-      lifecycle.operations.CompleteLifecycle,
-      lifecycle.operations.Cancel,
-      login.operations.SignIn,
-      login.operations.Complete,
-    ),
-    layer: Layer.mergeAll(phone.layer, lifecycle.layer, login.layer),
-    handlersLayer: Layer.mergeAll(
-      phone.handlersLayer,
-      lifecycle.handlersLayer,
-      login.handlersLayer,
-    ),
-    strategy: {
-      completion: true as const,
-      make: Effect.gen(function* () {
-        const signIn = yield* phone.strategy.make;
-        const management = yield* lifecycle.strategy.make;
-        const combined = yield* login.strategy.make;
-
-        return {
-          ...signIn,
-          ...management,
-          signInOrSignUp: combined.signIn,
-          completeSignInOrSignUp: combined.completeSignIn,
-        };
-      }),
-    },
-  });
-};
-
-export interface LifecycleStrategy<
-  Namespace extends string | undefined,
-> extends StrategyTypeLambda {
-  readonly type: ReturnType<
-    typeof bindLifecycle<
-      Namespace,
-      BindingOf<this>["claims"],
-      BindingOf<this>["namespace"],
-      BindingOf<this>["sessionNamespace"]
-    >
-  >;
-}
-
-const defineLifecycle = <const Namespace extends string | undefined>(
-  namespace: Namespace,
-  input: PhoneLifecycleOptions<Namespace>,
-) => {
-  const captured = captureLifecycle<Namespace>(namespace, input);
-
   const bind = <
     Claims extends ClaimsCodec,
     const Id extends string,
     const SessionId extends string,
   >(
     binding: StrategyBinding<Claims, Id, SessionId>,
-  ) => bindLifecycle<Namespace, Claims, Id, SessionId>(binding, captured);
+  ) => bindLifecycle<Namespace, AllowSignUp, Claims, Id, SessionId>(binding, options);
 
-  const definition: StrategyDefinition<LifecycleStrategy<Namespace>, Namespace> = {
+  const definition: StrategyDefinition<LifecycleStrategy<Namespace, AllowSignUp>, Namespace> = {
     namespace,
     bind,
   };
@@ -207,22 +177,28 @@ const defineLifecycle = <const Namespace extends string | undefined>(
   return Object.freeze(definition);
 };
 
-/** Configure phone behavior; delivery, keys, and storage remain Layer dependencies. */
-export function make<const Namespace extends string>(
-  options: PhoneLifecycleOptions<Namespace> & { readonly namespace: Namespace },
-): ReturnType<typeof defineLifecycle<Namespace>>;
+/** Configure phone sign-in; signup is opt-in and number management is independent. */
+export function make<const Namespace extends string, const AllowSignUp extends boolean = false>(
+  options: PhoneLifecycleOptions<Namespace, AllowSignUp> & { readonly namespace: Namespace },
+): ReturnType<typeof defineLifecycle<Namespace, AllowSignUp>>;
 
-export function make<const Namespace extends string | undefined = undefined>(
-  options: PhoneLifecycleOptions<Namespace>,
-): ReturnType<typeof defineLifecycle<Namespace | undefined>>;
+export function make<
+  const Namespace extends string | undefined = undefined,
+  const AllowSignUp extends boolean = false,
+>(
+  options: PhoneLifecycleOptions<Namespace, AllowSignUp>,
+): ReturnType<typeof defineLifecycle<Namespace | undefined, AllowSignUp>>;
 
-export function make<const Namespace extends string>(
-  options: PhoneOtpOptions<Namespace> & { readonly namespace: Namespace },
-): ReturnType<typeof define<Namespace>>;
+export function make<const Namespace extends string, const AllowSignUp extends boolean = false>(
+  options: PhoneOtpOptions<Namespace, AllowSignUp> & { readonly namespace: Namespace },
+): ReturnType<typeof define<Namespace, AllowSignUp>>;
 
-export function make<const Namespace extends string | undefined = undefined>(
-  options?: PhoneOtpOptions<Namespace>,
-): ReturnType<typeof define<Namespace | undefined>>;
+export function make<
+  const Namespace extends string | undefined = undefined,
+  const AllowSignUp extends boolean = false,
+>(
+  options?: PhoneOtpOptions<Namespace, AllowSignUp>,
+): ReturnType<typeof define<Namespace | undefined, AllowSignUp>>;
 
 export function make<const Namespace extends string | undefined>(
   options: PhoneOtpOptions<Namespace> | PhoneLifecycleOptions<Namespace> = {},

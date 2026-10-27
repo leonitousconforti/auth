@@ -40,7 +40,11 @@ export const shopAuth = Auth.make("shop", {
   sessionNamespace: "shop/sessions",
   claims: Claims,
   strategies: {
-    phone: PhoneOtp.make({ policy: proofPolicy, lifecycle: lifecyclePolicy }),
+    phone: PhoneOtp.make({
+      policy: proofPolicy,
+      allowSignUp: true,
+      lifecycle: lifecyclePolicy,
+    }),
   },
   defaultStrategy: "phone",
 });

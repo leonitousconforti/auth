@@ -24,8 +24,8 @@ import { AuthContract, PhoneOtp } from "@yielded/auth";
 export const AuthApi = AuthContract.make("app/Auth", {
   claims: Schema.Struct({ phoneNumber: PhoneOtp.PhoneNumber }),
   actions: (sessions) => ({
-    signInOrSignUp: AuthContract.phoneSignInOrSignUp(),
-    completeSignInOrSignUp: AuthContract.phoneCompleteSignInOrSignUp(sessions),
+    signIn: AuthContract.phoneSignIn(),
+    completeSignIn: AuthContract.phoneCompleteSignIn(sessions),
   }),
 });
 ```
@@ -39,7 +39,7 @@ import { AuthApi } from "@app/domain/auth-contract";
 export const AppAuth = Auth.make(AuthApi, {
   sessions: Sessions.stateful(),
   strategies: {
-    phone: PhoneOtp.make({ lifecycle: true }),
+    phone: PhoneOtp.make({ allowSignUp: true }),
   },
   defaultStrategy: "phone",
 });
@@ -47,8 +47,9 @@ export const AppAuth = Auth.make(AuthApi, {
 
 The default code has six digits and expires after five minutes. Override `digits`
 or `policy` only to change that behavior. Keys and delivery come from Layers.
-Use `PhoneOtp.make()` with `signIn` and `completeSignIn` when only existing
-accounts may sign in.
+`allowSignUp: true` lets an unused number create an account after verification.
+Omit it when only existing accounts may sign in; the methods and contract stay
+the same. Number management is enabled separately with `lifecycle`.
 
 ## Send a code
 
@@ -56,7 +57,7 @@ With `Effect` imported from `effect`, supply the request's host-verified network
 
 ```ts
 const auth = yield* AppAuth;
-const started = yield* auth.signInOrSignUp({ phoneNumber, locale: "en" }).pipe(
+const started = yield* auth.signIn({ phoneNumber, locale: "en" }).pipe(
   Effect.provideService(PhoneOtp.PhoneRequestContext, { networkKey }),
 );
 ```
@@ -74,7 +75,7 @@ from private request credentials, so the browser sends only the public fields.
 
 ```ts
 const auth = yield* AppAuth;
-const result = yield* auth.completeSignInOrSignUp({
+const result = yield* auth.completeSignIn({
   flowId,
   phoneNumber,
   reference,
@@ -87,9 +88,9 @@ const result = yield* auth.completeSignInOrSignUp({
 Grant access only when the result is `Authenticated`; otherwise complete the
 required additional factor. If the number's ownership changes while a code is
 outstanding, request a new code. A consumed code cannot be reused if session
-issuance fails. The strategy's lower-level `operations.SignInOrSignUp` accepts the
+issuance fails. The strategy's lower-level `operations.SignIn` accepts the
 original flow and private `requestBinding` for resends after cooldown. The
-convenience `signInOrSignUp` call starts a new flow, which cannot replace a live
+convenience `signIn` call starts a new flow, which cannot replace a live
 code. SMS proves possession, without phishing resistance.
 
 `PhoneAdmission.layer(policy)` controls network and message limits. Defaults are
@@ -102,10 +103,9 @@ See [proof limits](./codes#proof-expiry-and-rate-limits) for expiry and cooldown
 
 The strategy handles code generation and verification. Supply these implementations:
 
-- **`PhonePersistenceLive`**: Finds the account and owns protected number changes. Your database, using a library adapter below.
+- **`PhonePersistenceLive`**: Finds existing accounts and atomically creates accounts after verification. Your database, using a library adapter below.
 - **`ProofPersistenceLive`**: Stores code digests, expiry, failed attempts, and consumption. Your database, using a library adapter below.
 - **`PhoneDeliveryEligibility`**: Decides which destination numbers you support. Your application policy.
-- **`PhoneActionEvidence`**: Authorizes number verification and changes. The example below rejects them.
 - **`SessionClaims`**: Returns the session fields declared in `AppAuth.claims`. Your application.
 - **`SmsDelivery`**: Sends the message. `Twilio.layer` or another transport.
 
@@ -160,9 +160,6 @@ export const PhoneLive = Layer.mergeAll(
   Layer.succeed(PhoneOtp.PhoneDeliveryEligibility, {
     allowed: (number) => Effect.succeed(number.startsWith("+1")),
   }),
-  Layer.succeed(PhoneOtp.PhoneActionEvidence, {
-    verify: () => Effect.fail(PhoneOtp.PhoneActionRequired.make({})),
-  }),
   Layer.succeed(AppAuth.strategies.phone.SessionClaims, {
     resolve: ({ credential }) => Effect.succeed({ phoneNumber: credential.phoneNumber }),
   }),
@@ -207,9 +204,11 @@ and expiry as its second argument. Text stays private through delivery.
 <details>
 <summary>Explicit registration and phone-number changes</summary>
 
-The enabled lifecycle also exposes separate registration, verification, and
-number-change operations. Use a lifecycle policy object instead of `true` to
-customize its behavior. With `Sessions.stateful()`, managed and mapped composition supplies the required
+Enable separate registration, verification, and number-change operations with
+`PhoneOtp.make({ allowSignUp: true, lifecycle: true })`. Use a lifecycle policy
+object instead of `true` to customize evidence freshness and session invalidation.
+`lifecycle` does not enable account creation through `signIn`; `allowSignUp`
+controls that independently. Managed and mapped composition supplies the required
 `PhonePersistence` and `PhoneSignInTargets` without additional tables.
 
 For a separate signup flow, call `auth.begin({ action: "register", ... })`, then
@@ -219,15 +218,23 @@ grant access only when that completion is `Authenticated`, as for sign-in.
 
 Verifying an existing account's number (`action: "verify"`) or replacing it
 (`action: "change"`, with `sourcePhoneNumber`) requires an authenticated caller
-and independent authorization. Replace the rejecting `PhoneActionEvidence` Layer
-in `PhoneLive` with your application's check:
+and independent authorization. Supply `PhoneActionEvidence` when enabling
+`lifecycle`; it is not needed for sign-in or signup alone. Add your application's
+evidence Layer to `PhoneLive`:
 
 ```ts
-Layer.succeed(PhoneOtp.PhoneActionEvidence, { verify: authorizePhoneChange });
+import { authorizePhoneChange } from "./phone-action-evidence";
+
+const PhoneActionEvidenceLive = Layer.succeed(PhoneOtp.PhoneActionEvidence, {
+  verify: authorizePhoneChange,
+});
 ```
 
-`authorizePhoneChange` is your application's check of fresh, independent evidence;
-the SMS code alone cannot authorize these changes. Both use `auth.begin(input)`
+`authorizePhoneChange` verifies fresh, independent authentication for the caller,
+binds its evidence to the challenge's `flowId` and `bindingDigest`, and returns
+`{ evidence, requirement }` using current application policy. Consume any one-use
+action proof before returning; a later conflict does not restore it. The SMS code
+alone cannot authorize these changes. Both use `auth.begin(input)`
 and `auth.completeLifecycle(input)`. Supply `PhoneRequestContext` for every
 lifecycle request, as for sign-in. Delivery and session claims remain
 application-owned.

@@ -3,4 +3,4 @@
 "@yielded/auth-persistence": minor
 ---
 
-Add combined phone sign-in and sign-up with a shared browser contract and atomic account creation after SMS verification.
+Enable phone account creation after SMS verification with `PhoneOtp.make({ allowSignUp: true })` through the ordinary `signIn` and `completeSignIn` methods. Keep explicit registration and number management independently opt-in with `lifecycle`.
