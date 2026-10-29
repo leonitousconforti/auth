@@ -1,4 +1,4 @@
-import type { OperationError as CryptoError } from "@yielded/crypto/Errors";
+import type * as CryptoError from "effect/crypto/CryptoError";
 import * as Schema from "effect/Schema";
 
 /** Fixed diagnostics never include a token, claims, key, URL, or native cause. */
@@ -46,7 +46,12 @@ export class ClaimValidationFailed extends Schema.TaggedError<ClaimValidationFai
   },
 ) {}
 
-export type KeyError = InvalidKey | KeyNotFound | AmbiguousKey | JwksUnavailable | CryptoError;
+export type KeyError =
+  | InvalidKey
+  | KeyNotFound
+  | AmbiguousKey
+  | JwksUnavailable
+  | CryptoError.CryptoError;
 
 export type VerifyError =
   | KeyError

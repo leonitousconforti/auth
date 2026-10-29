@@ -7,7 +7,7 @@ registered callbacks, provider configuration, permissions, identity, and grant s
 Use `OAuth.make` for an installed client and `Oidc.makeVerifier` for its OIDC
 verifier. Both require `HttpClient` and an owning `Scope`; keep that scope open
 for their lifetime. `Pkce` requires Effect `SecureRandom` and `Digest`; verification also requires
-`Signature` from `@yielded/crypto`. `Oidc.discover` retrieves metadata from the
+`Signature` from `effect/crypto`. `Oidc.discover` retrieves metadata from the
 exact trusted issuer, or from an explicit `metadataUrl`. A discovered issuer
 may use a `{tenantid}` path segment when that template matches the configured
 authority. A concrete GUID pinned from that document keeps its token issuer

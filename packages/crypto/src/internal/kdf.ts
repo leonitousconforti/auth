@@ -1,11 +1,18 @@
+import * as Digest from "effect/crypto/Digest";
+import * as EffectKdf from "effect/crypto/Kdf";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
-import { InvalidInput, type OperationError, UnsupportedAlgorithm } from "../Errors";
-import { Argon2idInput, HkdfInput, Kdf, type Limits, Pbkdf2Input, ScryptInput } from "../Kdf";
+import {
+  CryptoUnavailable,
+  InvalidInput,
+  type OperationError,
+  UnsupportedAlgorithm,
+} from "../Errors";
+import { Argon2idInput, Kdf, type Limits, Pbkdf2Input, ScryptInput } from "../Kdf";
 import { KdfAdmission } from "../KdfAdmission";
-import { copy, decode, importError, nativeError, withSecret } from "./common";
+import { copy, decode, withSecret } from "./common";
 import { ScryptBackend } from "./scrypt-backend";
 
 export interface Argon2Parameters {
@@ -21,12 +28,9 @@ export interface Argon2Parameters {
 
 export type Argon2 = (input: Argon2Parameters) => Effect.Effect<Uint8Array, OperationError>;
 
-export const makeKdf = Effect.fnUntraced(function* (
-  subtle: SubtleCrypto,
-  limits: Limits,
-  argon2?: Argon2,
-) {
+export const makeKdf = Effect.fnUntraced(function* (limits: Limits, argon2?: Argon2) {
   const admission = yield* KdfAdmission;
+  const standard = yield* EffectKdf.Kdf;
   const scrypt = yield* ScryptBackend;
   const boundedBytes = Schema.Uint8Array.check(Schema.isMaxLength(limits.maximumInputBytes));
 
@@ -90,58 +94,20 @@ export const makeKdf = Effect.fnUntraced(function* (
           const salt = yield* copy(value.salt);
 
           return yield* withSecret(value.password, (password) =>
-            Effect.gen(function* () {
-              const key = yield* Effect.tryPromise({
-                try: () => subtle.importKey("raw", password, "PBKDF2", false, ["deriveBits"]),
-                catch: importError,
-              });
-
-              const result = yield* Effect.tryPromise({
-                try: () =>
-                  subtle.deriveBits(
-                    { name: "PBKDF2", hash: "SHA-256", salt, iterations: value.iterations },
-                    key,
-                    value.length * 8,
-                  ),
-                catch: nativeError,
-              });
-
-              return Redacted.make(new Uint8Array(result));
-            }).pipe(Effect.uninterruptible),
-          );
-        }),
-      ),
-    hkdf: (input) =>
-      admission.run(
-        Effect.gen(function* () {
-          const value = yield* decode(HkdfInput, input, "parameters");
-
-          yield* outputLength(value.length);
-          yield* inputBytes(Redacted.value(value.key));
-          yield* inputBytes(value.salt);
-          yield* inputBytes(value.info);
-          const salt = yield* copy(value.salt);
-          const info = yield* copy(value.info);
-
-          return yield* withSecret(value.key, (material) =>
-            Effect.gen(function* () {
-              const key = yield* Effect.tryPromise({
-                try: () => subtle.importKey("raw", material, "HKDF", false, ["deriveBits"]),
-                catch: importError,
-              });
-
-              const result = yield* Effect.tryPromise({
-                try: () =>
-                  subtle.deriveBits(
-                    { name: "HKDF", hash: "SHA-256", salt, info },
-                    key,
-                    value.length * 8,
-                  ),
-                catch: nativeError,
-              });
-
-              return Redacted.make(new Uint8Array(result));
-            }).pipe(Effect.uninterruptible),
+            standard
+              .derive(
+                EffectKdf.pbkdf2({ hash: Digest.sha256, iterations: value.iterations }),
+                password,
+                {
+                  salt,
+                  length: value.length,
+                },
+              )
+              .pipe(
+                Effect.map(Redacted.make),
+                Effect.mapError(() => CryptoUnavailable.make({})),
+                Effect.uninterruptible,
+              ),
           );
         }),
       ),

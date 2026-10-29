@@ -1,7 +1,7 @@
-import { Signature } from "@yielded/crypto/Signature";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Signature from "effect/crypto/Signature";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -36,13 +36,15 @@ export type Selection = typeof Selection.Type;
 export class Jwks extends Context.Service<
   Jwks,
   {
-    readonly resolve: (selection: Selection) => Effect.Effect<PublicKey, KeyError, Signature>;
+    readonly resolve: (
+      selection: Selection,
+    ) => Effect.Effect<PublicKey, KeyError, Signature.Signature>;
   }
 >()("@yielded/jose/Jwks") {}
 
 /** Capture one detached immutable key-set generation without acquiring resources.
  * Retain the resolver for that generation; create a new one when keys change.
- * Each resolution still uses the caller's Signature service and selection policy. */
+ * Each resolution still uses the caller's Signature.Signature service and selection policy. */
 export const makeLocal = Effect.fnUntraced(function* (input: unknown) {
   const set = yield* readSet(input);
   const importKey = makePublicImporter();
@@ -132,11 +134,11 @@ const makePublicImporter = () => {
   // remote snapshots and service overrides; algorithms are a fixed finite set.
   const keys = new WeakMap<
     PublicJwk,
-    WeakMap<Signature["Service"], Map<AsymmetricAlgorithm, PublicKey>>
+    WeakMap<Signature.Signature["Service"], Map<AsymmetricAlgorithm, PublicKey>>
   >();
 
   return Effect.fnUntraced(function* (jwk: PublicJwk, algorithm: AsymmetricAlgorithm) {
-    const signatures = yield* Signature;
+    const signatures = yield* Signature.Signature;
     let services = keys.get(jwk);
 
     if (services === undefined) keys.set(jwk, (services = new WeakMap()));
@@ -151,9 +153,8 @@ const makePublicImporter = () => {
       algorithms.set(algorithm, key);
     }
 
-    // Metadata is frozen, but Uint8Array contents cannot be. Never expose the
-    // retained material to callers or to a verification service implementation.
-    return Object.freeze({ ...key, material: new Uint8Array(key.material) });
+    // Effect keys are opaque immutable snapshots; sharing preserves its native-key cache.
+    return key;
   });
 };
 

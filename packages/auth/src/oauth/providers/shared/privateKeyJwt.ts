@@ -1,11 +1,11 @@
-import { Hmac } from "@yielded/crypto/Hmac";
-import { Signature } from "@yielded/crypto/Signature";
 import { Jwk, Jwt } from "@yielded/jose";
 import type { PrivateKey } from "@yielded/jose/Jwk";
 import { Unavailable } from "@yielded/oauth/Errors";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Mac from "effect/crypto/Mac";
+import * as Signature from "effect/crypto/Signature";
 import * as Effect from "effect/Effect";
 import * as Base64 from "effect/encoding/Base64";
 import * as Exit from "effect/Exit";
@@ -70,7 +70,6 @@ const importPrivateKeyJwt = Effect.fnUntraced(function* (policy: PrivateKeyJwt) 
 
 const wipe = (key: PrivateKey) =>
   Effect.sync(() => {
-    Redacted.value(key.material).fill(0);
     Redacted.wipeUnsafe(key.material);
     Redacted.wipeUnsafe(key.jwk);
   });
@@ -93,8 +92,8 @@ export class PrivateKeyClientSecret extends Context.Service<
    * stay inside this Layer's crypto services and generation; teardown joins
    * active mints before wiping every retained key. */
   static readonly make = Effect.gen(function* () {
-    const signature = yield* Signature;
-    const hmac = yield* Hmac;
+    const signature = yield* Signature.Signature;
+    const hmac = yield* Mac.Mac;
     const keys = new Map<PrivateKeyJwt, PrivateKey>();
 
     // One finalizer preserves join-before-wipe even under a parallel parent Scope.
@@ -137,8 +136,8 @@ export class PrivateKeyClientSecret extends Context.Service<
 
         return yield* signPrivateKeyJwt(policy, key);
       },
-      Effect.provideService(Signature, signature),
-      Effect.provideService(Hmac, hmac),
+      Effect.provideService(Signature.Signature, signature),
+      Effect.provideService(Mac.Mac, hmac),
     );
 
     return PrivateKeyClientSecret.of({

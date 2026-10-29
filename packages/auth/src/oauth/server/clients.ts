@@ -1,11 +1,11 @@
-import { Hmac } from "@yielded/crypto/Hmac";
-import { Signature } from "@yielded/crypto/Signature";
 import { Jwk, Jwks, Jwt } from "@yielded/jose";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
+import * as Mac from "effect/crypto/Mac";
 import * as SecureRandom from "effect/crypto/SecureRandom";
+import * as Signature from "effect/crypto/Signature";
 import * as Effect from "effect/Effect";
 import * as Base64 from "effect/encoding/Base64";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -17,7 +17,6 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
-import { equalBytes } from "../../internal/equalBytes";
 import { timeoutOrElseWithCause } from "../../internal/timeout";
 import {
   AssertionAlgorithms,
@@ -231,8 +230,8 @@ export const makeClients = Effect.fnUntraced(function* (
     return yield* ConfigurationError.make({});
   // The network dependency is explicit in the server Layer, including when disabled.
   const http = HttpClient.withScope(yield* HttpClient.HttpClient);
-  const hmac = yield* Hmac;
-  const signatures = yield* Signature;
+  const hmac = yield* Mac.Mac;
+  const signatures = yield* Signature.Signature;
   const store = yield* Persistence;
   const permits = yield* Semaphore.make(8);
   const cache = new Map<string, Cached<Client>>();
@@ -242,24 +241,14 @@ export const makeClients = Effect.fnUntraced(function* (
   const crypto = yield* SecureRandom.SecureRandom;
   const digests = yield* Digest.Digest;
 
-  const key = yield* hmac
-    .importKey({
-      algorithm: "SHA-256",
-      key: Redacted.make(
-        yield* crypto
-          .randomBytes(32)
-          .pipe(
-            Effect.catchCause((cause) =>
-              Effect.failCause(Cause.map(cause, () => ConfigurationError.make({}))),
-            ),
-          ),
-      ),
-    })
-    .pipe(
-      Effect.catchCause((cause) =>
-        Effect.failCause(Cause.map(cause, () => ConfigurationError.make({}))),
-      ),
-    );
+  const key = yield* crypto.randomBytes(32).pipe(
+    Effect.flatMap((bytes) =>
+      Mac.key(Mac.hmacSha256, bytes).pipe(Effect.ensuring(Effect.sync(() => bytes.fill(0)))),
+    ),
+    Effect.catchCause((cause) =>
+      Effect.failCause(Cause.map(cause, () => ConfigurationError.make({}))),
+    ),
+  );
 
   const secrets = new Map<string, Uint8Array>();
 
@@ -270,8 +259,8 @@ export const makeClients = Effect.fnUntraced(function* (
       );
     if (client.clientSecret === undefined) continue;
 
-    const tag = yield* key
-      .sign(new TextEncoder().encode(Redacted.value(client.clientSecret)))
+    const tag = yield* hmac
+      .sign(key, new TextEncoder().encode(Redacted.value(client.clientSecret)))
       .pipe(
         Effect.catchCause((cause) =>
           Effect.failCause(Cause.map(cause, () => ConfigurationError.make({}))),
@@ -472,13 +461,11 @@ export const makeClients = Effect.fnUntraced(function* (
       requiredClaims: ["iss", "sub", "aud", "exp", "jti"],
     }).pipe(
       Effect.provideService(Jwks.Jwks, resolver),
-      Effect.provideService(Signature, signatures),
+      Effect.provideService(Signature.Signature, signatures),
       Effect.catchCause((cause) =>
         Effect.failCause(
           Cause.map(cause, (error) =>
-            error._tag === "CryptoUnavailable" ||
-            error._tag === "CryptoUnsupportedAlgorithm" ||
-            error._tag === "JoseJwksUnavailable"
+            error._tag === "CryptoError" || error._tag === "JoseJwksUnavailable"
               ? Unavailable.make({})
               : reject("invalid_client"),
           ),
@@ -595,7 +582,7 @@ export const makeClients = Effect.fnUntraced(function* (
       );
 
       if (
-        !equalBytes(
+        !Mac.timingSafeEqual(
           new TextEncoder().encode(presented),
           new TextEncoder().encode(client.clientSecretDigest),
         )
@@ -608,8 +595,8 @@ export const makeClients = Effect.fnUntraced(function* (
 
       if (
         expected === undefined ||
-        !(yield* key
-          .verify(new TextEncoder().encode(secret), expected)
+        !(yield* hmac
+          .verify(key, expected, new TextEncoder().encode(secret))
           .pipe(
             Effect.catchCause((cause) =>
               Effect.failCause(Cause.map(cause, () => Unavailable.make({}))),

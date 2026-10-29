@@ -118,8 +118,8 @@ re-exports them. Applications supply storage, policy, delivery authority, and
 explicit crypto/HTTP Layers.
 
 The direct `GitHub` module loads plain OAuth; its provider setup requires Effect
-`Crypto` and `HttpClient` in a `Scope`. `OpenIdConnect` additionally installs
-discovery and signed ID-token verification, requiring `Hmac` and `Signature`.
+`SecureRandom`, `Digest`, and `HttpClient` in a `Scope`. `OpenIdConnect` additionally installs
+discovery and signed ID-token verification, requiring Effect `Mac` and `Signature`.
 The `OAuth` module separately owns encryption of flow secrets and retained tokens.
 Direct paths narrow module loading; they do not change installed package dependencies.
 

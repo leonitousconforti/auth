@@ -1,5 +1,5 @@
-import { Hmac } from "@yielded/crypto/Hmac";
-import { Signature } from "@yielded/crypto/Signature";
+import * as Mac from "effect/crypto/Mac";
+import * as Signature from "effect/crypto/Signature";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Redacted from "effect/Redacted";
@@ -11,7 +11,7 @@ import {
   InvalidToken,
   SignatureVerificationFailed,
 } from "./Errors";
-import { algorithms } from "./internal/algorithms";
+import { sanitizeCryptoError } from "./internal/algorithms";
 import {
   decode,
   json,
@@ -53,7 +53,7 @@ export interface Verified {
   readonly payload: Redacted.Redacted<Uint8Array>;
 }
 
-export type Requirements = Hmac | Signature;
+export type Requirements = Mac.Mac | Signature.Signature;
 
 const readHeader = Effect.fnUntraced(function* (input: unknown) {
   const raw = yield* parse(JsonObject, input, "header");
@@ -96,14 +96,11 @@ const verifyAsymmetric = Effect.fnUntraced(function* (
 
   if (algorithm === "HS256" || key.algorithm !== algorithm) return yield* InvalidKey.make({});
   yield* KeyPolicy.check(key.jwk, algorithm, "verify");
-  const signatures = yield* Signature;
+  const signatures = yield* Signature.Signature;
 
-  const valid = yield* signatures.verify({
-    algorithm: algorithms[algorithm],
-    publicKey: key.material,
-    data: parsed.signingInput,
-    signature: parsed.signature,
-  });
+  const valid = yield* signatures
+    .verify(key.material, parsed.signature, parsed.signingInput)
+    .pipe(Effect.mapError(sanitizeCryptoError));
 
   if (!valid) return yield* SignatureVerificationFailed.make({});
 
@@ -139,22 +136,18 @@ export const sign = Effect.fnUntraced(function* (
 
   if (key._tag === "SecretKey") {
     if (header.alg !== "HS256") return yield* InvalidKey.make({});
-    const hmac = yield* Hmac;
+    const hmac = yield* Mac.Mac;
 
-    signature = yield* hmac.sign({
-      algorithm: "SHA-256",
-      key: key.material,
-      data: utf8(signingInput),
-    });
+    signature = yield* hmac
+      .sign(yield* reveal(key.material), utf8(signingInput))
+      .pipe(Effect.mapError(sanitizeCryptoError));
   } else {
     if (header.alg === "HS256") return yield* InvalidKey.make({});
-    const signatures = yield* Signature;
+    const signatures = yield* Signature.Signature;
 
-    signature = yield* signatures.sign({
-      algorithm: algorithms[header.alg],
-      privateKey: key.material,
-      data: utf8(signingInput),
-    });
+    signature = yield* signatures
+      .sign(yield* reveal(key.material), utf8(signingInput))
+      .pipe(Effect.mapError(sanitizeCryptoError));
   }
 
   return Redacted.make(`${signingInput}.${Base64Url.encode(signature)}`);
@@ -173,14 +166,11 @@ export const verify = Effect.fnUntraced(function* (
   if (key.algorithm !== algorithm) return yield* InvalidKey.make({});
   yield* KeyPolicy.check(yield* reveal(key.jwk), algorithm, "verify");
   if (algorithm !== "HS256") return yield* InvalidKey.make({});
-  const hmac = yield* Hmac;
+  const hmac = yield* Mac.Mac;
 
-  const valid = yield* hmac.verify({
-    algorithm: "SHA-256",
-    key: key.material,
-    data: parsed.signingInput,
-    tag: parsed.signature,
-  });
+  const valid = yield* hmac
+    .verify(yield* reveal(key.material), parsed.signature, parsed.signingInput)
+    .pipe(Effect.mapError(sanitizeCryptoError));
 
   if (!valid) return yield* SignatureVerificationFailed.make({});
 

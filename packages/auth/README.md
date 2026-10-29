@@ -11,7 +11,8 @@ The package owns authentication workflows and OAuth/OIDC verification.
 Applications own identity, persistence, keys, policy, private delivery, and crypto
 backend selection. Resources live in the caller's Scope; credentials stay outside
 public results and telemetry. Runtime dependencies are Effect and the first-party
-`@yielded/crypto`, `@yielded/jose`, and `@yielded/oauth` packages.
+`@yielded/crypto` password backend, `@yielded/jose`, and `@yielded/oauth` packages.
+General cryptographic operations use `effect/crypto`.
 
 On Cloudflare Workers, provide `WorkerdPasswordlessServices.layer` from
 `@yielded/auth/WorkerdPasswordlessServices` for runtime crypto and HTTP without Wasm.

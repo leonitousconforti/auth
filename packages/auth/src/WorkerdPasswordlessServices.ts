@@ -1,21 +1,21 @@
-import type { Aead } from "@yielded/crypto/Aead";
-import type { Hmac } from "@yielded/crypto/Hmac";
-import * as Portable from "@yielded/crypto/Portable";
-import type { Signature } from "@yielded/crypto/Signature";
-import { layerCryptoWeb } from "@yielded/crypto/WebCrypto";
+import type * as Aead from "effect/crypto/Aead";
 import type * as Digest from "effect/crypto/Digest";
+import type * as Mac from "effect/crypto/Mac";
 import type * as SecureRandom from "effect/crypto/SecureRandom";
+import type * as Signature from "effect/crypto/Signature";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import type * as HttpClient from "effect/http/HttpClient";
 import * as Layer from "effect/Layer";
+
+import { layerWebCrypto } from "./WebCrypto";
 
 /** Runtime services for OAuth, sessions, passkeys and proofs on Cloudflare Workers. */
 export type WorkerdPasswordlessServices =
   | SecureRandom.SecureRandom
   | Digest.Digest
-  | Aead
-  | Hmac
-  | Signature
+  | Aead.Aead
+  | Mac.Mac
+  | Signature.Signature
   | HttpClient.HttpClient;
 
 /** Entropy/digests, XChaCha-capable AEAD, HMAC, signatures and a Fetch HttpClient.
@@ -24,7 +24,6 @@ export type WorkerdPasswordlessServices =
  * adapters remain application-owned. Passwords use WorkerdServices instead.
  */
 export const layer: Layer.Layer<WorkerdPasswordlessServices> = Layer.mergeAll(
-  layerCryptoWeb,
-  Portable.layerWithoutKdf(globalThis.crypto.subtle),
+  layerWebCrypto,
   FetchHttpClient.layer,
 );

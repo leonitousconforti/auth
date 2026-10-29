@@ -2,10 +2,9 @@ import { it } from "@effect/vitest";
 import * as OAuth from "@yielded/auth/OAuth";
 import * as Password from "@yielded/auth/Password";
 import * as Totp from "@yielded/auth/Totp";
-import { layerCryptoWeb } from "@yielded/auth/WebCrypto";
+import { layerWebCrypto as layerCryptoWeb } from "@yielded/auth/WebCrypto";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
-import * as WebCrypto from "@yielded/crypto/WebCrypto";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
@@ -141,32 +140,6 @@ const keyring = {
   activeKeyId: "key1",
   keys: [{ id: "key1", material: Redacted.make(fixtures.oauth.key) }],
 };
-
-// https://github.com/yielded-dev/auth/issues/200: unsupported OAuth encryption
-// must fail at construction, before a request can collapse it to OAuthUnavailable.
-it.effect("rejects an AEAD backend without XChaCha at protector construction", () =>
-  Effect.gen(function* () {
-    const result = yield* OAuth.OAuthTransactionProtector.layer(keyring).pipe(
-      Layer.build,
-      Effect.provide(
-        Layer.merge(
-          layerCryptoWeb,
-          WebCrypto.layer(globalThis.crypto.subtle).pipe(Layer.provide(admission)),
-        ),
-      ),
-      Effect.result,
-    );
-
-    expect(result).toMatchObject({
-      _tag: "Failure",
-      failure: {
-        _tag: "OAuthConfigurationError",
-        reason: "crypto",
-        message: expect.stringContaining("XChaCha20-Poly1305"),
-      },
-    });
-  }),
-);
 
 it.effect("opens all stored OAuth envelope domains and rejects changed durable authority", () =>
   Effect.gen(function* () {

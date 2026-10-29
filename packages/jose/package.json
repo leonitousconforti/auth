@@ -36,9 +36,7 @@
     "check": "effect-tsrs diagnostics --project tsconfig.json --type-check --strict",
     "test": "vp test"
   },
-  "dependencies": {
-    "@yielded/crypto": "workspace:*"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",

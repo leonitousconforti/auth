@@ -49,24 +49,23 @@ depends on Auth.
 ## Verify typed claims
 
 ```sh
-bun add @yielded/jose@beta @yielded/crypto@beta effect
+bun add @yielded/jose@beta effect @effect/platform-node
 ```
 
-Import modules from the root; select the crypto runtime through its direct path.
-Bun uses `@yielded/crypto/platform-bun`. WebCrypto and portable backends are also
-available through the crypto package.
+Import modules from the root and supply Effect crypto services. Node uses
+`NodeCrypto` from `@effect/platform-node`; Bun uses `BunCrypto` from
+`@effect/platform-bun`. WebCrypto hosts can compose the Layers from `effect/crypto`.
 
 ```ts
-import { KdfAdmission } from "@yielded/crypto";
-import * as PlatformCrypto from "@yielded/crypto/platform-node";
+import { NodeCrypto } from "@effect/platform-node";
 import { Jwk, Jwt } from "@yielded/jose";
-import { Effect, Layer, Redacted, Schema } from "effect";
+import { Effect, Redacted, Schema } from "effect";
 
 const Claims = Schema.Struct({
   sub: Schema.String.check(Schema.isPattern(/^user_[0-9]+$/)).pipe(Schema.brand("Subject")),
   role: Schema.Literals(["admin", "member"]),
 });
-const Cryptography = PlatformCrypto.layer().pipe(Layer.provide(KdfAdmission.layer()));
+const Cryptography = NodeCrypto.layer;
 
 // Read these from application-owned key configuration and the incoming request.
 declare const publicJwk: unknown;
@@ -110,6 +109,9 @@ redacted JSON claims. It performs no signature or claim-policy checks.
 | `Jws`  | `sign`, `verify`, `verifyWithKeySet`                           | Compact JWS over redacted bytes, with an explicit verification algorithm list                                               |
 | `Jwt`  | `sign`, `verify`, `verifyWithKeySet`                           | Compact signed JWT with a claims Schema                                                                                     |
 | `Jwe`  | `encrypt`, `decrypt`                                           | Compact `dir` / `A256GCM`; redacted plaintext and tokens                                                                    |
+
+Imported keys hold opaque Effect keys in `material`. Use `Jwk.exportPublic` or
+`Jwk.exportPrivate` for serialization.
 
 Private keys require complete RSA CRT parameters, P-256 coordinates and scalar,
 or Ed25519 public and private bytes. Native key parsing validates the components.

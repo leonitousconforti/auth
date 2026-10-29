@@ -3,8 +3,7 @@
 Yielded credits the open-source projects and independent standards behind its
 cryptography. The [crypto package notices](packages/crypto/THIRD_PARTY_NOTICES.md)
 record the exact source revisions, authors, licenses, affected files, and the
-adapted Noble implementations and Noble, Wycheproof, Argon2 and standards test
-material. That file is
+adapted Noble Argon2 implementation and password-derivation test material. That file is
 included in the published `@yielded/crypto` package.
 
 The [JOSE package notices](packages/jose/THIRD_PARTY_NOTICES.md) credit Filip

@@ -3,8 +3,8 @@ import { it } from "@effect/vitest";
 import { OAuthScope, OAuthServer } from "@yielded/auth";
 import { SubjectId } from "@yielded/auth/Schema";
 import * as WebCrypto from "@yielded/auth/WebCrypto";
+import * as CryptoBackend from "@yielded/auth/WebCrypto";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
-import * as CryptoBackend from "@yielded/crypto/WebCrypto";
 import { Jwk, Jwt } from "@yielded/jose";
 import * as McpProtocol from "effect/ai/McpProtocol";
 import * as McpServer from "effect/ai/McpServer";
@@ -40,7 +40,7 @@ const challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
 
 const cryptoLayer = Layer.merge(
   WebCrypto.layerWebCrypto,
-  CryptoBackend.layer(globalThis.crypto.subtle).pipe(Layer.provide(KdfAdmission.layer())),
+  CryptoBackend.layerWebCrypto.pipe(Layer.provide(KdfAdmission.layer())),
 );
 
 const config: OAuthServer.Options = {

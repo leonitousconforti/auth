@@ -3,14 +3,14 @@
 JOSE for Effect: JWK import/export, public key sets, compact signatures and
 encryption, and JWTs whose claims are encoded and decoded by your Effect Schema.
 Your application owns keys, accepted algorithms, issuers, audiences and token
-purpose. This package depends on `@yielded/crypto` and Effect, independently of Auth.
+purpose. Effect is its only runtime dependency; it is independent of Auth.
 
 ```sh
-bun add @yielded/jose@beta @yielded/crypto@beta effect
+bun add @yielded/jose@beta effect
 ```
 
 Import `Jwk`, `Jwks`, `Jws`, `Jwt`, and `Jwe` from the root. Supply cryptographic
-services through an explicit crypto backend Layer. Local verification needs no
+services from `effect/crypto` through an explicit runtime Layer. Local verification needs no
 HTTP; remote JWKS use an application-configured HTTPS URL and an Effect HttpClient,
 with a bounded cache and refresh lifetime owned by the Layer's Scope.
 

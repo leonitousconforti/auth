@@ -3,7 +3,6 @@ import type { KdfBusy, OperationError } from "@yielded/crypto/Errors";
 import { Kdf } from "@yielded/crypto/Kdf";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
-import * as WebCrypto from "@yielded/crypto/WebCrypto";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -145,7 +144,7 @@ it.effect("holds KDF admission through interrupted native work and bounds queued
 
     yield* run.pipe(
       Effect.provide(
-        WebCrypto.layer(subtle).pipe(
+        Portable.layer(subtle).pipe(
           Layer.provide(
             KdfAdmission.layer({ concurrency: 1, maxQueued: 1, maxWaitMilliseconds: 100 }),
           ),

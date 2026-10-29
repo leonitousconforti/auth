@@ -5,13 +5,9 @@ export default defineConfig({
     tsconfig: "tsconfig.build.json",
     entry: [
       "src/index.ts",
-      "src/Aead.ts",
       "src/Errors.ts",
-      "src/Hmac.ts",
       "src/Kdf.ts",
       "src/KdfAdmission.ts",
-      "src/Signature.ts",
-      "src/WebCrypto.ts",
       "src/platform-node.ts",
       "src/platform-bun.ts",
       "src/platform-workerd.ts",

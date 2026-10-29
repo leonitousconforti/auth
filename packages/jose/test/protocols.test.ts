@@ -133,7 +133,7 @@ it.effect("classifies JWE RNG failures without exposing native causes", () =>
       Effect.flip,
     );
 
-    expect(error._tag).toBe("CryptoUnavailable");
+    expect(error._tag).toBe("CryptoError");
     expect(JSON.stringify(error)).not.toContain("private-rng-canary");
     expect(String(error)).not.toContain("private-rng-canary");
   }).pipe(Effect.provide(cryptoLayer)),

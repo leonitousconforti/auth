@@ -44,6 +44,6 @@ export class TotpCryptography extends Context.Service<
     ) => Effect.Effect<Uint8Array, TotpUnavailable>;
   }
 >()("effect-auth/TotpCryptography") {
-  /** Supply owned Hmac/Aead, Effect SecureRandom and Digest, and application-owned TotpSecretKeys. */
+  /** Supply Effect Mac, Aead, SecureRandom and Digest, and application-owned TotpSecretKeys. */
   static readonly layer = Layer.effect(this, make);
 }

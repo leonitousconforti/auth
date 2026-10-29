@@ -47,15 +47,6 @@ export const Pbkdf2Input = Schema.Struct({
 
 export type Pbkdf2Input = typeof Pbkdf2Input.Type;
 
-export const HkdfInput = Schema.Struct({
-  key: secret,
-  salt: bytes,
-  info: bytes.check(Schema.isMaxLength(1024)),
-  length: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 255 * 32 })),
-});
-
-export type HkdfInput = typeof HkdfInput.Type;
-
 /** Resource ceilings, not a password-strength policy. Limits apply per permit.
  * Scrypt bounds its allocation by maximumMemoryKiB and N*r*p/8 by
  * maximumMemoryPasses. maximumPasses/maximumParallelism apply to Argon2id.
@@ -84,7 +75,7 @@ export const defaultLimits: Limits = Object.freeze({
 
 /**
  * Byte-preserving derivation; no text normalization, PHC parsing or password policy.
- * Argon2id uses version 19; PBKDF2 and HKDF use SHA-256. Scrypt names N/r/p as
+ * Argon2id uses version 19; PBKDF2 uses Effect Kdf with SHA-256. Scrypt names N/r/p as
  * cost/blockSize/parallelism. A backend captures shared
  * KdfAdmission when its Layer is built and retains admission until work and cleanup
  * finish, including when a native operation cannot be cancelled.
@@ -100,9 +91,6 @@ export class Kdf extends Context.Service<
     ) => Effect.Effect<Redacted.Redacted<Uint8Array>, OperationError | KdfBusy>;
     readonly pbkdf2: (
       input: Pbkdf2Input,
-    ) => Effect.Effect<Redacted.Redacted<Uint8Array>, OperationError | KdfBusy>;
-    readonly hkdf: (
-      input: HkdfInput,
     ) => Effect.Effect<Redacted.Redacted<Uint8Array>, OperationError | KdfBusy>;
   }
 >()("@yielded/crypto/Kdf") {}

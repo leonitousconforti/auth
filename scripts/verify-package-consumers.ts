@@ -8,7 +8,7 @@ import ts from "typescript-twoslash";
 import { build as viteBuild } from "vite-plus";
 
 import authCryptoFixtures from "../packages/auth/test/crypto-fixtures.ts";
-import { aeadVectors, argon2Vector } from "../packages/crypto/test/vectors.ts";
+import { argon2Vector } from "../packages/crypto/test/vectors.ts";
 import { PublishManifest, withPublishManifests } from "./release-publish.ts";
 import { ReusableManifest, reusableDependencyProblems } from "./verify-package-exports.ts";
 
@@ -117,26 +117,26 @@ const checkReusableOperations = Effect.fn("packageConsumers.reusableOperations")
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
 
-  // Reuse independent RFC9106 and XChaCha draft vectors, including their provenance.
+  // Reuse independent RFC9106 vectors, including their provenance.
   // JOSE's native oracle matches test/compact-validation.test.ts; no jose is installed.
   yield* fs.writeFileString(
     path.join(stage, "fixtures/reusable-operations.mjs"),
     `import assert from "node:assert/strict";
 import { createCipheriv, createHmac } from "node:crypto";
 import { Effect, Layer, Redacted, Schema} from "effect";
-import { Digest, SecureRandom } from "effect/crypto";
+import { Aead, Digest, Mac, SecureRandom, Signature } from "effect/crypto";
 import { FetchHttpClient } from "effect/http";
 import { OAuth, Pkce } from "@yielded/oauth";
-import { Aead, Kdf, KdfAdmission } from "@yielded/crypto";
+import { Kdf, KdfAdmission } from "@yielded/crypto";
 import * as Portable from "@yielded/crypto/Portable";
 import { Jwe, Jwk, Jws, Jwt } from "@yielded/jose";
 const Platform = await import(process.argv[2]);
 const argon = ${JSON.stringify(argon2Vector)};
-const vector = ${JSON.stringify(aeadVectors[1])};
 const bytes = (hex) => new Uint8Array(Buffer.from(hex, "hex"));
 const hex = (value) => Buffer.from(value).toString("hex");
 const utf8 = (value) => new TextEncoder().encode(value);
 const text = (value) => new TextDecoder().decode(value);
+const primitives = Layer.mergeAll(Aead.layerWebCrypto, Mac.layerWebCrypto, Signature.layerWebCrypto).pipe(Layer.provideMerge(SecureRandom.layerWebCrypto));
 for (const backend of [Portable.layer(globalThis.crypto.subtle), Platform.layer()]) {
   await Effect.runPromise(Effect.gen(function* () {
     const kdf = yield* Kdf.Kdf;
@@ -147,19 +147,6 @@ for (const backend of [Portable.layer(globalThis.crypto.subtle), Platform.layer(
       parallelism: argon.parallelism, length: argon.lengthBytes,
     });
     assert.equal(hex(Redacted.value(derived)), argon.expectedHex);
-    const aead = yield* Aead.Aead;
-    const context = {
-      algorithm: vector.algorithm, key: Redacted.make(bytes(vector.keyHex)),
-      nonce: bytes(vector.nonceHex), additionalData: bytes(vector.aadHex),
-    };
-    const sealed = yield* aead.encrypt({ ...context, plaintext: Redacted.make(bytes(vector.plaintextHex)) });
-    assert.equal(hex(sealed), vector.sealedHex);
-    const opened = yield* aead.decrypt({ ...context, ciphertext: bytes(vector.sealedHex) });
-    assert.equal(hex(Redacted.value(opened)), vector.plaintextHex);
-    sealed[0] ^= 1;
-    const rejected = yield* aead.decrypt({ ...context, ciphertext: sealed }).pipe(Effect.flip);
-    assert.equal(rejected._tag, "CryptoAuthenticationFailed");
-
     const secret = new Uint8Array(32).fill(7);
     const jwk = { kty: "oct", k: Buffer.from(secret).toString("base64url") };
     const signing = yield* Jwk.importSecret(Redacted.make(jwk), "HS256");
@@ -180,7 +167,7 @@ for (const backend of [Portable.layer(globalThis.crypto.subtle), Platform.layer(
     const token = [header, "", Buffer.from(iv).toString("base64url"), ciphertext.toString("base64url"), cipher.getAuthTag().toString("base64url")].join(".");
     const decrypted = yield* Jwe.decrypt(Redacted.make(token), encryption);
     assert.equal(text(Redacted.value(decrypted.plaintext)), "payload");
-  }).pipe(Effect.provide(backend.pipe(Layer.provide(KdfAdmission.layer())))));
+  }).pipe(Effect.provide(Layer.merge(primitives, backend.pipe(Layer.provide(KdfAdmission.layer()))))));
 }
 const effectCrypto = Layer.merge(SecureRandom.layerWebCrypto, Digest.layerWebCrypto);
 let requests = 0;
@@ -206,7 +193,7 @@ await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
   assert.equal(Redacted.value(tokens.accessToken), "private-access");
   assert.equal(requests, 1);
 })).pipe(Effect.provide(Layer.merge(effectCrypto, FetchHttpClient.layer)), Effect.provideService(FetchHttpClient.Fetch, fetchReceipt)));
-console.log("Packaged portable/native Argon2id, XChaCha, JWS/JWT, JWE and native OAuth passed with only Effect and first-party packages.");`,
+console.log("Packaged portable/native Argon2id, JWS/JWT, JWE and native OAuth passed with only Effect and first-party packages.");`,
   );
   for (const runtime of ["node", "bun"] as const) {
     const child = yield* ChildProcess.make(
@@ -245,12 +232,12 @@ const checkAuthOperations = Effect.fn("packageConsumers.authOperations")(functio
     `import assert from "node:assert/strict";
 import { Effect, Layer, Redacted, Schema } from "effect";
 import { Password, Totp, OAuth } from "@yielded/auth";
-import { layerCryptoWeb } from "@yielded/auth/WebCrypto";
+import { layerWebCrypto } from "@yielded/auth/WebCrypto";
 import * as Portable from "@yielded/crypto/Portable";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 const fixtures = ${JSON.stringify(authCryptoFixtures)};
 const admission = KdfAdmission.layer({ maxQueued: 0 });
-const runtime = Layer.merge(layerCryptoWeb, Portable.layer(globalThis.crypto.subtle).pipe(Layer.provideMerge(admission)));
+const runtime = Layer.merge(layerWebCrypto, Portable.layer(globalThis.crypto.subtle).pipe(Layer.provideMerge(admission)));
 const key = Redacted.make(Schema.decodeUnknownSync(Schema.Uint8ArrayFromBase64Url)(fixtures.totp.key));
 const keys = Layer.succeed(Totp.TotpSecretKeys, { current: Effect.succeed({ keyId: "key1", key }), get: () => Effect.succeed(key) });
 const keyring = { activeKeyId: "key1", keys: [{ id: "key1", material: Redacted.make(fixtures.oauth.key) }] };
@@ -624,7 +611,7 @@ const checkReusableConsumers = Effect.fn("packageConsumers.reusable")(function* 
 
   yield* fs.symlink(effectSource, path.join(stage, "node_modules/effect"));
 
-  const namespaces = ["Aead", "Errors", "Hmac", "Kdf", "KdfAdmission", "Signature"];
+  const namespaces = ["Errors", "Kdf", "KdfAdmission"];
   const joseNamespaces = ["Errors", "Jwe", "Jwk", "Jwks", "Jws", "Jwt"];
   const oauthNamespaces = ["Errors", "OAuth", "Oidc", "Pkce"];
   const contracts = [".", ...namespaces.map((name) => `./${name}`)];

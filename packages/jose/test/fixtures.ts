@@ -1,8 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
-import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
-import * as PlatformCrypto from "@yielded/crypto/platform-node";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as jose from "jose";
 
@@ -21,10 +18,7 @@ export const secretJwk = { kty: "oct", k: jose.base64url.encode(secret) };
 export const utf8 = (input: string) => new TextEncoder().encode(input);
 export const text = (input: Uint8Array) => new TextDecoder().decode(input);
 
-export const cryptoLayer = Layer.merge(
-  NodeCrypto.layer,
-  PlatformCrypto.layer().pipe(Layer.provide(KdfAdmission.layer())),
-);
+export const cryptoLayer = NodeCrypto.layer;
 
 export const independentJws = (
   payload: Uint8Array,

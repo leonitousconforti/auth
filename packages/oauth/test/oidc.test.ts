@@ -6,8 +6,8 @@
 import { createHash } from "node:crypto";
 
 import { it } from "@effect/vitest";
-import { Signature } from "@yielded/crypto/Signature";
 import * as Cause from "effect/Cause";
+import * as Signature from "effect/crypto/Signature";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -429,7 +429,7 @@ for (const termination of ["owner closure", "caller interruption"] as const) {
         ),
       );
 
-      const signatures = yield* Signature;
+      const signatures = yield* Signature.Signature;
       const entered = yield* Deferred.make<void>();
       const cleanupStarted = yield* Deferred.make<void>();
       const allowCleanup = yield* Deferred.make<void>();
@@ -438,10 +438,10 @@ for (const termination of ["owner closure", "caller interruption"] as const) {
 
       yield* Effect.addFinalizer(() => Deferred.succeed(allowCleanup, undefined));
 
-      const gated = Signature.of({
+      const gated = Signature.Signature.of({
         ...signatures,
-        verify: (input) =>
-          signatures.verify(input).pipe(
+        verify: (key, signature, data) =>
+          signatures.verify(key, signature, data).pipe(
             Effect.tap(() => Deferred.succeed(entered, undefined)),
             Effect.andThen(Effect.never),
             Effect.ensuring(
@@ -458,7 +458,7 @@ for (const termination of ["owner closure", "caller interruption"] as const) {
 
       const active = yield* verifier
         .verify(token, verification)
-        .pipe(Effect.provideService(Signature, gated), Effect.forkChild);
+        .pipe(Effect.provideService(Signature.Signature, gated), Effect.forkChild);
 
       yield* Deferred.await(entered);
 

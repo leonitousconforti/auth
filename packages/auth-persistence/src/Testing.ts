@@ -38,9 +38,9 @@ import {
   StaleAuthentication,
   type StatefulSessionPersistence,
 } from "@yielded/auth/Sessions";
+import { layerWebCrypto as layerCryptoWeb } from "@yielded/auth/WebCrypto";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
-import { layerCryptoWeb } from "@yielded/crypto/WebCrypto";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";

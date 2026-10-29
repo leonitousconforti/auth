@@ -1,7 +1,7 @@
-import { Hmac, type Key } from "@yielded/crypto/Hmac";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
+import * as Mac from "effect/crypto/Mac";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -17,6 +17,7 @@ import {
   reportAuthFailure,
   withoutObservability,
 } from "../internal/diagnostics";
+import { makeScopedOperation } from "../internal/scoped-operation";
 import { TokenDigest } from "../Schema";
 import { SessionConfigurationError, SessionInvalid, SessionUnavailable } from "./errors";
 
@@ -136,13 +137,14 @@ export const makeSessionSigningCodec = Effect.fn("makeSessionSigningCodec")(func
     Effect.mapError(() => SessionConfigurationError.make({ reason: "keyring" })),
   );
 
-  const hmac = yield* Hmac;
+  const hmac = yield* Mac.Mac;
+  const run = yield* makeScopedOperation(() => SessionUnavailable.make({}));
 
   const services = (yield* Effect.context<S["DecodingServices"] | S["EncodingServices"]>()).pipe(
     withoutObservability,
   );
 
-  const keys = new Map<string, Key>();
+  const keys = new Map<string, Mac.Key>();
 
   const version = purpose === "session-cache" ? "eac1" : "eas1";
 
@@ -155,7 +157,7 @@ export const makeSessionSigningCodec = Effect.fn("makeSessionSigningCodec")(func
   );
 
   const importKey = (material: Uint8Array) =>
-    hmac.importKey({ algorithm: "SHA-256", key: Redacted.make(material) }).pipe(
+    Mac.key(Mac.hmacSha256, material).pipe(
       sessionDiagnostics("session-crypto"),
       Effect.catchCause((cause) =>
         Effect.failCause(
@@ -180,7 +182,7 @@ export const makeSessionSigningCodec = Effect.fn("makeSessionSigningCodec")(func
 
     const key =
       purpose === "session-cache"
-        ? yield* root.sign(textEncoder.encode("effect-auth/session-cache/key/v1")).pipe(
+        ? yield* hmac.sign(root, textEncoder.encode("effect-auth/session-cache/key/v1")).pipe(
             sessionDiagnostics("session-crypto"),
             Effect.catchCause((cause) =>
               Effect.failCause(
@@ -213,7 +215,7 @@ export const makeSessionSigningCodec = Effect.fn("makeSessionSigningCodec")(func
 
       const message = `${version}.${activeKeyId}.${Base64Url.encode(json)}`;
 
-      const signature = yield* activeKey.sign(textEncoder.encode(message)).pipe(
+      const signature = yield* hmac.sign(activeKey, textEncoder.encode(message)).pipe(
         sessionDiagnostics("session-crypto"),
         Effect.catchCause((cause) =>
           Effect.failCause(Cause.map(cause, () => SessionUnavailable.make({}))),
@@ -228,7 +230,7 @@ export const makeSessionSigningCodec = Effect.fn("makeSessionSigningCodec")(func
         );
 
       return Redacted.make(token);
-    }),
+    }, run),
     decode: Effect.fn("SessionSigningCodec.decode")(function* (
       credential: Redacted.Redacted<string>,
     ) {
@@ -245,8 +247,8 @@ export const makeSessionSigningCodec = Effect.fn("makeSessionSigningCodec")(func
       if (key === undefined || signature === undefined || signature.length !== 32)
         return yield* SessionInvalid.make({});
 
-      const valid = yield* key
-        .verify(textEncoder.encode(`${version}.${keyId}.${payload}`), signature)
+      const valid = yield* hmac
+        .verify(key, signature, textEncoder.encode(`${version}.${keyId}.${payload}`))
         .pipe(
           sessionDiagnostics("session-crypto"),
           Effect.catchCause((cause) =>
@@ -265,6 +267,6 @@ export const makeSessionSigningCodec = Effect.fn("makeSessionSigningCodec")(func
           Effect.failCause(Cause.map(cause, () => SessionInvalid.make({}))),
         ),
       );
-    }),
+    }, run),
   };
 });

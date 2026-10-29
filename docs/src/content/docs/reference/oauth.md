@@ -34,7 +34,7 @@ Provide these to `oauth.layer`:
 | `oauth.Identity` | Verify the current application session                               |
 | `oauth.Clients`  | Optional client registrations from your storage                      |
 
-Provide durable `OAuthServer.Persistence` plus `HttpClient`, `Crypto`, `Hmac`, and
+Provide durable `OAuthServer.Persistence` plus `HttpClient`, `SecureRandom`, `Digest`, `Mac`, and
 `Signature`.
 
 `Identity.current` returns the verified `SubjectId` or `undefined`; dependency
@@ -265,7 +265,7 @@ the UserInfo route rejects those access tokens.
 
 For a resource server, construct `OAuthServer.makeAccessTokenVerifierWithKeySet({
 issuer, resource })` and supply `Jwks.Jwks` from `@yielded/jose` plus
-`@yielded/crypto/Signature`. Its `verify(Redacted.make(token))` Effect checks RS256,
+`effect/crypto/Signature`. Its `verify(Redacted.make(token))` Effect checks RS256,
 the `at+jwt` type, issuer, audience, expiry, and scope encoding, then returns
 `OAuthServer.Access` with the subject, client, grant, resource, scopes, and optional
 application claims. It captures the two services while using the caller's clock.
@@ -456,9 +456,8 @@ export const Routes = AuthRoutes.pipe(
 
 The [runnable application](https://github.com/yielded-dev/auth/blob/main/examples/auth/src/oauth-application.ts)
 supplies those application Layers. Native providers require HTTP and crypto services;
-OpenID Connect also requires `Signature`. Protectors require `Aead` and `Crypto`.
-Their Layers check for XChaCha20-Poly1305 support and fail with
-`OAuthConfigurationError` (`reason: "crypto"`) when it is absent. On Workers,
+OpenID Connect also requires Effect `Signature`. Protectors require Effect
+`Aead` and `SecureRandom`; Effect supplies XChaCha20-Poly1305. On Workers,
 provide `WorkerdPasswordlessServices.layer` from
 `@yielded/auth/WorkerdPasswordlessServices` for HTTP and crypto without Wasm.
 Use `WorkerdServices` when the application also hashes passwords; see

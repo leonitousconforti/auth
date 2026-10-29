@@ -32,7 +32,7 @@ export const layerWith = (
 ): Layer.Layer<WorkerdServices, InvalidInput | PasswordConfigurationError> => {
   const platform = Layer.merge(
     WorkerdPasswordlessServices.layer,
-    WorkerdCrypto.layerKdf(globalThis.crypto.subtle, options.kdfLimits).pipe(
+    WorkerdCrypto.layer(globalThis.crypto.subtle, options.kdfLimits).pipe(
       Layer.provideMerge(KdfAdmission.layer(options.kdfAdmission)),
     ),
   );

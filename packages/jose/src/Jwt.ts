@@ -1,5 +1,5 @@
-import type { Signature } from "@yielded/crypto/Signature";
 import * as Clock from "effect/Clock";
+import type * as Signature from "effect/crypto/Signature";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
@@ -178,7 +178,7 @@ export const verifyWithKeySet = Effect.fnUntraced(function* <S extends Schema.Co
 ): Effect.fn.Return<
   Verified<S["Type"]> & { readonly key: PublicKey },
   JwtError,
-  Signature | Jwks | S["DecodingServices"]
+  Signature.Signature | Jwks | S["DecodingServices"]
 > {
   const policy = yield* parse(VerifyOptions, options, "parameters");
   const jws = yield* Jws.verifyWithKeySet(token, policy);

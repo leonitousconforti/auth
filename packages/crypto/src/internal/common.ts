@@ -21,11 +21,6 @@ export const nativeError = (cause: unknown) =>
     ? UnsupportedAlgorithm.make({})
     : CryptoUnavailable.make({});
 
-export const importError = (cause: unknown) =>
-  nativeErrorName(cause) === "DataError" || nativeErrorName(cause) === "SyntaxError"
-    ? InvalidInput.make({ reason: "key" })
-    : nativeError(cause);
-
 /** Own a secret copy through cleanup. Native users must join work that cannot be cancelled. */
 export const withSecret = <A, E, R>(
   value: Redacted.Redacted<Uint8Array>,

@@ -1,61 +1,16 @@
 import { it } from "@effect/vitest";
-import { Aead, EncryptInput } from "@yielded/crypto/Aead";
-import { Hmac } from "@yielded/crypto/Hmac";
 import { Kdf } from "@yielded/crypto/Kdf";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
-import { Signature } from "@yielded/crypto/Signature";
-import * as WebCrypto from "@yielded/crypto/WebCrypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
-import * as Schema from "effect/Schema";
 import { describe, expect } from "vite-plus/test";
 
 import { backends, utf8 } from "./backends";
 
-it.effect("refuses JSON serialization of secret-bearing crypto inputs", () =>
-  Effect.gen(function* () {
-    const encoded = yield* Schema.encodeEffect(Schema.toCodecJson(EncryptInput))({
-      algorithm: "AES-256-GCM",
-      key: Redacted.make(new Uint8Array(32)),
-      nonce: new Uint8Array(12),
-      plaintext: Redacted.make(utf8("private plaintext")),
-    }).pipe(Effect.result);
-
-    expect(encoded._tag).toBe("Failure");
-    expect(JSON.stringify(encoded)).not.toContain("private plaintext");
-  }),
-);
-
-// These failures supplement independent vectors at the standalone service
-// boundary: validation, capability classification and redacted diagnostics.
 for (const backend of backends) {
-  describe(`${backend.name}`, () => {
-    it.effect("rejects invalid AEAD key and nonce lengths before encryption", () =>
-      Effect.gen(function* () {
-        const aead = yield* Aead;
-
-        const input = {
-          algorithm: "AES-256-GCM" as const,
-          key: Redacted.make(new Uint8Array(32)),
-          nonce: new Uint8Array(12),
-          plaintext: Redacted.make(utf8("private plaintext")),
-        };
-
-        const key = yield* aead
-          .encrypt({ ...input, key: Redacted.make(new Uint8Array(31)) })
-          .pipe(Effect.flip);
-
-        const nonce = yield* aead
-          .encrypt({ ...input, nonce: new Uint8Array(16) })
-          .pipe(Effect.flip);
-
-        expect(key).toMatchObject({ _tag: "CryptoInvalidInput", reason: "key" });
-        expect(nonce).toMatchObject({ _tag: "CryptoInvalidInput", reason: "nonce" });
-      }).pipe(Effect.provide(backend.layer)),
-    );
-
+  describe(backend.name, () => {
     it.effect(
       "rejects PBKDF2 input, iteration and output costs without exposing the password",
       () =>
@@ -77,23 +32,6 @@ for (const backend of backends) {
             expect(failure).not.toHaveProperty("cause");
           }
         }).pipe(Effect.provide(backend.layer)),
-    );
-
-    it.effect("treats malformed signature keys as invalid input, not an invalid credential", () =>
-      Effect.gen(function* () {
-        const signature = yield* Signature;
-
-        const failure = yield* signature
-          .verify({
-            algorithm: "ECDSA-P256-SHA256",
-            publicKey: utf8("not a DER key"),
-            data: utf8("message"),
-            signature: new Uint8Array(64),
-          })
-          .pipe(Effect.flip);
-
-        expect(failure).toMatchObject({ _tag: "CryptoInvalidInput", reason: "key" });
-      }).pipe(Effect.provide(backend.layer)),
     );
 
     if (backend.extended) {
@@ -126,106 +64,6 @@ for (const backend of backends) {
     }
   });
 }
-
-it.effect(
-  "WebCrypto declares Argon2id and XChaCha unsupported rather than silently substituting",
-  () =>
-    Effect.gen(function* () {
-      const aead = yield* Aead;
-      const kdf = yield* Kdf;
-
-      const encryption = yield* aead
-        .encrypt({
-          algorithm: "XChaCha20-Poly1305",
-          key: Redacted.make(new Uint8Array(32)),
-          nonce: new Uint8Array(24),
-          plaintext: Redacted.make(new Uint8Array()),
-        })
-        .pipe(Effect.flip);
-
-      const derivation = yield* kdf
-        .argon2id({
-          password: Redacted.make(utf8("password")),
-          salt: utf8("somesalt"),
-          memoryKiB: 32,
-          passes: 3,
-          parallelism: 4,
-          length: 32,
-        })
-        .pipe(Effect.flip);
-
-      expect(encryption).toMatchObject({ _tag: "CryptoUnsupportedAlgorithm" });
-      expect(derivation).toMatchObject({ _tag: "CryptoUnsupportedAlgorithm" });
-    }).pipe(Effect.provide(backends[0]!.layer)),
-);
-
-for (const [name, tag] of [
-  ["NotSupportedError", "CryptoUnsupportedAlgorithm"],
-  ["OperationError", "CryptoUnavailable"],
-] as const) {
-  it.effect(`keeps native ${name} typed and secret-safe`, () => {
-    const subtle = new Proxy(globalThis.crypto.subtle, {
-      get(target, property) {
-        if (property === "sign") {
-          return () => Promise.reject(new DOMException("secret-native-diagnostic", name));
-        }
-        const value = Reflect.get(target, property, target);
-
-        return typeof value === "function" ? value.bind(target) : value;
-      },
-    });
-
-    return Effect.gen(function* () {
-      const hmac = yield* Hmac;
-
-      const failure = yield* hmac
-        .sign({
-          algorithm: "SHA-256",
-          key: Redacted.make(utf8("private-key-material")),
-          data: utf8("data"),
-        })
-        .pipe(Effect.flip);
-
-      expect(failure).toMatchObject({ _tag: tag });
-      expect(JSON.stringify(failure)).not.toContain("secret-native-diagnostic");
-      expect(failure).not.toHaveProperty("cause");
-    }).pipe(Effect.provide(WebCrypto.layer(subtle).pipe(Layer.provide(KdfAdmission.layer()))));
-  });
-}
-
-// Native profile bounds and erased secrets must fail through the typed channel.
-it.effect("rejects HKDF context beyond the verified native 1024-byte profile", () =>
-  Effect.gen(function* () {
-    const kdf = yield* Kdf;
-
-    const failure = yield* kdf
-      .hkdf({
-        key: Redacted.make(new Uint8Array([1])),
-        salt: new Uint8Array(),
-        info: new Uint8Array(1025),
-        length: 32,
-      })
-      .pipe(Effect.flip);
-
-    expect(failure).toMatchObject({ _tag: "CryptoInvalidInput" });
-  }).pipe(Effect.provide(backends[0]!.layer)),
-);
-
-it.effect("returns a typed failure for a wiped secret before calling its backend", () =>
-  Effect.gen(function* () {
-    const hmac = yield* Hmac;
-    const key = Redacted.make(new Uint8Array(32));
-
-    Redacted.wipeUnsafe(key);
-
-    const failure = yield* hmac
-      .sign({ algorithm: "SHA-256", key, data: new Uint8Array() })
-      .pipe(Effect.flip);
-
-    expect(failure).toMatchObject({ _tag: "CryptoInvalidInput" });
-  }).pipe(Effect.provide(backends[0]!.layer)),
-);
-
 it.effect("keeps absolute KDF bounds when application resource ceilings are raised", () =>
   Effect.gen(function* () {
     const kdf = yield* Kdf;

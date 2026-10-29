@@ -2,12 +2,12 @@ import { it } from "@effect/vitest";
 import * as OAuth from "@yielded/auth/OAuth";
 import * as Password from "@yielded/auth/Password";
 import * as Totp from "@yielded/auth/Totp";
-import { layerCryptoWeb } from "@yielded/auth/WebCrypto";
-import { Aead } from "@yielded/crypto/Aead";
+import { layerWebCrypto as layerCryptoWeb } from "@yielded/auth/WebCrypto";
 import { Kdf } from "@yielded/crypto/Kdf";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
 import * as Context from "effect/Context";
+import * as Aead from "effect/crypto/Aead";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -33,7 +33,7 @@ const runtime = Layer.merge(
 it.effect("protector scope closure cancels and joins an active seal before wiping its keys", () =>
   Effect.gen(function* () {
     const crypto = yield* SecureRandom.SecureRandom;
-    const aead = yield* Aead;
+    const aead = yield* Aead.Aead;
     const entered = yield* Deferred.make<void>();
     const finish = yield* Deferred.make<void>();
     const cleanup = yield* Deferred.make<void>();
@@ -63,13 +63,13 @@ it.effect("protector scope closure cancels and joins an active seal before wipin
           }),
         ),
         Layer.provide(
-          Layer.succeed(Aead, {
+          Layer.succeed(Aead.Aead, {
             ...aead,
-            encrypt: (input) =>
+            encrypt: (key, plaintext, options) =>
               Effect.suspend(() => {
                 encryptions++;
 
-                return aead.encrypt(input);
+                return aead.encrypt(key, plaintext, options);
               }),
           }),
         ),
@@ -228,7 +228,6 @@ for (const method of ["hash", "verify", "dummy"] as const) {
               argon2id: derive,
               scrypt: () => Effect.die("unused"),
               pbkdf2: () => Effect.die("unused"),
-              hkdf: () => Effect.die("unused"),
             }),
           ),
         ),

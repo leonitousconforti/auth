@@ -106,7 +106,7 @@ once to the application Layer. It includes password hashing and its runtime depe
 Storage, claims, account creation, screening, and change authorization remain application-owned.
 
 For manual composition on other runtimes, supply `Password.PasswordHashing.layer()`
-with a crypto backend, bounded KDF admission, and Effect Crypto for entropy:
+with a crypto backend, bounded KDF admission, and Effect `SecureRandom` for entropy:
 
 ```ts title="apps/server/password-live.ts"
 import { Layer } from "effect";

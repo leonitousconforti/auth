@@ -1,7 +1,7 @@
-import type { Hmac } from "@yielded/crypto/Hmac";
-import type { Signature } from "@yielded/crypto/Signature";
 import { Jwk, Jwt } from "@yielded/jose";
 import * as Cause from "effect/Cause";
+import type * as Mac from "effect/crypto/Mac";
+import type * as Signature from "effect/crypto/Signature";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
@@ -51,7 +51,7 @@ export const scopedProfile = (profile: OpenIdProfile, scopes: ReadonlyArray<stri
 });
 
 export const makeIdentityTokens = Effect.fnUntraced(function* (options: IdentitySigningKeys) {
-  const services = yield* Effect.context<Hmac | Signature>();
+  const services = yield* Effect.context<Mac.Mac | Signature.Signature>();
 
   const keys = yield* Schema.decodeUnknownEffect(
     Schema.Struct({

@@ -1,6 +1,6 @@
-import type { Hmac } from "@yielded/crypto/Hmac";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
+import type * as Mac from "effect/crypto/Mac";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -753,8 +753,8 @@ export const make = <
       Effect.Success<typeof server>,
       | Exclude<Effect.Error<typeof server>, RequestBindingConfigurationError>
       | OAuthConfigured<Options, RequestBindingConfigurationError>,
-      | Exclude<Effect.Services<typeof server>, RequestBindingConfig | Hmac>
-      | OAuthConfigured<Options, RequestBindingConfig | Hmac>
+      | Exclude<Effect.Services<typeof server>, RequestBindingConfig | Mac.Mac>
+      | OAuthConfigured<Options, RequestBindingConfig | Mac.Mac>
     >;
   };
 

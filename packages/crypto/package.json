@@ -1,7 +1,7 @@
 {
   "name": "@yielded/crypto",
   "version": "0.1.0-beta.46",
-  "description": "Effect cryptography services with explicit native and portable backends.",
+  "description": "Bounded password derivation with native and portable Argon2id and scrypt backends.",
   "homepage": "https://yielded.dev/auth/",
   "bugs": {
     "url": "https://github.com/yielded-dev/auth/issues"
@@ -21,13 +21,9 @@
   "sideEffects": [],
   "exports": {
     ".": "./src/index.ts",
-    "./Aead": "./src/Aead.ts",
     "./Errors": "./src/Errors.ts",
-    "./Hmac": "./src/Hmac.ts",
     "./Kdf": "./src/Kdf.ts",
     "./KdfAdmission": "./src/KdfAdmission.ts",
-    "./Signature": "./src/Signature.ts",
-    "./WebCrypto": "./src/WebCrypto.ts",
     "./platform-node": "./src/platform-node.ts",
     "./platform-bun": "./src/platform-bun.ts",
     "./platform-workerd": "./src/platform-workerd.ts",

@@ -1,6 +1,6 @@
+import * as WebCrypto from "@yielded/auth/WebCrypto";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
-import * as WebCrypto from "@yielded/crypto/WebCrypto";
 import { Layer } from "effect";
 
 // One admission instance protects each complete password operation and its nested
@@ -8,7 +8,6 @@ import { Layer } from "effect";
 const admission = KdfAdmission.layer();
 
 export const CryptoLive = Layer.mergeAll(
-  WebCrypto.layerCryptoWeb,
-  WebCrypto.layerHmacWeb,
+  WebCrypto.layerWebCrypto,
   Portable.layer(globalThis.crypto.subtle).pipe(Layer.provideMerge(admission)),
 );

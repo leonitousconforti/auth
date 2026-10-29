@@ -2,13 +2,13 @@ import type { KdfBusy } from "@yielded/crypto/Errors";
 import { Kdf } from "@yielded/crypto/Kdf";
 import { KdfAdmission } from "@yielded/crypto/KdfAdmission";
 import * as Cause from "effect/Cause";
+import * as Mac from "effect/crypto/Mac";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 
-import { equalBytes } from "../internal/equalBytes";
 import {
   defaultPasswordHashingConfig,
   validatePasswordHashingConfig,
@@ -243,7 +243,7 @@ export const make = (input: PasswordHashingConfig = defaultPasswordHashingConfig
             );
 
             // Fixed-length byte comparison; JavaScript/JIT gives no hard timing guarantee.
-            const matches = equalBytes(output, parsed.expected);
+            const matches = Mac.timingSafeEqual(output, parsed.expected);
 
             const upgrade =
               parsed._tag === "LegacyPbkdf2" ||

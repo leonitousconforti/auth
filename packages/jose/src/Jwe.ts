@@ -1,6 +1,6 @@
-import { Aead } from "@yielded/crypto/Aead";
-import { CryptoUnavailable, type OperationError } from "@yielded/crypto/Errors";
 import * as Cause from "effect/Cause";
+import * as Aead from "effect/crypto/Aead";
+import * as CryptoError from "effect/crypto/CryptoError";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -8,6 +8,7 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
 import { DecryptionFailed, InvalidKey, InvalidToken } from "./Errors";
+import { sanitizeCryptoError } from "./internal/algorithms";
 import {
   decode,
   json,
@@ -30,7 +31,7 @@ export const Header = Schema.Struct({
 });
 
 export type Header = typeof Header.Type;
-export type JweError = InvalidToken | InvalidKey | OperationError | DecryptionFailed;
+export type JweError = InvalidToken | InvalidKey | CryptoError.CryptoError | DecryptionFailed;
 
 const readHeader = Effect.fnUntraced(function* (input: unknown) {
   const raw = yield* parse(JsonObject, input, "header");
@@ -41,12 +42,12 @@ const readHeader = Effect.fnUntraced(function* (input: unknown) {
   return yield* parse(Header, raw, "header");
 });
 
-/** Generates a fresh 96-bit IV; random-source failures become CryptoUnavailable. */
+/** Generates a fresh 96-bit IV; random-source failures become CryptoError. */
 export const encrypt = Effect.fnUntraced(function* (
   plaintext: Redacted.Redacted<Uint8Array>,
   key: SecretKey,
   input: Header,
-): Effect.fn.Return<Redacted.Redacted<string>, JweError, Aead | SecureRandom.SecureRandom> {
+): Effect.fn.Return<Redacted.Redacted<string>, JweError, Aead.Aead | SecureRandom.SecureRandom> {
   const header = yield* readHeader(input);
 
   if (key.algorithm !== "dir") return yield* InvalidKey.make({});
@@ -67,19 +68,23 @@ export const encrypt = Effect.fnUntraced(function* (
   const nonce = yield* random.randomBytes(12).pipe(
     Effect.catchCauseIf(
       (cause) => cause.reasons.length === 1 && cause.reasons.every(Cause.isDieReason),
-      () => CryptoUnavailable.make({}),
+      () =>
+        new CryptoError.CryptoError({
+          module: "Jwe",
+          method: "encrypt",
+          reason: new CryptoError.Unsupported({ description: "Secure randomness unavailable" }),
+        }),
     ),
   );
 
-  const aead = yield* Aead;
+  const aead = yield* Aead.Aead;
 
-  const sealed = yield* aead.encrypt({
-    algorithm: "AES-256-GCM",
-    key: key.material,
-    nonce,
-    plaintext,
-    additionalData: utf8(protectedPart),
-  });
+  const sealed = yield* aead
+    .encrypt(yield* reveal(key.material), yield* reveal(plaintext), {
+      nonce,
+      aad: utf8(protectedPart),
+    })
+    .pipe(Effect.mapError(sanitizeCryptoError));
 
   return Redacted.make(
     `${protectedPart}..${Base64Url.encode(nonce)}.${Base64Url.encode(sealed.subarray(0, -16))}.${Base64Url.encode(sealed.subarray(-16))}`,
@@ -108,25 +113,21 @@ export const decrypt = Effect.fnUntraced(function* (
 
   sealed.set(data);
   sealed.set(authTag, data.length);
-  const aead = yield* Aead;
+  const aead = yield* Aead.Aead;
 
   const plaintext = yield* aead
-    .decrypt({
-      algorithm: "AES-256-GCM",
-      key: key.material,
-      nonce,
-      ciphertext: sealed,
-      additionalData: utf8(protectedPart),
-    })
+    .decrypt(yield* reveal(key.material), sealed, { nonce, aad: utf8(protectedPart) })
     .pipe(
       Effect.catchCause((cause) =>
         Effect.failCause(
           Cause.map(cause, (error) =>
-            error._tag === "CryptoAuthenticationFailed" ? DecryptionFailed.make({}) : error,
+            error.reason._tag === "DecryptionFailed"
+              ? DecryptionFailed.make({})
+              : sanitizeCryptoError(error),
           ),
         ),
       ),
     );
 
-  return { protectedHeader, plaintext };
+  return { protectedHeader, plaintext: Redacted.make(plaintext) };
 });

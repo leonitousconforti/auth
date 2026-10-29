@@ -1,12 +1,14 @@
-import * as Signature from "@yielded/crypto/Signature";
-import * as Cause from "effect/Cause";
+import * as Aead from "effect/crypto/Aead";
+import * as CryptoError from "effect/crypto/CryptoError";
+import * as KeyFormat from "effect/crypto/KeyFormat";
+import * as Mac from "effect/crypto/Mac";
+import * as Signature from "effect/crypto/Signature";
 import * as Effect from "effect/Effect";
-import * as Base64Url from "effect/encoding/Base64Url";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
 import { InvalidKey } from "./Errors";
-import { algorithms } from "./internal/algorithms";
+import { algorithms, sanitizeCryptoError } from "./internal/algorithms";
 import { decode, reveal } from "./internal/encoding";
 import * as KeyInput from "./internal/keyInput";
 
@@ -89,7 +91,7 @@ export type SecretJwk = typeof SecretJwk.Type;
 export const GenerateKeyPairInput = Schema.Union([
   Schema.Struct({
     algorithm: Schema.Literals(["RS256", "PS256"]),
-    modulusLength: Schema.optionalKey(Signature.RsaModulusLength),
+    modulusLength: Schema.optionalKey(Schema.Literals([2048, 3072, 4096])),
     kid: metadata.kid,
   }),
   Schema.Struct({ algorithm: Schema.Literals(["ES256", "EdDSA"]), kid: metadata.kid }),
@@ -109,109 +111,70 @@ export interface PublicKey {
   readonly _tag: "PublicKey";
   readonly algorithm: AsymmetricAlgorithm;
   readonly jwk: PublicJwk;
-  readonly material: Uint8Array;
+  readonly material: Signature.PublicKey;
 }
 
 export interface PrivateKey {
   readonly _tag: "PrivateKey";
   readonly algorithm: AsymmetricAlgorithm;
   readonly jwk: Redacted.Redacted<PrivateJwk>;
-  readonly material: Redacted.Redacted<Uint8Array>;
+  readonly material: Redacted.Redacted<Signature.PrivateKey>;
 }
 
-export interface SecretKey {
+export type SecretKey = {
   readonly _tag: "SecretKey";
-  readonly algorithm: "HS256" | "dir";
   readonly jwk: Redacted.Redacted<SecretJwk>;
-  readonly material: Redacted.Redacted<Uint8Array>;
-}
+} & (
+  | { readonly algorithm: "HS256"; readonly material: Redacted.Redacted<Mac.Key> }
+  | { readonly algorithm: "dir"; readonly material: Redacted.Redacted<Aead.Key> }
+);
 
 export type SigningKey = PrivateKey | SecretKey;
 export type VerificationKey = PublicKey | SecretKey;
 
-/** Generate typed signing JWKs through the selected crypto backend. */
-export const generateKeyPair = Effect.fnUntraced(function* (input: GenerateKeyPairInput) {
-  const value = yield* Schema.decodeEffect(GenerateKeyPairInput)(input).pipe(
-    Effect.mapError(() => InvalidKey.make({})),
-  );
+/** Generate signing JWKs through Effect's selected Signature service. */
+export const generateKeyPair = Effect.fnUntraced(
+  function* (input: GenerateKeyPairInput) {
+    const value = yield* read(GenerateKeyPairInput, input);
+    const signatures = yield* Signature.Signature;
 
-  const signatures = yield* Signature.Signature;
+    const pair =
+      value.algorithm === "ES256"
+        ? yield* signatures.generateKeyPair(Signature.ecdsaP256)
+        : value.algorithm === "EdDSA"
+          ? yield* signatures.generateKeyPair(Signature.ed25519)
+          : value.algorithm === "RS256"
+            ? yield* signatures.generateKeyPair({
+                ...algorithms.RS256,
+                modulusLength: ("modulusLength" in value ? value.modulusLength : undefined) ?? 2048,
+              })
+            : yield* signatures.generateKeyPair({
+                ...algorithms.PS256,
+                modulusLength: ("modulusLength" in value ? value.modulusLength : undefined) ?? 2048,
+              });
 
-  return yield* Effect.acquireUseRelease(
-    signatures.generateKeyPair({
-      algorithm: algorithms[value.algorithm],
-      ...("modulusLength" in value ? { modulusLength: value.modulusLength } : {}),
-    }),
-    (pair) =>
-      Effect.sync((): GeneratedKeyPair => {
-        const parameters = Redacted.value(pair.privateKey);
+    const metadata = {
+      alg: value.algorithm,
+      use: "sig",
+      ...(value.kid === undefined ? {} : { kid: value.kid }),
+    };
 
-        const meta = {
-          alg: value.algorithm,
-          use: "sig" as const,
-          ...(value.kid === undefined ? {} : { kid: value.kid }),
-        };
+    const publicKey = yield* read(PublicJwk, {
+      ...(yield* KeyFormat.encode(KeyFormat.jwk, pair.publicKey)),
+      ...metadata,
+    });
 
-        switch (parameters.algorithm) {
-          case "RSASSA-PKCS1-v1_5-SHA256":
-          case "RSA-PSS-SHA256": {
-            const publicKey = {
-              ...meta,
-              kty: "RSA" as const,
-              n: Base64Url.encode(parameters.n),
-              e: Base64Url.encode(parameters.e),
-            };
+    const privateKey = yield* read(PrivateJwk, {
+      ...(yield* KeyFormat.encode(KeyFormat.jwk, pair.privateKey)),
+      ...metadata,
+    });
 
-            return {
-              publicKey,
-              privateKey: Redacted.make({
-                ...publicKey,
-                d: Base64Url.encode(parameters.d),
-                p: Base64Url.encode(parameters.p),
-                q: Base64Url.encode(parameters.q),
-                dp: Base64Url.encode(parameters.dp),
-                dq: Base64Url.encode(parameters.dq),
-                qi: Base64Url.encode(parameters.qi),
-              }),
-            };
-          }
-          case "ECDSA-P256-SHA256": {
-            const publicKey = {
-              ...meta,
-              kty: "EC" as const,
-              crv: "P-256" as const,
-              x: Base64Url.encode(parameters.x),
-              y: Base64Url.encode(parameters.y),
-            };
-
-            return {
-              publicKey,
-              privateKey: Redacted.make({ ...publicKey, d: Base64Url.encode(parameters.d) }),
-            };
-          }
-          case "Ed25519": {
-            const publicKey = {
-              ...meta,
-              kty: "OKP" as const,
-              crv: "Ed25519" as const,
-              x: Base64Url.encode(parameters.x),
-            };
-
-            return {
-              publicKey,
-              privateKey: Redacted.make({ ...publicKey, d: Base64Url.encode(parameters.d) }),
-            };
-          }
-        }
-      }),
-    (pair) =>
-      Effect.sync(() => {
-        for (const part of Object.values(Redacted.value(pair.privateKey))) {
-          if (typeof part !== "string") part.fill(0);
-        }
-      }),
-  );
-});
+    return { publicKey, privateKey: Redacted.make(privateKey) } satisfies GeneratedKeyPair;
+  },
+  Effect.mapError((error) =>
+    CryptoError.isCryptoError(error) ? sanitizeCryptoError(error) : error,
+  ),
+);
 
 const read = <S extends Schema.Constraint>(schema: S, input: unknown) =>
   Effect.try({
@@ -235,25 +198,16 @@ const snapshot = <A extends PublicJwk | PrivateJwk | SecretJwk>(jwk: A): A => {
   return Object.freeze(jwk);
 };
 
-const publicParameters = Effect.fnUntraced(function* (
-  jwk: PublicJwk | PrivateJwk,
-  algorithm: AsymmetricAlgorithm,
-): Effect.fn.Return<Signature.PublicKeyParameters, InvalidKey> {
-  if (jwk.alg !== undefined && jwk.alg !== algorithm) return yield* InvalidKey.make({});
-  switch (jwk.kty) {
-    case "EC":
-      if (algorithm !== "ES256") return yield* InvalidKey.make({});
+/** JOSE signing policy requires RSA moduli of at least 2048 bits. */
+const checkModulus = Effect.fnUntraced(function* (jwk: PublicJwk | PrivateJwk) {
+  if (jwk.kty !== "RSA") return;
+  const modulus = yield* bytes(jwk.n);
+  const first = modulus.findIndex((byte) => byte !== 0);
 
-      return { algorithm: "ECDSA-P256-SHA256", x: yield* bytes(jwk.x), y: yield* bytes(jwk.y) };
-    case "OKP":
-      if (algorithm !== "EdDSA") return yield* InvalidKey.make({});
+  const bitLength =
+    first < 0 ? 0 : (modulus.length - first - 1) * 8 + 32 - Math.clz32(modulus[first]!);
 
-      return { algorithm: "Ed25519", x: yield* bytes(jwk.x) };
-    case "RSA":
-      if (algorithm !== "RS256" && algorithm !== "PS256") return yield* InvalidKey.make({});
-
-      return { algorithm: algorithms[algorithm], n: yield* bytes(jwk.n), e: yield* bytes(jwk.e) };
-  }
+  if (bitLength < 2048 || bitLength > 8192) return yield* InvalidKey.make({});
 });
 
 export const importPublic = Effect.fnUntraced(function* (
@@ -262,20 +216,13 @@ export const importPublic = Effect.fnUntraced(function* (
 ) {
   const algorithm = yield* read(AsymmetricAlgorithm, selected);
   const jwk = yield* read(PublicJwk, input);
-  const parameters = yield* publicParameters(jwk, algorithm);
-  const signatures = yield* Signature.Signature;
 
-  const material = yield* signatures
-    .encodePublicKey(parameters)
-    .pipe(
-      Effect.catchCause((cause) =>
-        Effect.failCause(
-          Cause.map(cause, (error) =>
-            error._tag === "CryptoInvalidInput" ? InvalidKey.make({}) : error,
-          ),
-        ),
-      ),
-    );
+  yield* checkModulus(jwk);
+
+  const material = yield* KeyFormat.decodePublic(KeyFormat.jwk, algorithms[algorithm], {
+    ...jwk,
+    key_ops: [...(jwk.key_ops ?? [])],
+  }).pipe(Effect.mapError(() => InvalidKey.make({})));
 
   return Object.freeze({
     _tag: "PublicKey",
@@ -296,134 +243,50 @@ export const importPrivate = Effect.fnUntraced(function* (
     yield* reveal(input).pipe(Effect.mapError(() => InvalidKey.make({}))),
   );
 
-  const publicPart = yield* publicParameters(jwk, algorithm);
-  const d = yield* bytes(jwk.d);
+  yield* checkModulus(jwk);
 
-  const parameters = yield* read(Signature.PrivateKeyParameters, {
-    ...publicPart,
-    d,
-    ...(jwk.kty === "RSA"
-      ? {
-          p: yield* bytes(jwk.p),
-          q: yield* bytes(jwk.q),
-          dp: yield* bytes(jwk.dp),
-          dq: yield* bytes(jwk.dq),
-          qi: yield* bytes(jwk.qi),
-        }
-      : {}),
-  });
-
-  const signatures = yield* Signature.Signature;
-
-  const material = yield* signatures.encodePrivateKey(Redacted.make(parameters)).pipe(
-    Effect.catchCause((cause) =>
-      Effect.failCause(
-        Cause.map(cause, (error) =>
-          error._tag === "CryptoInvalidInput" ? InvalidKey.make({}) : error,
-        ),
-      ),
-    ),
-    Effect.ensuring(
-      Effect.sync(() => {
-        parameters.d.fill(0);
-        if ("p" in parameters)
-          for (const part of [
-            parameters.p,
-            parameters.q,
-            parameters.dp,
-            parameters.dq,
-            parameters.qi,
-          ])
-            part.fill(0);
-      }),
-    ),
-  );
+  const material = yield* KeyFormat.decodePrivate(KeyFormat.jwk, algorithms[algorithm], {
+    ...jwk,
+    key_ops: [...(jwk.key_ops ?? [])],
+  }).pipe(Effect.mapError(() => InvalidKey.make({})));
 
   return Object.freeze({
     _tag: "PrivateKey",
     algorithm,
     jwk: Redacted.make(snapshot(jwk)),
-    material,
+    material: Redacted.make(material),
   }) satisfies PrivateKey;
 });
 
-/** Import PKCS8 DER through the crypto backend, then bind the resulting JWK.
- * Invalid material becomes InvalidKey; backend availability failures propagate. */
+/** Import PKCS8 DER through Effect's key-format decoder and bind its JWK metadata. */
 export const importPkcs8 = Effect.fnUntraced(function* (
   input: Redacted.Redacted<Uint8Array>,
   selected: AsymmetricAlgorithm,
   options?: { readonly kid?: string },
 ) {
   const algorithm = yield* read(AsymmetricAlgorithm, selected);
-  const signatures = yield* Signature.Signature;
 
-  const pair = yield* signatures
-    .decodePrivateKey({ algorithm: algorithms[algorithm], privateKey: input })
-    .pipe(
-      Effect.catchCause((cause) =>
-        Effect.failCause(
-          Cause.map(cause, (error) =>
-            error._tag === "CryptoInvalidInput" ? InvalidKey.make({}) : error,
-          ),
-        ),
-      ),
-    );
+  const material = yield* KeyFormat.decodePrivate(
+    KeyFormat.pkcs8,
+    algorithms[algorithm],
+    yield* reveal(input),
+  ).pipe(Effect.mapError(() => InvalidKey.make({})));
 
-  const parameters = Redacted.value(pair.privateKey);
-
-  const meta = {
+  const jwk = yield* read(PrivateJwk, {
+    ...(yield* KeyFormat.encode(KeyFormat.jwk, material)),
     alg: algorithm,
-    use: "sig" as const,
+    use: "sig",
     ...(options?.kid === undefined ? {} : { kid: options.kid }),
-  };
+  });
 
-  const jwk: PrivateJwk =
-    parameters.algorithm === "ECDSA-P256-SHA256"
-      ? {
-          ...meta,
-          kty: "EC",
-          crv: "P-256",
-          x: Base64Url.encode(parameters.x),
-          y: Base64Url.encode(parameters.y),
-          d: Base64Url.encode(parameters.d),
-        }
-      : parameters.algorithm === "Ed25519"
-        ? {
-            ...meta,
-            kty: "OKP",
-            crv: "Ed25519",
-            x: Base64Url.encode(parameters.x),
-            d: Base64Url.encode(parameters.d),
-          }
-        : {
-            ...meta,
-            kty: "RSA",
-            n: Base64Url.encode(parameters.n),
-            e: Base64Url.encode(parameters.e),
-            d: Base64Url.encode(parameters.d),
-            p: Base64Url.encode(parameters.p),
-            q: Base64Url.encode(parameters.q),
-            dp: Base64Url.encode(parameters.dp),
-            dq: Base64Url.encode(parameters.dq),
-            qi: Base64Url.encode(parameters.qi),
-          };
+  yield* checkModulus(jwk);
 
-  return yield* importPrivate(Redacted.make(jwk), algorithm).pipe(
-    Effect.ensuring(
-      Effect.sync(() => {
-        parameters.d.fill(0);
-        if ("p" in parameters)
-          for (const part of [
-            parameters.p,
-            parameters.q,
-            parameters.dp,
-            parameters.dq,
-            parameters.qi,
-          ])
-            part.fill(0);
-      }),
-    ),
-  );
+  return Object.freeze({
+    _tag: "PrivateKey",
+    algorithm,
+    jwk: Redacted.make(snapshot(jwk)),
+    material: Redacted.make(material),
+  }) satisfies PrivateKey;
 });
 
 export const importSecret = Effect.fnUntraced(function* (
@@ -449,12 +312,25 @@ export const importSecret = Effect.fnUntraced(function* (
     return yield* InvalidKey.make({});
   }
 
-  return Object.freeze({
-    _tag: "SecretKey",
-    algorithm,
-    jwk: Redacted.make(snapshot(jwk)),
-    material: Redacted.make(material),
-  }) satisfies SecretKey;
+  const common = { _tag: "SecretKey" as const, jwk: Redacted.make(snapshot(jwk)) };
+
+  if (algorithm === "HS256") {
+    const key = yield* Mac.key(Mac.hmacSha256, material).pipe(
+      Effect.ensuring(Effect.sync(() => material.fill(0))),
+    );
+
+    return Object.freeze({
+      ...common,
+      algorithm,
+      material: Redacted.make(key),
+    }) satisfies SecretKey;
+  }
+
+  const key = yield* Aead.key(Aead.aes256Gcm, material).pipe(
+    Effect.ensuring(Effect.sync(() => material.fill(0))),
+  );
+
+  return Object.freeze({ ...common, algorithm, material: Redacted.make(key) }) satisfies SecretKey;
 });
 
 export const exportPublic = Effect.fnUntraced(function* (key: PublicKey) {
