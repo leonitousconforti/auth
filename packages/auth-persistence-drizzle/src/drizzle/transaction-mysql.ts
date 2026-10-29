@@ -116,7 +116,7 @@ const withMysqlTransaction = <A, E, R, Failure>(
           ["db.system", "mysql"],
           ["effect_auth.owner", "oauth"],
         ],
-        acquireConnection: Effect.succeed([undefined, connection] as const),
+        acquireConnection: () => Effect.succeed(connection),
         begin: () =>
           statement("SET TRANSACTION ISOLATION LEVEL READ COMMITTED").pipe(
             Effect.andThen(statement("BEGIN")),

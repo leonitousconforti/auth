@@ -1,5 +1,6 @@
 import { Auth, OAuth, Operations } from "@yielded/auth";
-import { Console, Crypto, Effect, Redacted, Schema } from "effect";
+import { Console, Effect, Redacted, Schema } from "effect";
+import { SecureRandom } from "effect/crypto";
 import { HttpClient, HttpClientRequest } from "effect/http";
 import { SqlClient } from "effect/sql";
 
@@ -53,11 +54,11 @@ const privateDelivery = () => {
  * credential delivery; it never serializes request binders, action codes or tokens. */
 export const exercise = Effect.gen(function* () {
   const auth = yield* AppAuth;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const sql = yield* SqlClient.SqlClient;
   const actions = yield* DemoActionCodes;
   const delivery = privateDelivery();
-  const runId = yield* crypto.randomUUIDv4();
+  const runId = yield* crypto.uuidV4();
 
   const start = yield* delivery.call(
     auth.signIn({ provider: profile.provider, callbackId, returnTarget: "/account" }),
@@ -214,7 +215,7 @@ export const exercise = Effect.gen(function* () {
   );
 
   // Generate an unused numeric provider ID, so repeated runs demonstrate new registration.
-  const externalId = String(yield* crypto.randomIntBetween(1_000_000, 2_000_000_000));
+  const externalId = String(yield* crypto.intBetween(1_000_000, 2_000_000_000));
 
   const registrationRequired = yield* otherDelivery.call(
     auth.completeSignIn("registration", {

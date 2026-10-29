@@ -1,5 +1,5 @@
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -124,11 +124,11 @@ export const makePasswordVerification = ({
   const tuple = Schema.fromJsonString(Schema.Array(Schema.String));
 
   const digest = Effect.fn("Passwords.digest")(function* (parts: ReadonlyArray<string>) {
-    const crypto = yield* Crypto.Crypto;
+    const digests = yield* Digest.Digest;
 
     const bytes = yield* unexpected(
-      crypto.digest(
-        "SHA-256",
+      digests.digest(
+        Digest.sha256,
         encoder.encode(yield* Schema.encodeEffect(tuple)(parts).pipe(Effect.orDie)),
       ),
     );

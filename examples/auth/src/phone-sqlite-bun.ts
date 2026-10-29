@@ -22,7 +22,8 @@ import {
   makeProofPersistenceServices,
 } from "@yielded/auth-persistence-drizzle/SqliteBun";
 import { eq } from "drizzle-orm";
-import { Crypto, Effect, Layer, Redacted, Schema } from "effect";
+import { Effect, Layer, Redacted, Schema } from "effect";
+import { SecureRandom } from "effect/crypto";
 import { SqlClient } from "effect/sql";
 
 import { keyring, phone, sessionPolicy, sessions, shopAuth } from "./phone-application";
@@ -40,7 +41,7 @@ import {
 } from "./phone-sqlite-schema";
 
 export const phoneConsumer = Effect.gen(function* () {
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const database = yield* Database;
 
   yield* migrate;
@@ -248,9 +249,9 @@ export const phoneConsumer = Effect.gen(function* () {
     ) {
       const input = {
         action,
-        flowId: yield* crypto.randomUUIDv4().pipe(Effect.orDie),
-        requestId: yield* crypto.randomUUIDv4().pipe(Effect.orDie),
-        commandId: yield* crypto.randomUUIDv4().pipe(Effect.orDie),
+        flowId: yield* crypto.uuidV4().pipe(Effect.orDie),
+        requestId: yield* crypto.uuidV4().pipe(Effect.orDie),
+        commandId: yield* crypto.uuidV4().pipe(Effect.orDie),
         phoneNumber: number,
         locale: "en-ZA",
         ...(sourcePhoneNumber === undefined ? {} : { sourcePhoneNumber }),
@@ -303,7 +304,7 @@ export const phoneConsumer = Effect.gen(function* () {
 
     const reissueInput = {
       ...registered.input,
-      requestId: yield* crypto.randomUUIDv4().pipe(Effect.orDie),
+      requestId: yield* crypto.uuidV4().pipe(Effect.orDie),
       requestBinding: registered.binding,
     };
 

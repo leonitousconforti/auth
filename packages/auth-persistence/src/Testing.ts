@@ -44,7 +44,8 @@ import { layerCryptoWeb } from "@yielded/crypto/WebCrypto";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -87,7 +88,7 @@ export interface ServicesOptions {
   readonly seed?: string | number;
 }
 
-/** Portable password hashing and Effect Crypto for tests. Requires global WebCrypto
+/** Portable password hashing and Effect secure randomness and digests for tests. Requires global WebCrypto
  * at acquisition; uses the default password cost and one shared KDF admission owner.
  * A seed restarts its private random sequence on each acquisition; it never changes
  * the caller's Random or Clock services. Seeded credentials are only suitable for tests.
@@ -107,18 +108,15 @@ export const services = (options: ServicesOptions = {}) => {
         seed === undefined
           ? layerCryptoWeb
           : Layer.effect(
-              Crypto.Crypto,
+              SecureRandom.SecureRandom,
               Effect.gen(function* () {
-                const native = yield* Crypto.Crypto;
                 const random = yield* Random.Random.pipe(Random.withSeed(seed));
 
-                return Crypto.make({
-                  randomBytes: (size) =>
-                    Uint8Array.from({ length: size }, () => random.nextIntUnsafe() & 255),
-                  digest: (algorithm, data) => native.digest(algorithm, data),
-                });
+                return SecureRandom.make((size) =>
+                  Uint8Array.from({ length: size }, () => random.nextIntUnsafe() & 255),
+                );
               }),
-            ).pipe(Layer.provide(layerCryptoWeb));
+            ).pipe(Layer.provideMerge(Digest.layerWebCrypto));
 
       const backend = Portable.layer(subtle).pipe(Layer.provideMerge(KdfAdmission.layer()));
 

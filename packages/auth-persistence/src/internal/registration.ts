@@ -4,7 +4,8 @@ import { reportPersistenceFailure } from "@yielded/auth/Persistence";
 import { SecurityRevision } from "@yielded/auth/Sessions";
 import * as Cause from "effect/Cause";
 import type * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -34,10 +35,15 @@ export const makeRegistrationAuthority = Effect.fnUntraced(function* <R>(
 ): Effect.fn.Return<
   PasswordRegistrationAuthority<unknown>,
   PersistenceConfigurationError,
-  LifecycleHooks | SqlClient.SqlClient | Crypto.Crypto | SqlBatchCommit | R
+  | LifecycleHooks
+  | SqlClient.SqlClient
+  | (SecureRandom.SecureRandom | Digest.Digest)
+  | SqlBatchCommit
+  | R
 > {
   const sql = (yield* SqlClient.SqlClient).withoutTransforms();
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
+  const digests = yield* Digest.Digest;
   const executor = yield* makeSqlCommitExecutor(() => PasswordUnavailable.make({}));
   const parent = yield* Effect.serviceOption(CurrentSqlCommit);
   const batch = yield* SqlBatchCommit;
@@ -158,7 +164,10 @@ export const makeRegistrationAuthority = Effect.fnUntraced(function* <R>(
                   });
 
                   return yield* store.prepare({ _tag: "Created", subjectId }, project);
-                }).pipe(Effect.provideService(Crypto.Crypto, crypto)),
+                }).pipe(
+                  Effect.provideService(SecureRandom.SecureRandom, crypto),
+                  Effect.provideService(Digest.Digest, digests),
+                ),
                 store.prepare({ _tag: "Suppressed" }, project),
               ),
         ),

@@ -1,6 +1,7 @@
 import { CurrentCommitJournal, type LifecycleHooks } from "@yielded/auth/Hooks";
 import * as P from "@yielded/auth/Proofs";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Option from "effect/Option";
@@ -37,7 +38,7 @@ const invalidState = () =>
 /** Flow/context changes do not allocate new durable series. The hash bounds the
  * indexed key; the complete canonical binding is still checked independently. */
 const seriesKey = Effect.fnUntraced(function* (binding: P.ProofBinding) {
-  const crypto = yield* Crypto.Crypto;
+  const digests = yield* Digest.Digest;
 
   const tuple = yield* Schema.encodeEffect(
     Schema.fromJsonString(Schema.Array(Schema.NullOr(Schema.String))),
@@ -48,7 +49,7 @@ const seriesKey = Effect.fnUntraced(function* (binding: P.ProofBinding) {
     binding._tag === "Identifier" ? null : binding.revision.subjectId,
   ]).pipe(Effect.orDie);
 
-  return Base64Url.encode(yield* crypto.digest("SHA-256", new TextEncoder().encode(tuple)));
+  return Base64Url.encode(yield* digests.digest(Digest.sha256, new TextEncoder().encode(tuple)));
 });
 
 /** Shared native statements. A protected mutation calls redeemLocked only after
@@ -60,7 +61,8 @@ export const makeNativeProofStore = Effect.fnUntraced(function* (
 ) {
   const externalOwner = yield* Effect.serviceOption(CurrentSqlCommit);
   const sql = (yield* SqlClient.SqlClient).withoutTransforms();
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
+  const digests = yield* Digest.Digest;
   const p = mapping.proof;
   const proof = tables(p.table);
   const subject = tables(mapping.subject.table);
@@ -81,7 +83,10 @@ export const makeNativeProofStore = Effect.fnUntraced(function* (
     readonly purpose: P.ProofPurpose;
     readonly binding: P.ProofBinding;
   }) {
-    const key = yield* seriesKey(input.binding).pipe(Effect.provideService(Crypto.Crypto, crypto));
+    const key = yield* seriesKey(input.binding).pipe(
+      Effect.provideService(SecureRandom.SecureRandom, crypto),
+      Effect.provideService(Digest.Digest, digests),
+    );
 
     return {
       key,
@@ -390,7 +395,10 @@ export const makeNativeProofServices = Effect.fnUntraced(function* (
 ): Effect.fn.Return<
   { readonly proofPersistence: P.ProofPersistence["Service"] },
   P.ProofUnavailable,
-  SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto | SqlBatchCommit
+  | SqlClient.SqlClient
+  | LifecycleHooks
+  | (SecureRandom.SecureRandom | Digest.Digest)
+  | SqlBatchCommit
 > {
   const batch = yield* SqlBatchCommit;
   const executor = yield* makeSqlCommitExecutor(unavailable);

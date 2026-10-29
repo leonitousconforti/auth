@@ -124,9 +124,9 @@ one public key by algorithm, optional `kid`, use and operations; missing or ambi
 selections fail.
 
 `Jwe.encrypt(plaintext, key, { alg: "dir", enc: "A256GCM" })` requires `Aead` and
-Effect `Crypto`, which supplies a fresh 12-byte nonce. The compact protected header
+Effect `SecureRandom`, which supplies a fresh 12-byte nonce. The compact protected header
 is authenticated; decryption releases plaintext only after tag verification.
-Supply the platform's Effect Crypto Layer alongside the reusable crypto backend.
+Supply `SecureRandom.layerWebCrypto` or the platform's `layerSecureRandom` alongside the reusable crypto backend.
 
 ## Verification policy and limits
 

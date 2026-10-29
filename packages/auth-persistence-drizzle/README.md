@@ -6,7 +6,7 @@ supply transactions or atomic batches.
 
 Import mapping helpers from the root and a driver from its explicit module, such
 as `/Postgres` or `/SqliteBun`. Install `drizzle-orm` and the corresponding Effect
-SQL driver. Supply Effect `Crypto` to persistence construction and transaction
+SQL driver. Supply Effect `SecureRandom` and `Digest` to persistence construction and transaction
 coordinators. Composed drivers expose `AuthPersistence`; explicit driver modules
 also expose lower-level factories.
 

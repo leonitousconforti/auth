@@ -1,4 +1,5 @@
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
@@ -18,21 +19,9 @@ export const layerHmac = (subtle: SubtleCrypto): Layer.Layer<Hmac> =>
   Layer.sync(Hmac)(() => makeHmac(subtle));
 
 /** Effect entropy and SHA digests from the host's global WebCrypto implementation. */
-export const layerCryptoWeb: Layer.Layer<Crypto.Crypto> = Layer.sync(Crypto.Crypto)(() =>
-  Crypto.make({
-    randomBytes: (size) => globalThis.crypto.getRandomValues(new Uint8Array(size)),
-    digest: (algorithm, data) =>
-      Effect.tryPromise({
-        try: () => globalThis.crypto.subtle.digest(algorithm, new Uint8Array(data)),
-        catch: (cause) =>
-          PlatformError.systemError({
-            _tag: "Unknown",
-            module: "Crypto",
-            method: "digest",
-            cause,
-          }),
-      }).pipe(Effect.map((bytes) => new Uint8Array(bytes))),
-  }),
+export const layerCryptoWeb: Layer.Layer<SecureRandom.SecureRandom | Digest.Digest> = Layer.merge(
+  SecureRandom.layerWebCrypto,
+  Digest.layerWebCrypto,
 );
 
 /** HMAC from global WebCrypto. Missing WebCrypto is a platform defect at Layer construction. */

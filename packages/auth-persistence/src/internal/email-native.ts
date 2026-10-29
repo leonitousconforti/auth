@@ -4,7 +4,8 @@ import { ProofRedemptionInput } from "@yielded/auth/Proofs";
 import type { AuthenticationRevision } from "@yielded/auth/Sessions";
 import { SecurityRevision } from "@yielded/auth/Sessions";
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -65,13 +66,17 @@ export const makeNativeEmailAddressServices = Effect.fnUntraced(function* (
 ): Effect.fn.Return<
   { readonly emailAddressPersistence: E.EmailAddressPersistence["Service"] },
   never,
-  SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto | SqlBatchCommit
+  | SqlClient.SqlClient
+  | LifecycleHooks
+  | (SecureRandom.SecureRandom | Digest.Digest)
+  | SqlBatchCommit
 > {
   const batch = yield* SqlBatchCommit;
 
   const sql = (yield* SqlClient.SqlClient).withoutTransforms(),
     executor = yield* makeSqlCommitExecutor(unavailable),
-    crypto = yield* Crypto.Crypto;
+    crypto = yield* SecureRandom.SecureRandom,
+    digests = yield* Digest.Digest;
 
   const now = tables.expression(mapping.clock.engineNowMillis);
   const reader = yield* makeNativeEmailReader(tables, mapping, now);
@@ -107,9 +112,19 @@ export const makeNativeEmailAddressServices = Effect.fnUntraced(function* (
 
   const run = <A, X, R>(work: Effect.Effect<A, X, R>) =>
     batch === undefined
-      ? executor.run(work.pipe(Effect.provideService(Crypto.Crypto, crypto)))
+      ? executor.run(
+          work.pipe(
+            Effect.provideService(SecureRandom.SecureRandom, crypto),
+            Effect.provideService(Digest.Digest, digests),
+          ),
+        )
       : executor
-          .batch(work.pipe(Effect.provideService(Crypto.Crypto, crypto)))
+          .batch(
+            work.pipe(
+              Effect.provideService(SecureRandom.SecureRandom, crypto),
+              Effect.provideService(Digest.Digest, digests),
+            ),
+          )
           .pipe(Effect.provideService(SqlBatchCommit, batch));
 
   const stage = Effect.fnUntraced(function* (statement: Statement.Fragment) {

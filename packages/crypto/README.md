@@ -3,7 +3,7 @@
 Effect services for authenticated encryption, HMAC, key derivation and signatures.
 Effect is its only runtime package dependency; it is independent of Auth.
 Applications own keys, nonces, password
-policy, envelopes and protocol formats. Use Effect `Crypto` for secure randomness
+policy, envelopes and protocol formats. Use Effect `SecureRandom` and `Digest` for secure randomness
 and SHA digests.
 
 ```sh

@@ -1,6 +1,7 @@
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -141,8 +142,8 @@ export const makePasswordSignIn = <
           invocation: AuthInvocation,
           request: Omit<typeof Input.Encoded, "flowId">,
         ) {
-          const flowId = yield* (yield* Crypto.Crypto)
-            .randomUUIDv4()
+          const flowId = yield* (yield* SecureRandom.SecureRandom)
+            .uuidV4()
             .pipe(
               Effect.catchCause((cause) =>
                 Effect.failCause(Cause.map(cause, () => PasswordUnavailable.make({}))),
@@ -152,7 +153,14 @@ export const makePasswordSignIn = <
           return yield* SignIn.invoke(invocation, { ...request, flowId });
         }),
       },
-      handlersLayer.pipe(Layer.merge(Layer.effect(Crypto.Crypto, Crypto.Crypto))),
+      handlersLayer.pipe(
+        Layer.merge(
+          Layer.merge(
+            Layer.effect(SecureRandom.SecureRandom, SecureRandom.SecureRandom),
+            Layer.effect(Digest.Digest, Digest.Digest),
+          ),
+        ),
+      ),
       { completion: true },
     ),
   });

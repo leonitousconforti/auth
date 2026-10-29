@@ -1,6 +1,7 @@
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -166,7 +167,8 @@ export const makeOAuthConnected = <const Id extends string>(
       const { seal: sealTokens } = yield* OAuthConnectedTokenProtector;
       const { resolve: resolveTarget } = yield* OAuthReturnTargets;
       const { before } = yield* LifecycleHooks;
-      const { randomBytes, digest } = yield* Crypto.Crypto;
+      const { randomBytes } = yield* SecureRandom.SecureRandom;
+      const { digest } = yield* Digest.Digest;
 
       const random = Effect.fn("OAuthConnected.random")(function* () {
         const bytes = yield* randomBytes(32).pipe(
@@ -183,7 +185,7 @@ export const makeOAuthConnected = <const Id extends string>(
       });
 
       const hash = Effect.fn("OAuthConnected.hash")(function* (value: string) {
-        const bytes = yield* digest("SHA-256", encoder.encode(value)).pipe(
+        const bytes = yield* digest(Digest.sha256, encoder.encode(value)).pipe(
           Effect.catchCause((cause) =>
             Effect.failCause(Cause.map(cause, () => OAuthUnavailable.make({}))),
           ),

@@ -491,7 +491,7 @@ and commit scopes. After a lost acknowledgement, retry the same input. Concurren
 conflicts may fail and can be retried after the competing import completes.
 
 For application-owned persistence, `OAuthPersistence.identityKey(identity)` returns
-the same stable key used by sign-in and requires Effect `Crypto`. It validates the
+the same stable key used by sign-in and requires Effect `Digest`. It validates the
 exact provider/issuer/subject tuple, rejects malformed Unicode with
 `OAuthUnavailable`, and excludes the OAuth module from ownership. Use it inside
 your own atomic import; the key alone does not create login authority. See the

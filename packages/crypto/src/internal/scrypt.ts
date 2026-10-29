@@ -1,4 +1,4 @@
-// @effect-diagnostics-next-line nodeBuiltinImport:off -- Native scrypt is not exposed by Effect Crypto or WebCrypto.
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- This platform adapter selects Node native scrypt.
 import * as crypto from "node:crypto";
 
 import * as Effect from "effect/Effect";

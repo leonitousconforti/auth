@@ -1,5 +1,6 @@
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
+import type * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -93,7 +94,7 @@ export const makeConnectedProtocol = Effect.fn("Strava.configure")(function* (
 ): Effect.fn.Return<
   OAuthConnectedProtocol["Service"],
   OAuthConfigurationError,
-  HttpClient.HttpClient | Crypto.Crypto
+  HttpClient.HttpClient | (SecureRandom.SecureRandom | Digest.Digest)
 > {
   const callbackUrl = callback.redirectUri;
 
@@ -111,7 +112,7 @@ export const makeConnectedProtocol = Effect.fn("Strava.configure")(function* (
     ),
   );
 
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
 
   if (profile.provider !== providerKey || profile.clientRegistrationId !== options.clientId)
     return yield* OAuthConfigurationError.make({ reason: "policy" });

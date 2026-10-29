@@ -1,7 +1,8 @@
 import * as EffectArray from "effect/Array";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -155,7 +156,7 @@ export type CompletionLayer<
   ModuleService<Id, "completion", Claims["Type"]>,
   SessionConfigurationError,
   | ModuleService<Id, "strategy", Claims["Type"]>
-  | Crypto.Crypto
+  | (SecureRandom.SecureRandom | Digest.Digest)
   | AuthenticationAuthority
   | Exclude<Claims["DecodingServices"], Scope.Scope>
   | Exclude<Claims["EncodingServices"], Scope.Scope>
@@ -563,7 +564,10 @@ export const makeSessionModule = <
         const secrets = yield* makeSessionSecrets(moduleId);
 
         const services = (yield* Effect.context<
-          Claims["EncodingServices"] | Claims["DecodingServices"] | LifecycleHooks | Crypto.Crypto
+          | Claims["EncodingServices"]
+          | Claims["DecodingServices"]
+          | LifecycleHooks
+          | (SecureRandom.SecureRandom | Digest.Digest)
         >()).pipe(
           withoutObservability,
           Context.omit(CurrentSessionInvocation, SessionVerificationCapture),
@@ -852,7 +856,10 @@ export const makeSessionModule = <
         const secrets = yield* makeSessionSecrets(moduleId);
 
         const services = (yield* Effect.context<
-          Claims["EncodingServices"] | Claims["DecodingServices"] | LifecycleHooks | Crypto.Crypto
+          | Claims["EncodingServices"]
+          | Claims["DecodingServices"]
+          | LifecycleHooks
+          | (SecureRandom.SecureRandom | Digest.Digest)
         >()).pipe(
           withoutObservability,
           Context.omit(CurrentSessionInvocation, SessionVerificationCapture),
@@ -1792,11 +1799,13 @@ export const makeSessionModule = <
 
         const strategy = yield* SessionStrategy;
         const planner = yield* StepUpPlanner;
-        const crypto = yield* Crypto.Crypto;
+        const crypto = yield* SecureRandom.SecureRandom;
+        const digests = yield* Digest.Digest;
         const secrets = yield* makeSessionSecrets(moduleId);
 
         const hooks = Context.make(LifecycleHooks, yield* LifecycleHooks).pipe(
-          Context.add(Crypto.Crypto, crypto),
+          Context.add(SecureRandom.SecureRandom, crypto),
+          Context.add(Digest.Digest, digests),
         );
 
         const registry = new Map<
@@ -1809,8 +1818,8 @@ export const makeSessionModule = <
             profileEncoding(["effect-auth/session-step-up/profile/v1", moduleId, profile]),
           );
 
-          const digest = yield* crypto
-            .digest("SHA-256", bytes)
+          const digest = yield* digests
+            .digest(Digest.sha256, bytes)
             .pipe(
               Effect.catchCause((cause) =>
                 Effect.failCause(Cause.map(cause, () => SessionUnavailable.make({}))),

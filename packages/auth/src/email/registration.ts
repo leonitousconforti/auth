@@ -1,6 +1,7 @@
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -154,7 +155,8 @@ export const makeEmailRegistration = <
       const proofs = yield* proof.Proofs;
       const authority = yield* RegistrationAuthority;
       const hooks = yield* LifecycleHooks;
-      const crypto = yield* Crypto.Crypto;
+      const crypto = yield* SecureRandom.SecureRandom;
+      const digests = yield* Digest.Digest;
 
       const services = yield* Effect.context<
         Registration["DecodingServices"] | Registration["EncodingServices"]
@@ -215,8 +217,8 @@ export const makeEmailRegistration = <
           fingerprint,
         ]).pipe(Effect.mapError(() => EmailUnavailable.make({})));
 
-        const digest = yield* crypto
-          .digest("SHA-256", new TextEncoder().encode(encoded))
+        const digest = yield* digests
+          .digest(Digest.sha256, new TextEncoder().encode(encoded))
           .pipe(
             Effect.catchCause((cause) =>
               Effect.failCause(Cause.map(cause, () => EmailUnavailable.make({}))),

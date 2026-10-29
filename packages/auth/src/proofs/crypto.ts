@@ -1,7 +1,8 @@
 import { Hmac, type Key } from "@yielded/crypto/Hmac";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Layer from "effect/Layer";
@@ -153,7 +154,9 @@ const makeCrypto = Effect.fn("makeProofCrypto")(function* (
     Effect.mapError(() => ProofConfigurationError.make({ reason: "policy" })),
   );
 
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
+
+  const digests = yield* Digest.Digest;
   const keys = new Map<string, Key>();
   let activeKeyId = "token";
 
@@ -263,8 +266,8 @@ const makeCrypto = Effect.fn("makeProofCrypto")(function* (
 
     const bytes =
       key === undefined
-        ? yield* crypto
-            .digest("SHA-256", encoder.encode(message))
+        ? yield* digests
+            .digest(Digest.sha256, encoder.encode(message))
             .pipe(
               Effect.catchCause((cause) =>
                 Effect.failCause(Cause.map(cause, () => ProofUnavailable.make({}))),
@@ -299,7 +302,7 @@ export function makeProofCrypto(
 ): Effect.Effect<
   Effect.Success<ReturnType<typeof makeCrypto>>,
   ProofConfigurationError,
-  Crypto.Crypto
+  SecureRandom.SecureRandom | Digest.Digest
 >;
 
 export function makeProofCrypto(

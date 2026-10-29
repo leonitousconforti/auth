@@ -25,7 +25,8 @@ import { ProofPersistence, ProofUnavailable } from "@yielded/auth/Proofs";
 import { AuthenticationAuthority, SessionUnavailable } from "@yielded/auth/Sessions";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import type * as Crypto from "effect/Crypto";
+import type * as Digest from "effect/crypto/Digest";
+import type * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
@@ -538,7 +539,7 @@ export const createPersistence = <T extends object, R, Database extends object =
               Context.Context<never>,
               PersistenceConfigurationError,
               | PasskeyRequirement<A>
-              | Crypto.Crypto
+              | (SecureRandom.SecureRandom | Digest.Digest)
               | LifecycleHooks
               | SqlClient.SqlClient
               | SqlBatchCommit

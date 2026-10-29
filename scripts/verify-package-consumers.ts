@@ -123,7 +123,8 @@ const checkReusableOperations = Effect.fn("packageConsumers.reusableOperations")
     path.join(stage, "fixtures/reusable-operations.mjs"),
     `import assert from "node:assert/strict";
 import { createCipheriv, createHmac } from "node:crypto";
-import { Crypto, Effect, Layer, Redacted, Schema } from "effect";
+import { Effect, Layer, Redacted, Schema} from "effect";
+import { Digest, SecureRandom } from "effect/crypto";
 import { FetchHttpClient } from "effect/http";
 import { OAuth, Pkce } from "@yielded/oauth";
 import { Aead, Kdf, KdfAdmission } from "@yielded/crypto";
@@ -181,10 +182,7 @@ for (const backend of [Portable.layer(globalThis.crypto.subtle), Platform.layer(
     assert.equal(text(Redacted.value(decrypted.plaintext)), "payload");
   }).pipe(Effect.provide(backend.pipe(Layer.provide(KdfAdmission.layer())))));
 }
-const effectCrypto = Layer.succeed(Crypto.Crypto, Crypto.make({
-  randomBytes: size => crypto.getRandomValues(new Uint8Array(size)),
-  digest: (algorithm, data) => Effect.promise(() => crypto.subtle.digest(algorithm, data)).pipe(Effect.map(buffer => new Uint8Array(buffer))),
-}));
+const effectCrypto = Layer.merge(SecureRandom.layerWebCrypto, Digest.layerWebCrypto);
 let requests = 0;
 const fetchReceipt = async (url, init) => {
   requests++;

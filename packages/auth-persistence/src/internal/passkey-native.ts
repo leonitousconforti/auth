@@ -1,7 +1,8 @@
 import { CurrentCommitJournal, type LifecycleHooks } from "@yielded/auth/Hooks";
 import { AuthenticationClock } from "@yielded/auth/Operations";
 import * as M from "@yielded/auth/Passkey";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -61,12 +62,15 @@ const services = Effect.fnUntraced(function* (
   const boundOwner = yield* Effect.serviceOption(CurrentSqlCommit);
   const state = yield* makePasskeyNativeState(tables, mapping);
   const executor = yield* makeSqlCommitExecutor(unavailable);
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
+  const digests = yield* Digest.Digest;
   const { sql, ceremony: flow, credential } = state;
   const read = mapping.read;
 
   const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-    Effect.provideService(effect, Crypto.Crypto, crypto);
+    Effect.provideService(effect, SecureRandom.SecureRandom, crypto).pipe(
+      Effect.provideService(Digest.Digest, digests),
+    );
 
   const run = <A, E, R>(
     effect: Effect.Effect<A, E, R>,
@@ -295,7 +299,10 @@ const makePasskeyNativeCredentialService = (
   ) => Effect.Effect<
     A,
     M.PasskeyUnavailable,
-    Exclude<Exclude<Exclude<R, Crypto.Crypto>, SqlClient.SqlClient>, LifecycleHooks>
+    Exclude<
+      Exclude<Exclude<Exclude<R, SecureRandom.SecureRandom>, Digest.Digest>, SqlClient.SqlClient>,
+      LifecycleHooks
+    >
   >,
 ) => {
   const { sql, joinedSubject: subject, joinedFactor: factor, joinedCredential: credential } = state;
@@ -377,10 +384,15 @@ export const makeNativePasskeyCredentialServices = Effect.fnUntraced(function* (
 ) {
   const state = yield* makePasskeyNativeReadState(tables, mapping);
   const executor = yield* makeSqlCommitExecutor(unavailable);
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
+  const digests = yield* Digest.Digest;
 
   const advisory = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-    executor.read(Effect.provideService(effect, Crypto.Crypto, crypto));
+    executor.read(
+      Effect.provideService(effect, SecureRandom.SecureRandom, crypto).pipe(
+        Effect.provideService(Digest.Digest, digests),
+      ),
+    );
 
   return { passkeyCredentials: makePasskeyNativeCredentialService(state, mapping, advisory) };
 });

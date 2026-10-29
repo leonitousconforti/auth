@@ -1,6 +1,6 @@
 import { it } from "@effect/vitest";
 import { Jwe, Jwk, Jws } from "@yielded/jose";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as PlatformError from "effect/PlatformError";
 import * as Redacted from "effect/Redacted";
@@ -108,20 +108,20 @@ it.effect("rejects payload tampering and disallowed algorithms", () =>
   }).pipe(Effect.provide(cryptoLayer)),
 );
 
-// Reproduced at 5199d99: RNG PlatformError escaped JweError with its native cause.
+// Reproduced at 5199d99: RNG failure escaped JweError with its native cause.
 it.effect("classifies JWE RNG failures without exposing native causes", () =>
   Effect.gen(function* () {
     const key = yield* Jwk.importSecret(Redacted.make(secretJwk), "dir");
-    const random = yield* Crypto.Crypto;
+    const random = yield* SecureRandom.SecureRandom;
 
     const error = yield* Jwe.encrypt(Redacted.make(utf8("payload")), key, {
       alg: "dir",
       enc: "A256GCM",
     }).pipe(
-      Effect.provideService(Crypto.Crypto, {
+      Effect.provideService(SecureRandom.SecureRandom, {
         ...random,
         randomBytes: () =>
-          Effect.fail(
+          Effect.die(
             PlatformError.systemError({
               _tag: "Unknown",
               module: "Crypto",

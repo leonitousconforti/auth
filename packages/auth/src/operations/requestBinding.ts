@@ -1,5 +1,6 @@
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -203,7 +204,9 @@ export const makeRequestBinding = <const Id extends string, const Purpose extend
 
         const { policy, signer, read } = yield* makeBindingCodec(input);
 
-        const crypto = yield* Crypto.Crypto;
+        const crypto = yield* SecureRandom.SecureRandom;
+
+        const digests = yield* Digest.Digest;
 
         return RequestBinding.of({
           issue: Effect.fn("RequestBinding.issue")(function* (flowId) {
@@ -255,8 +258,8 @@ export const makeRequestBinding = <const Id extends string, const Purpose extend
               Redacted.value(credential),
             ]).pipe(Effect.mapError(() => RequestBindingInvalid.make({})));
 
-            const digest = yield* crypto
-              .digest("SHA-256", new TextEncoder().encode(message))
+            const digest = yield* digests
+              .digest(Digest.sha256, new TextEncoder().encode(message))
               .pipe(Effect.mapError(() => RequestBindingUnavailable.make({})));
 
             // Entry verification deadline only. Final proof/action expiry is still

@@ -1,6 +1,7 @@
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -469,7 +470,8 @@ const makeServer = <
             !config.scopes.some((scope) => scope === "openid"))
         )
           return yield* ConfigurationError.make({});
-        const crypto = yield* Crypto.Crypto;
+        const crypto = yield* SecureRandom.SecureRandom;
+        const digests = yield* Digest.Digest;
         const namespace = `${config.origin}/oauth/${id}`;
         const resourceMetadataPath = `/.well-known/oauth-protected-resource${resourceUrl.pathname === "/" ? "" : resourceUrl.pathname}`;
         const resourceMetadata = `${config.origin}${resourceMetadataPath}`;
@@ -1164,8 +1166,8 @@ const makeServer = <
 
               if (record.subjectId === undefined) return yield* reject("invalid_grant");
               if (query.grant_type === "authorization_code") {
-                const digest = yield* crypto
-                  .digest("SHA-256", new TextEncoder().encode(query.code_verifier))
+                const digest = yield* digests
+                  .digest(Digest.sha256, new TextEncoder().encode(query.code_verifier))
                   .pipe(
                     Effect.map(Base64Url.encode),
                     Effect.catchCause((cause) =>

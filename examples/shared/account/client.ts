@@ -4,7 +4,8 @@ import {
   layer as layerSimpleWebAuthnPasskeyBrowser,
 } from "@yielded/auth-simplewebauthn/Browser";
 import { layerCryptoWeb } from "@yielded/auth/WebCrypto";
-import { Crypto, DateTime, Effect, Layer, Redacted, Schema } from "effect";
+import { DateTime, Effect, Layer, Redacted, Schema } from "effect";
+import { SecureRandom } from "effect/crypto";
 import type { KeyValueStore } from "effect/persistence";
 import { Atom, type AsyncResult } from "effect/reactivity";
 
@@ -99,7 +100,10 @@ export const makeAccountClient = <Auth extends AccountAuth>(
     mode: "async",
   });
 
-  const id = Effect.flatMap(Crypto.Crypto, (crypto) => crypto.randomUUIDv4()).pipe(Effect.orDie);
+  const id = Effect.flatMap(SecureRandom.SecureRandom, (crypto) => crypto.uuidV4()).pipe(
+    Effect.orDie,
+  );
+
   const nowMillis = DateTime.now.pipe(Effect.map(DateTime.toEpochMillis));
   const clock = runtime.atom(nowMillis).pipe(Atom.withRefresh("1 second"));
 

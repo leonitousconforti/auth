@@ -61,7 +61,7 @@ export interface Key {
 /**
  * Both algorithms use a 32-byte key and append a 16-byte tag to ciphertext.
  * AES-GCM uses a 12-byte nonce; XChaCha uses 24. The caller MUST supply a unique
- * nonce for each encryption with a key. Obtain entropy from Effect Crypto.
+ * nonce for each encryption with a key. Obtain entropy from Effect SecureRandom.
  * Envelope serialization and key selection belong to the caller.
  */
 export class Aead extends Context.Service<

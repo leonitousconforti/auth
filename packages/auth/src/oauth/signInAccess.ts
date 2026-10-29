@@ -1,4 +1,4 @@
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -57,7 +57,7 @@ const make = Effect.fnUntraced(function* (
   const protocol = yield* OAuthConnectedProtocol;
   const persistence = yield* OAuthConnectedPersistence;
   const protector = yield* OAuthConnectedTokenProtector;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
 
   const random = crypto.randomBytes(32).pipe(
     Effect.mapError(() => OAuthUnavailable.make({})),

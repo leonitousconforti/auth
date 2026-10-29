@@ -10,7 +10,8 @@ import { reportPersistenceFailure } from "@yielded/auth/Persistence";
 import type { SubjectId } from "@yielded/auth/Schema";
 import type { SecurityRevision } from "@yielded/auth/Sessions";
 import * as Cause from "effect/Cause";
-import type * as Crypto from "effect/Crypto";
+import type * as Digest from "effect/crypto/Digest";
+import type * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
@@ -207,7 +208,7 @@ export const makeNativePasswordRegistrationServices = Effect.fnUntraced(function
 ): Effect.fn.Return<
   { readonly registrationAuthority: PasswordRegistrationAuthority<Registration> },
   PasswordUnavailable,
-  SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto
+  SqlClient.SqlClient | LifecycleHooks | (SecureRandom.SecureRandom | Digest.Digest)
 > {
   const sql = (yield* SqlClient.SqlClient).withoutTransforms();
   const executor = yield* makeSqlCommitExecutor(unavailable);

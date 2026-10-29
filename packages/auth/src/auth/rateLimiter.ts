@@ -1,6 +1,6 @@
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -110,12 +110,12 @@ const Bucket = Schema.fromJsonString(
 export const keyValueRateLimiterStore: Layer.Layer<
   RateLimiter.RateLimiterStore,
   never,
-  KeyValueStore.KeyValueStore | Crypto.Crypto
+  KeyValueStore.KeyValueStore | Digest.Digest
 > = Layer.effect(
   RateLimiter.RateLimiterStore,
   Effect.gen(function* () {
     const store = yield* KeyValueStore.KeyValueStore;
-    const crypto = yield* Crypto.Crypto;
+    const digests = yield* Digest.Digest;
     const unsupported = storeFailure("Auth rate limits support only one-token consumption");
 
     return RateLimiter.RateLimiterStore.of({
@@ -129,7 +129,9 @@ export const keyValueRateLimiterStore: Layer.Layer<
           const now = yield* Clock.currentTimeMillis;
 
           const key = `effect-auth-rate:${Base64Url.encode(
-            yield* crypto.digest("SHA-256", new TextEncoder().encode(request.key)),
+            yield* digests
+              .digest(Digest.sha256, new TextEncoder().encode(request.key))
+              .pipe(Effect.catchDefect(() => storeFailure("Auth rate limit key digest failed"))),
           )}`;
 
           const stored = yield* store.get(key);
@@ -169,9 +171,7 @@ export const keyValueRateLimiterStore: Layer.Layer<
                   message:
                     error._tag === "KeyValueStoreError"
                       ? "Auth rate limit key-value store failed"
-                      : error._tag === "PlatformError"
-                        ? "Auth rate limit key digest failed"
-                        : "Auth rate limit entry is malformed",
+                      : "Auth rate limit entry is malformed",
                 }),
               }),
             ),

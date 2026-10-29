@@ -5,7 +5,7 @@ import * as Jwt from "@yielded/jose/Jwt";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -86,7 +86,7 @@ export interface Verified {
 type VerificationRequirements =
   | Exclude<Effect.Services<ReturnType<typeof Jws.verifyWithKeySet>>, Jwks.Jwks>
   | Jws.Requirements
-  | Crypto.Crypto;
+  | Digest.Digest;
 
 export interface Verifier {
   readonly verify: (
@@ -147,12 +147,12 @@ const IdClaims = Schema.Struct({
 
 const tokenHash = (algorithm: string) =>
   algorithm === "EdDSA"
-    ? { digest: "SHA-512" as const, octets: 32 }
+    ? { digest: Digest.sha512, octets: 32 }
     : algorithm === "RS256" ||
         algorithm === "PS256" ||
         algorithm === "ES256" ||
         algorithm === "HS256"
-      ? { digest: "SHA-256" as const, octets: 16 }
+      ? { digest: Digest.sha256, octets: 16 }
       : undefined;
 
 const tenantPlaceholder = "{tenantid}";
@@ -538,9 +538,9 @@ export const makeVerifier = Effect.fnUntraced(function* (
     ] as const) {
       if (hash === undefined) continue;
       if (secret === undefined) return yield* claimFailure();
-      const crypto = yield* Crypto.Crypto;
+      const digests = yield* Digest.Digest;
 
-      const digest = yield* crypto
+      const digest = yield* digests
         .digest(hashProfile.digest, new TextEncoder().encode(secret))
         .pipe(
           Effect.catchCause((cause) =>

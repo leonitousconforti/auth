@@ -2,7 +2,8 @@ import type { LifecycleHooks } from "@yielded/auth/Hooks";
 import { PasskeyManagementPersistence, PasskeyPersistence } from "@yielded/auth/Passkey";
 import type { Table } from "drizzle-orm";
 import * as Context from "effect/Context";
-import type * as Crypto from "effect/Crypto";
+import type * as Digest from "effect/crypto/Digest";
+import type * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 
 import type { D1BatchStatements } from "./D1BatchStatements";
@@ -63,7 +64,7 @@ export const makePasskeyWriteTarget = <
     A,
     PasskeyCoordinatorError<E> | DatabaseError,
     | Exclude<R, PasskeyPersistence | PasskeyManagementPersistence | Provided>
-    | Crypto.Crypto
+    | (SecureRandom.SecureRandom | Digest.Digest)
     | LifecycleHooks
     | RSetup
     | DatabaseRequirements
@@ -101,7 +102,7 @@ export const makePasskeyWriteTarget = <
     A,
     PasskeyCoordinatorError<E> | DatabaseError,
     | Exclude<R, PasskeyPersistence | PasskeyManagementPersistence | TxId | Provided>
-    | Crypto.Crypto
+    | (SecureRandom.SecureRandom | Digest.Digest)
     | LifecycleHooks
     | RSetup
     | DatabaseRequirements
@@ -135,7 +136,7 @@ export const makePasskeyWriteTarget = <
     A,
     PasskeyCoordinatorError<E> | DatabaseError,
     | Exclude<R, PasskeyPersistence | PasskeyManagementPersistence>
-    | Crypto.Crypto
+    | (SecureRandom.SecureRandom | Digest.Digest)
     | LifecycleHooks
     | RSetup
     | DatabaseRequirements
@@ -207,7 +208,7 @@ export const makePasskeyWriteTarget = <
     A,
     PasskeyCoordinatorError<E> | DatabaseError,
     | Exclude<R, PasskeyPersistence | AuthorityId | Provided>
-    | Crypto.Crypto
+    | (SecureRandom.SecureRandom | Digest.Digest)
     | LifecycleHooks
     | RSetup
     | DatabaseRequirements
@@ -248,7 +249,7 @@ export const makePasskeyWriteTarget = <
     A,
     PasskeyCoordinatorError<E> | DatabaseError,
     | Exclude<R, PasskeyPersistence | AuthorityId | TxId | Provided>
-    | Crypto.Crypto
+    | (SecureRandom.SecureRandom | Digest.Digest)
     | LifecycleHooks
     | RSetup
     | DatabaseRequirements
@@ -285,7 +286,7 @@ export const makePasskeyWriteTarget = <
     A,
     PasskeyCoordinatorError<E> | DatabaseError,
     | Exclude<R, PasskeyPersistence | AuthorityId>
-    | Crypto.Crypto
+    | (SecureRandom.SecureRandom | Digest.Digest)
     | LifecycleHooks
     | RSetup
     | DatabaseRequirements

@@ -10,7 +10,8 @@ import {
   type TotpPersistence,
 } from "@yielded/auth/Totp";
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -60,13 +61,17 @@ export const makeNativeTotpServices = Effect.fnUntraced(function* (
 ): Effect.fn.Return<
   { readonly totpPersistence: TotpPersistence["Service"] },
   never,
-  SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto | SqlBatchCommit
+  | SqlClient.SqlClient
+  | LifecycleHooks
+  | (SecureRandom.SecureRandom | Digest.Digest)
+  | SqlBatchCommit
 > {
   const batch = yield* SqlBatchCommit;
   const conditionalInsert = yield* makeConditionalSqlInsert();
 
   const sql = (yield* SqlClient.SqlClient).withoutTransforms(),
-    crypto = yield* Crypto.Crypto,
+    crypto = yield* SecureRandom.SecureRandom,
+    digests = yield* Digest.Digest,
     executor = yield* makeSqlCommitExecutor(unavailable),
     external = yield* Effect.serviceOption(CurrentSqlCommit);
 
@@ -109,7 +114,10 @@ export const makeNativeTotpServices = Effect.fnUntraced(function* (
         );
 
   const provide = <A, E, R>(work: Effect.Effect<A, E, R>) =>
-    work.pipe(Effect.provideService(Crypto.Crypto, crypto));
+    work.pipe(
+      Effect.provideService(SecureRandom.SecureRandom, crypto),
+      Effect.provideService(Digest.Digest, digests),
+    );
 
   const run = <A, E, R>(work: Effect.Effect<A, E, R>) =>
     batch === undefined
@@ -696,7 +704,8 @@ export const makeNativeTotpServices = Effect.fnUntraced(function* (
               return yield* invalidState();
           }
         }).pipe(
-          Effect.provideService(Crypto.Crypto, crypto),
+          Effect.provideService(SecureRandom.SecureRandom, crypto),
+          Effect.provideService(Digest.Digest, digests),
           Effect.catchCause((cause) =>
             Effect.failCause(
               Cause.map(cause, (error) =>

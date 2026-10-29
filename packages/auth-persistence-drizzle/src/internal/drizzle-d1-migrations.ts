@@ -8,7 +8,7 @@ import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { formatToMillis, getMigrationsToRun } from "drizzle-orm/migrator.utils";
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -47,7 +47,7 @@ export const d1MigrationsLayer = (options: {
     Effect.gen(function* () {
       const files = yield* Schema.decodeEffect(MigrationFiles)(options.migrations);
       const client = yield* D1Client.D1Client;
-      const crypto = yield* Crypto.Crypto;
+      const digests = yield* Digest.Digest;
       const appliedAt = DateTime.formatIso(yield* DateTime.now);
 
       const migrations = yield* Effect.forEach(
@@ -59,7 +59,7 @@ export const d1MigrationsLayer = (options: {
             formatToMillis(name.slice(0, 14)),
           );
 
-          const digest = yield* crypto.digest("SHA-256", new TextEncoder().encode(contents));
+          const digest = yield* digests.digest(Digest.sha256, new TextEncoder().encode(contents));
 
           return {
             name,

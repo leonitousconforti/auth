@@ -1,7 +1,8 @@
 import { Aead } from "@yielded/crypto/Aead";
 import { Hmac, type Key } from "@yielded/crypto/Hmac";
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Redacted from "effect/Redacted";
@@ -58,7 +59,8 @@ export const codeAt = Effect.fn("Totp.codeAt")(function* (
 });
 
 export const make = Effect.gen(function* () {
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
+  const digests = yield* Digest.Digest;
   const aead = yield* Aead;
   const hmac = yield* Hmac;
   const keys = yield* TotpSecretKeys;
@@ -69,7 +71,7 @@ export const make = Effect.gen(function* () {
       .pipe(Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, fail))));
 
   const digest = (value: string) =>
-    crypto.digest("SHA-256", encoder.encode(value)).pipe(
+    digests.digest(Digest.sha256, encoder.encode(value)).pipe(
       Effect.map((bytes) => TokenDigest.make(Base64Url.encode(bytes))),
       Effect.mapError(fail),
     );

@@ -2,7 +2,8 @@ import type * as OAuth from "@yielded/oauth/OAuth";
 import type * as Oidc from "@yielded/oauth/Oidc";
 import * as Pkce from "@yielded/oauth/Pkce";
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
@@ -150,10 +151,16 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
 ): Effect.fn.Return<
   OAuthConnectedProtocol["Service"],
   OpenIdConnectConfigurationError | OAuthUnavailable,
-  R | Setup | ProviderRevocation | Crypto.Crypto | PrivateKeyClientSecret | Scope.Scope
+  | R
+  | Setup
+  | ProviderRevocation
+  | (SecureRandom.SecureRandom | Digest.Digest)
+  | PrivateKeyClientSecret
+  | Scope.Scope
 > {
   const decoderContext = (yield* Effect.context<R>()).pipe(withoutObservability);
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
+  const digests = yield* Digest.Digest;
   const clientSecrets = yield* PrivateKeyClientSecret;
   const providerRevocation = yield* ProviderRevocation;
   // Provider-owned revocation bypasses the generic OAuth client's transport.
@@ -384,13 +391,15 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
     if (!entry || !callback || request.profile.issuance !== "active") return yield* rejected();
 
     const state = yield* Pkce.random().pipe(
-      Effect.provideService(Crypto.Crypto, crypto),
+      Effect.provideService(SecureRandom.SecureRandom, crypto),
+      Effect.provideService(Digest.Digest, digests),
       Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, unavailable))),
     );
 
     const pkce = entry.provider.pkceS256
       ? yield* Pkce.make().pipe(
-          Effect.provideService(Crypto.Crypto, crypto),
+          Effect.provideService(SecureRandom.SecureRandom, crypto),
+          Effect.provideService(Digest.Digest, digests),
           Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, unavailable))),
         )
       : undefined;
@@ -398,7 +407,8 @@ export const makeConnectedProtocolWithCompatibility = Effect.fn(
     const nonce =
       entry.provider.protocol === "oidc"
         ? yield* Pkce.random().pipe(
-            Effect.provideService(Crypto.Crypto, crypto),
+            Effect.provideService(SecureRandom.SecureRandom, crypto),
+            Effect.provideService(Digest.Digest, digests),
             Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, unavailable))),
           )
         : undefined;
@@ -844,7 +854,7 @@ export const makeOpenIdConnectConnectedProtocol = <R, Setup>(
 ): Effect.Effect<
   OAuthConnectedProtocol["Service"],
   OpenIdConnectConfigurationError | OAuthUnavailable,
-  R | Setup | Crypto.Crypto | PrivateKeyClientSecret | Scope.Scope
+  R | Setup | (SecureRandom.SecureRandom | Digest.Digest) | PrivateKeyClientSecret | Scope.Scope
 > =>
   makeConnectedProtocolWithCompatibility(installation).pipe(
     Effect.provide(ProviderRevocation.layerUnsupported),

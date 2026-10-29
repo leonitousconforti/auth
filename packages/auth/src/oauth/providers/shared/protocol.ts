@@ -1,6 +1,7 @@
 import * as Pkce from "@yielded/oauth/Pkce";
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
@@ -80,10 +81,11 @@ export const makeOpenIdConnectOAuthProtocol = Effect.fn("makeOpenIdConnectOAuthP
   ): Effect.fn.Return<
     OAuthProtocol["Service"],
     OpenIdConnectConfigurationError | OAuthUnavailable,
-    R | Setup | Crypto.Crypto | PrivateKeyClientSecret | Scope.Scope
+    R | Setup | (SecureRandom.SecureRandom | Digest.Digest) | PrivateKeyClientSecret | Scope.Scope
   > {
     const context = (yield* Effect.context<R>()).pipe(withoutObservability);
-    const crypto = yield* Crypto.Crypto;
+    const crypto = yield* SecureRandom.SecureRandom;
+    const digests = yield* Digest.Digest;
     const clientSecrets = yield* PrivateKeyClientSecret;
     // Own application decoding as well as the native client's individual requests.
     const run = yield* makeScopedOperation(unavailable);
@@ -118,13 +120,15 @@ export const makeOpenIdConnectOAuthProtocol = Effect.fn("makeOpenIdConnectOAuthP
         return yield* OAuthRejected.make({});
 
       const state = yield* Pkce.random().pipe(
-        Effect.provideService(Crypto.Crypto, crypto),
+        Effect.provideService(SecureRandom.SecureRandom, crypto),
+        Effect.provideService(Digest.Digest, digests),
         Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, unavailable))),
       );
 
       const pkce = provider.pkceS256
         ? yield* Pkce.make().pipe(
-            Effect.provideService(Crypto.Crypto, crypto),
+            Effect.provideService(SecureRandom.SecureRandom, crypto),
+            Effect.provideService(Digest.Digest, digests),
             Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, unavailable))),
           )
         : undefined;
@@ -132,7 +136,8 @@ export const makeOpenIdConnectOAuthProtocol = Effect.fn("makeOpenIdConnectOAuthP
       const nonce =
         provider.protocol === "oidc"
           ? yield* Pkce.random().pipe(
-              Effect.provideService(Crypto.Crypto, crypto),
+              Effect.provideService(SecureRandom.SecureRandom, crypto),
+              Effect.provideService(Digest.Digest, digests),
               Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, unavailable))),
             )
           : undefined;

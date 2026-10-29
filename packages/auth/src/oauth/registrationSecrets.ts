@@ -1,5 +1,6 @@
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -33,7 +34,7 @@ export const credentialDigest = Effect.fn("OAuthRegistration.credentialDigest")(
   flowId: typeof OAuthRegistrationIntent.Type.context.flowId,
   credential: Redacted.Redacted<string>,
 ) {
-  const { digest } = yield* Crypto.Crypto;
+  const { digest } = yield* Digest.Digest;
   const raw = Redacted.value(credential);
 
   if (!Schema.is(Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{43}$/)))(raw))
@@ -60,7 +61,7 @@ export const credentialDigest = Effect.fn("OAuthRegistration.credentialDigest")(
     raw,
   ]).pipe(Effect.mapError(() => OAuthRejected.make({})));
 
-  const value = yield* digest("SHA-256", new TextEncoder().encode(encoded)).pipe(
+  const value = yield* digest(Digest.sha256, new TextEncoder().encode(encoded)).pipe(
     Effect.catchCause((cause) =>
       Effect.failCause(Cause.map(cause, () => OAuthUnavailable.make({}))),
     ),
@@ -75,7 +76,7 @@ export const prepare = Effect.fn("OAuthRegistration.prepareIntent")(function* (
   verifiedAtMillis: number,
   policy: OAuthRegistrationPolicy,
 ) {
-  const { randomBytes } = yield* Crypto.Crypto;
+  const { randomBytes } = yield* SecureRandom.SecureRandom;
   const now = DateTime.toEpochMillis(yield* DateTime.now);
 
   const expiresAtMillis = Math.min(

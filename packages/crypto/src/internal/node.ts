@@ -1,4 +1,4 @@
-// @effect-diagnostics-next-line nodeBuiltinImport:off -- This platform adapter needs native Argon2 and WebCrypto, which Effect Crypto does not expose.
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- This platform adapter selects Node native Argon2 and WebCrypto.
 import * as crypto from "node:crypto";
 
 import * as Effect from "effect/Effect";

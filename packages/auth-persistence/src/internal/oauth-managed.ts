@@ -4,7 +4,8 @@ import { reportPersistenceFailure } from "@yielded/auth/Persistence";
 import { AuthenticationFlowId } from "@yielded/auth/Sessions";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import type * as Crypto from "effect/Crypto";
+import type * as Digest from "effect/crypto/Digest";
+import type * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -51,7 +52,10 @@ export const makeManagedOAuth = Effect.fnUntraced(function* (
 ): Effect.fn.Return<
   Context.Context<never>,
   PersistenceConfigurationError,
-  Crypto.Crypto | LifecycleHooks | SqlClient.SqlClient | SqlBatchCommit
+  | (SecureRandom.SecureRandom | Digest.Digest)
+  | LifecycleHooks
+  | SqlClient.SqlClient
+  | SqlBatchCommit
 > {
   const sql = (yield* SqlClient.SqlClient).withoutTransforms();
   const batch = yield* SqlBatchCommit;

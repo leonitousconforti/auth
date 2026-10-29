@@ -7,7 +7,7 @@ import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
 import * as WebCrypto from "@yielded/crypto/WebCrypto";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Layer from "effect/Layer";
@@ -69,13 +69,13 @@ const keys = Layer.succeed(Totp.TotpSecretKeys, {
 // on every execution, including when a caller retains the same Effect value.
 it.effect("keeps TOTP entropy lazy and fresh on every execution", () =>
   Effect.gen(function* () {
-    const crypto = yield* Crypto.Crypto;
+    const crypto = yield* SecureRandom.SecureRandom;
     let requests = 0;
 
     const services = yield* Layer.build(
       Totp.TotpCryptography.layer.pipe(
         Layer.provide(
-          Layer.succeed(Crypto.Crypto, {
+          Layer.succeed(SecureRandom.SecureRandom, {
             ...crypto,
             randomBytes: (size) => Effect.sync(() => new Uint8Array(size).fill(++requests)),
           }),

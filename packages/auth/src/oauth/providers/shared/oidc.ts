@@ -4,7 +4,8 @@ import type * as OAuth from "@yielded/oauth/OAuth";
 import * as Oidc from "@yielded/oauth/Oidc";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
@@ -99,7 +100,8 @@ const makeVerifier = Effect.fn("OpenIdConnect.makeVerifier")(function* (
     readonly clientSecret?: Redacted.Redacted<string>;
   },
 ) {
-  const context = Context.make(Crypto.Crypto, yield* Crypto.Crypto).pipe(
+  const context = Context.make(SecureRandom.SecureRandom, yield* SecureRandom.SecureRandom).pipe(
+    Context.add(Digest.Digest, yield* Digest.Digest),
     Context.add(Signature, yield* Signature),
     Context.add(Hmac, yield* Hmac),
   );

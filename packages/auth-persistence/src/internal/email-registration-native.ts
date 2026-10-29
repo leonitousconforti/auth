@@ -15,7 +15,8 @@ import { ProofRedemptionInput, type ProofRedemptionPlan } from "@yielded/auth/Pr
 import type { TokenDigest } from "@yielded/auth/Schema";
 import { SecurityRevision } from "@yielded/auth/Sessions";
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -73,11 +74,12 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
 ): Effect.fn.Return<
   { readonly registrationAuthority: EmailRegistrationAuthority<Registration> },
   never,
-  SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto
+  SqlClient.SqlClient | LifecycleHooks | (SecureRandom.SecureRandom | Digest.Digest)
 > {
   const sql = (yield* SqlClient.SqlClient).withoutTransforms(),
     executor = yield* makeSqlCommitExecutor(unavailable),
-    crypto = yield* Crypto.Crypto;
+    crypto = yield* SecureRandom.SecureRandom,
+    digests = yield* Digest.Digest;
 
   const s = mapping.subject,
     i = mapping.identifier,
@@ -107,9 +109,19 @@ export const makeNativeEmailRegistrationServices = Effect.fnUntraced(function* <
 
   const run = <A, E, R>(work: Effect.Effect<A, E, R>) =>
     batch === undefined
-      ? executor.run(work.pipe(Effect.provideService(Crypto.Crypto, crypto)))
+      ? executor.run(
+          work.pipe(
+            Effect.provideService(SecureRandom.SecureRandom, crypto),
+            Effect.provideService(Digest.Digest, digests),
+          ),
+        )
       : executor
-          .batch(work.pipe(Effect.provideService(Crypto.Crypto, crypto)))
+          .batch(
+            work.pipe(
+              Effect.provideService(SecureRandom.SecureRandom, crypto),
+              Effect.provideService(Digest.Digest, digests),
+            ),
+          )
           .pipe(Effect.provideService(SqlBatchCommit, batch));
 
   const stage = Effect.fnUntraced(function* (statement: Statement.Fragment) {

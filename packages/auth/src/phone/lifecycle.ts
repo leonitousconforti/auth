@@ -1,4 +1,4 @@
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -535,7 +535,7 @@ export const makePhoneLifecycle = <
     strategy: makeAuthStrategy(
       methods,
       layer.pipe(
-        Layer.merge(Layer.effect(Crypto.Crypto, Crypto.Crypto)),
+        Layer.merge(Layer.effect(SecureRandom.SecureRandom, SecureRandom.SecureRandom)),
         Layer.provideMerge(defaultPhoneAdmissionLayer),
       ),
       { completion: true },

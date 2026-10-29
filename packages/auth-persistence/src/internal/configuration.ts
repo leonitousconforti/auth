@@ -36,7 +36,8 @@ import type {
   make as makeSessions,
 } from "@yielded/auth/Sessions";
 import type * as Context from "effect/Context";
-import type * as Crypto from "effect/Crypto";
+import type * as Digest from "effect/crypto/Digest";
+import type * as SecureRandom from "effect/crypto/SecureRandom";
 import type * as Effect from "effect/Effect";
 import type * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -346,7 +347,7 @@ export interface BoundPersistence<
   readonly layer: Layer.Layer<
     Ports<C, Id, A>,
     PersistenceConfigurationError,
-    | Crypto.Crypto
+    | (SecureRandom.SecureRandom | Digest.Digest)
     | ConfigId<A["namespace"]>
     | ProvisioningRequirement<A>
     | PasskeyRequirement<A>

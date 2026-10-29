@@ -65,17 +65,17 @@
     "vitest": "catalog:"
   },
   "peerDependencies": {
-    "@effect/sql-d1": ">=4.0.0",
-    "@effect/sql-libsql": ">=4.0.0",
-    "@effect/sql-mysql2": ">=4.0.0",
-    "@effect/sql-pg": ">=4.0.0",
-    "@effect/sql-pglite": ">=4.0.0",
-    "@effect/sql-sqlite-bun": ">=4.0.0",
-    "@effect/sql-sqlite-do": ">=4.0.0",
-    "@effect/sql-sqlite-node": ">=4.0.0",
-    "@effect/sql-sqlite-wasm": ">=4.0.0",
+    "@effect/sql-d1": ">=4.1.0",
+    "@effect/sql-libsql": ">=4.1.0",
+    "@effect/sql-mysql2": ">=4.1.0",
+    "@effect/sql-pg": ">=4.1.0",
+    "@effect/sql-pglite": ">=4.1.0",
+    "@effect/sql-sqlite-bun": ">=4.1.0",
+    "@effect/sql-sqlite-do": ">=4.1.0",
+    "@effect/sql-sqlite-node": ">=4.1.0",
+    "@effect/sql-sqlite-wasm": ">=4.1.0",
     "drizzle-orm": ">=1.0.0-rc.5",
-    "effect": "^4.0.3"
+    "effect": "^4.1.0"
   },
   "peerDependenciesMeta": {
     "@effect/sql-d1": {

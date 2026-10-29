@@ -6,7 +6,8 @@ import { ProofRedemptionInput } from "@yielded/auth/Proofs";
 import type { SubjectId } from "@yielded/auth/Schema";
 import { SecurityRevision, type AuthenticationRequirement } from "@yielded/auth/Sessions";
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -54,13 +55,17 @@ export const makeNativePasswordServices = Effect.fnUntraced(function* (
 ): Effect.fn.Return<
   { readonly passwordPersistence: P.PasswordPersistence["Service"] },
   P.PasswordUnavailable,
-  SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto | SqlBatchCommit
+  | SqlClient.SqlClient
+  | LifecycleHooks
+  | (SecureRandom.SecureRandom | Digest.Digest)
+  | SqlBatchCommit
 > {
   const batch = yield* SqlBatchCommit;
   const clockPolicy = yield* AuthenticationClock;
   const sql = (yield* SqlClient.SqlClient).withoutTransforms();
   const executor = yield* makeSqlCommitExecutor(unavailable);
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
+  const digests = yield* Digest.Digest;
   const parent = yield* Effect.serviceOption(CurrentSqlCommit);
 
   const s = mapping.subject,
@@ -94,9 +99,19 @@ export const makeNativePasswordServices = Effect.fnUntraced(function* (
 
   const run = <A, E, R>(work: Effect.Effect<A, E, R>) =>
     (batch === undefined
-      ? executor.run(work.pipe(Effect.provideService(Crypto.Crypto, crypto)))
+      ? executor.run(
+          work.pipe(
+            Effect.provideService(SecureRandom.SecureRandom, crypto),
+            Effect.provideService(Digest.Digest, digests),
+          ),
+        )
       : executor
-          .batch(work.pipe(Effect.provideService(Crypto.Crypto, crypto)))
+          .batch(
+            work.pipe(
+              Effect.provideService(SecureRandom.SecureRandom, crypto),
+              Effect.provideService(Digest.Digest, digests),
+            ),
+          )
           .pipe(Effect.provideService(SqlBatchCommit, batch))
     ).pipe(Effect.provideService(AuthenticationClock, clockPolicy));
 

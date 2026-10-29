@@ -1,6 +1,7 @@
 import { CurrentCommitJournal, type LifecycleHooks } from "@yielded/auth/Hooks";
 import * as M from "@yielded/auth/OAuth";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 
@@ -33,10 +34,11 @@ export const makeNativeOAuthSignInServices = Effect.fnUntraced(function* (
 ): Effect.fn.Return<
   { readonly oauthSignInPersistence: M.OAuthSignInPersistence["Service"] },
   M.OAuthUnavailable,
-  SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto
+  SqlClient.SqlClient | LifecycleHooks | (SecureRandom.SecureRandom | Digest.Digest)
 > {
   const executor = yield* makeSqlCommitExecutor(unavailable);
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
+  const digests = yield* Digest.Digest;
   const state = yield* makeOAuthNativeState(tables, mapping);
 
   const flow = yield* makeOAuthNativeFlow(
@@ -92,7 +94,10 @@ export const makeNativeOAuthSignInServices = Effect.fnUntraced(function* (
             input.moduleId,
             M.snapshotOAuthSync(M.OAuthExternalIdentity, input.identity),
           ),
-        ).pipe(Effect.provideService(Crypto.Crypto, crypto)),
+        ).pipe(
+          Effect.provideService(SecureRandom.SecureRandom, crypto),
+          Effect.provideService(Digest.Digest, digests),
+        ),
       ),
     cleanup: (original, prepare) =>
       run(

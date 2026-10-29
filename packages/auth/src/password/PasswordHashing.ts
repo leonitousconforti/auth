@@ -39,6 +39,6 @@ export class PasswordHashing extends Context.Service<
     readonly dummy: (password: Redacted.Redacted<string>) => Effect.Effect<void, HashFailure>;
   }
 >()("effect-auth/PasswordHashing") {
-  /** Supply Kdf and Effect Crypto; share KdfAdmission.layer from @yielded/crypto with the KDF backend. */
+  /** Supply Kdf and Effect SecureRandom; share KdfAdmission.layer from @yielded/crypto with the KDF backend. */
   static readonly layer = (config?: PasswordHashingConfig) => Layer.effect(this, make(config));
 }

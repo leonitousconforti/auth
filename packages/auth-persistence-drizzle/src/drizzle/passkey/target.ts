@@ -11,7 +11,8 @@ import {
 } from "@yielded/auth-persistence/Adapter";
 import { LifecycleHooks } from "@yielded/auth/Hooks";
 import { PasskeyConfigurationError, PasskeyUnavailable } from "@yielded/auth/Passkey";
-import type * as Crypto from "effect/Crypto";
+import type * as Digest from "effect/crypto/Digest";
+import type * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
 
@@ -86,7 +87,7 @@ interface PasskeyMapped<M> {
   readonly base: () => Effect.Effect<
     NativePasskeyServices,
     PasskeyUnavailable,
-    Crypto.Crypto | LifecycleHooks
+    (SecureRandom.SecureRandom | Digest.Digest) | LifecycleHooks
   >;
 }
 

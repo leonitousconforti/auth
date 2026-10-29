@@ -1,5 +1,6 @@
 import { Auth, Proofs, WebCrypto } from "@yielded/auth";
-import { Crypto, Effect, FileSystem, Layer, Path, Redacted, Schema } from "effect";
+import { Effect, FileSystem, Layer, Path, Redacted, Schema } from "effect";
+import { SecureRandom } from "effect/crypto";
 import { Base64Url } from "effect/encoding";
 
 import { DataDirectory } from "./store";
@@ -18,7 +19,7 @@ export const KeysLive = Layer.unwrap(
     const directory = yield* DataDirectory;
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const crypto = yield* Crypto.Crypto;
+    const crypto = yield* SecureRandom.SecureRandom;
     const filename = path.join(directory, "keys.json");
 
     if (!(yield* fs.exists(filename))) {

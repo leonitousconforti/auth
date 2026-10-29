@@ -1,7 +1,7 @@
 import { Aead } from "@yielded/crypto/Aead";
 import { CryptoUnavailable, type OperationError } from "@yielded/crypto/Errors";
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Redacted from "effect/Redacted";
@@ -46,7 +46,7 @@ export const encrypt = Effect.fnUntraced(function* (
   plaintext: Redacted.Redacted<Uint8Array>,
   key: SecretKey,
   input: Header,
-): Effect.fn.Return<Redacted.Redacted<string>, JweError, Aead | Crypto.Crypto> {
+): Effect.fn.Return<Redacted.Redacted<string>, JweError, Aead | SecureRandom.SecureRandom> {
   const header = yield* readHeader(input);
 
   if (key.algorithm !== "dir") return yield* InvalidKey.make({});
@@ -62,15 +62,14 @@ export const encrypt = Effect.fnUntraced(function* (
   );
 
   if (protectedPart.length > 4096) return yield* InvalidToken.make({ reason: "header" });
-  const random = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
 
-  const nonce = yield* random
-    .randomBytes(12)
-    .pipe(
-      Effect.catchCause((cause) =>
-        Effect.failCause(Cause.map(cause, () => CryptoUnavailable.make({}))),
-      ),
-    );
+  const nonce = yield* random.randomBytes(12).pipe(
+    Effect.catchCauseIf(
+      (cause) => cause.reasons.length === 1 && cause.reasons.every(Cause.isDieReason),
+      () => CryptoUnavailable.make({}),
+    ),
+  );
 
   const aead = yield* Aead;
 

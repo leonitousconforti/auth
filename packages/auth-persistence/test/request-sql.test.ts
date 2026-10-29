@@ -91,6 +91,7 @@ const requestSql = Layer.effect(
   SqlClient.SqlClient,
   SqlClient.make({
     compiler: Statement.makeCompilerSqlite(),
+    driver: "@effect/sql-sqlite-node",
     spanAttributes: [],
     acquirer: Effect.gen(function* () {
       const client = yield* RequestClient;
@@ -217,6 +218,7 @@ it.live(
       // Closing each physical connection on release makes expiration deterministic.
       const reconnecting = yield* SqlClient.make({
         compiler: Statement.makeCompilerSqlite(),
+        driver: "@effect/sql-sqlite-node",
         spanAttributes: [],
         acquirer: SqliteClient.make({ filename: `${directory}/oauth.sqlite` }).pipe(
           Effect.flatMap((client) => client.reserve),

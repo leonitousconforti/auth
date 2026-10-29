@@ -1,6 +1,7 @@
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -188,7 +189,8 @@ export const makeOAuthRegistration = <
       const authority = yield* RegistrationAuthority;
       const { read, inspect, cleanup } = authority;
       const { before } = yield* LifecycleHooks;
-      const crypto = yield* Crypto.Crypto;
+      const crypto = yield* SecureRandom.SecureRandom;
+      const digests = yield* Digest.Digest;
       const { randomBytes } = crypto;
 
       const services = (yield* Effect.context<
@@ -406,7 +408,8 @@ export const makeOAuthRegistration = <
 
             return Object.freeze({ commit });
           },
-          Effect.provideService(Crypto.Crypto, crypto),
+          Effect.provideService(SecureRandom.SecureRandom, crypto),
+          Effect.provideService(Digest.Digest, digests),
           registrationBoundary,
         ),
         cleanup: Effect.fn("OAuthRegistration.cleanup")(function* (limit) {

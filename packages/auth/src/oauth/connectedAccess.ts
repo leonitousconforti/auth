@@ -1,6 +1,6 @@
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -282,7 +282,7 @@ export const makeOAuthConnectedAccess = <const Id extends string>(
 
       const { refreshGrant } = yield* OAuthConnectedProtocol;
       const { seal, open } = yield* OAuthConnectedTokenProtector;
-      const { randomBytes } = yield* Crypto.Crypto;
+      const { randomBytes } = yield* SecureRandom.SecureRandom;
 
       const random = Effect.fn("OAuthConnectedAccess.random")(function* () {
         const bytes = yield* randomBytes(32).pipe(

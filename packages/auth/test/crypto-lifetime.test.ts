@@ -8,7 +8,7 @@ import { Kdf } from "@yielded/crypto/Kdf";
 import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import * as Portable from "@yielded/crypto/Portable";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -32,7 +32,7 @@ const runtime = Layer.merge(
 // ordinary round-trip fixtures cannot force teardown during entropy acquisition.
 it.effect("protector scope closure cancels and joins an active seal before wiping its keys", () =>
   Effect.gen(function* () {
-    const crypto = yield* Crypto.Crypto;
+    const crypto = yield* SecureRandom.SecureRandom;
     const aead = yield* Aead;
     const entered = yield* Deferred.make<void>();
     const finish = yield* Deferred.make<void>();
@@ -47,7 +47,7 @@ it.effect("protector scope closure cancels and joins an active seal before wipin
         keys: [{ id: "key1", material: Redacted.make(fixtures.oauth.key) }],
       }).pipe(
         Layer.provide(
-          Layer.succeed(Crypto.Crypto, {
+          Layer.succeed(SecureRandom.SecureRandom, {
             ...crypto,
             randomBytes: (size) =>
               Deferred.succeed(entered, undefined).pipe(

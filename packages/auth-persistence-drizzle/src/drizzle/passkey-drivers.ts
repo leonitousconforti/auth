@@ -2,7 +2,8 @@ import type { LifecycleHooks } from "@yielded/auth/Hooks";
 import { PasskeyPersistence } from "@yielded/auth/Passkey";
 import type { Table } from "drizzle-orm";
 import * as Context from "effect/Context";
-import type * as Crypto from "effect/Crypto";
+import type * as Digest from "effect/crypto/Digest";
+import type * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 
 import type { D1BatchStatements } from "./D1BatchStatements";
@@ -71,7 +72,7 @@ export const makePasskeyTarget = <
     A,
     PasskeyCoordinatorError<E> | DatabaseError,
     | Exclude<R, PasskeyPersistence | Provided>
-    | Crypto.Crypto
+    | (SecureRandom.SecureRandom | Digest.Digest)
     | LifecycleHooks
     | DatabaseRequirements
     | RSetup
@@ -109,7 +110,7 @@ export const makePasskeyTarget = <
     A,
     PasskeyCoordinatorError<E> | DatabaseError,
     | Exclude<R, PasskeyPersistence | TxId | Provided>
-    | Crypto.Crypto
+    | (SecureRandom.SecureRandom | Digest.Digest)
     | LifecycleHooks
     | DatabaseRequirements
     | RSetup
@@ -142,7 +143,11 @@ export const makePasskeyTarget = <
   ): Effect.Effect<
     A,
     PasskeyCoordinatorError<E> | DatabaseError,
-    Exclude<R, PasskeyPersistence> | Crypto.Crypto | LifecycleHooks | DatabaseRequirements | RSetup
+    | Exclude<R, PasskeyPersistence>
+    | (SecureRandom.SecureRandom | Digest.Digest)
+    | LifecycleHooks
+    | DatabaseRequirements
+    | RSetup
   > {
     return Effect.flatMap(nativeDatabase(acquire), (database) =>
       coordinateTargetPasskey(
@@ -183,7 +188,7 @@ export const makePasskeyTarget = <
     A,
     PasskeyCoordinatorError<E> | DatabaseError,
     | Exclude<R, PasskeyPersistence | Provided>
-    | Crypto.Crypto
+    | (SecureRandom.SecureRandom | Digest.Digest)
     | LifecycleHooks
     | DatabaseRequirements
     | RSetup
@@ -217,7 +222,7 @@ export const makePasskeyTarget = <
     A,
     PasskeyCoordinatorError<E> | DatabaseError,
     | Exclude<R, PasskeyPersistence | TxId | Provided>
-    | Crypto.Crypto
+    | (SecureRandom.SecureRandom | Digest.Digest)
     | LifecycleHooks
     | DatabaseRequirements
     | RSetup
@@ -246,7 +251,11 @@ export const makePasskeyTarget = <
   ): Effect.Effect<
     A,
     PasskeyCoordinatorError<E> | DatabaseError,
-    Exclude<R, PasskeyPersistence> | Crypto.Crypto | LifecycleHooks | DatabaseRequirements | RSetup
+    | Exclude<R, PasskeyPersistence>
+    | (SecureRandom.SecureRandom | Digest.Digest)
+    | LifecycleHooks
+    | DatabaseRequirements
+    | RSetup
   > {
     return Effect.flatMap(nativeDatabase(acquire), (database) =>
       coordinateTargetPasskeyRegistration(

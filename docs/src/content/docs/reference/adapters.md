@@ -24,7 +24,7 @@ password and session persistence in tests. See the
 - **`auth`**: One sign-in-only `Password.make()` strategy and `Sessions.stateful()`. Other configurations fail acquisition with `PersistenceConfigurationError`.
 - **`subjects`**: Each seed has `subjectId`, `email`, a redacted `password`, and optional `active` (default `true`). Duplicate IDs or normalized emails fail acquisition. Emails remain unverified.
 - **`requirement`**: Required application `AuthenticationRequirement`; no test default.
-- **`PasswordHashing`**: Required Layer dependency. Hashes seed passwords without text normalization. `Testing.services()` supplies this and Effect `Crypto`; claims remain application-owned.
+- **`PasswordHashing`**: Required Layer dependency. Hashes seed passwords without text normalization. `Testing.services()` supplies this plus Effect `SecureRandom` and `Digest`; claims remain application-owned.
 - **Clock**: Uses the caller's clock. Effect's `TestClock` controls expiry.
 
 Supported session operations are issuance, verification, renewal, listing,
@@ -40,7 +40,7 @@ production adapter to verify database concurrency or recovery.
 
 ### Test services
 
-`Testing.services(options?)` supplies Effect `Crypto` and `PasswordHashing` with
+`Testing.services(options?)` supplies `PasswordHashing` plus Effect `SecureRandom` and `Digest`, using
 portable Argon2id at the default password cost. Provide it to both Auth and
 `Testing.layer`.
 
@@ -208,7 +208,7 @@ policy does not count OAuth as a remaining sign-in method; use an
 ### Managed D1
 
 Import `AuthPersistence` from `@yielded/auth-persistence-drizzle/D1` and supply
-`D1Client.layer({ db: env.DB })`, Effect `Crypto`, and `PasskeyConfig` when using
+`D1Client.layer({ db: env.DB })`, Effect `SecureRandom` and `Digest`, and `PasskeyConfig` when using
 passkeys. Use the original D1 database binding, not a
 [D1 read-replica session](https://developers.cloudflare.com/d1/best-practices/read-replication/).
 The same composed API uses atomic batches rather than interactive transactions;
@@ -224,7 +224,7 @@ const MigrationsLive = AuthPersistence.migrationsLayer({
 ```
 
 Each key is the generated migration directory name; each value is SQL text including
-Drizzle's statement breakpoints. Supply `D1Client` and Effect `Crypto` to this Layer.
+Drizzle's statement breakpoints. Supply `D1Client` and Effect `Digest` to this Layer.
 It needs no filesystem. Run one migration owner at a time.
 
 ## Connect password storage
@@ -255,9 +255,9 @@ export const PasswordPersistenceLive = Layer.effect(
 ```
 
 `passwordMapping` is a `PasswordPersistenceMapping` from
-`@yielded/auth-persistence-drizzle`. Supply `LifecycleHooks`, Effect `Crypto`, and
+`@yielded/auth-persistence-drizzle`. Supply `LifecycleHooks`, Effect `SecureRandom` and `Digest`, and
 your account/session Layers at the composition root. Driver factories and
-coordinators need `Database` and `Crypto` at acquisition; provide crypto to both
+coordinators need `Database`, `SecureRandom`, and `Digest` at acquisition; provide crypto to both
 persistence and Auth.
 
 A replacement `PasswordPersistence.findCredential` returns an optional coherent
@@ -345,7 +345,7 @@ for poolers that cannot retain prepared statements.
 
 Adapter authors can supply typed mappings or implement `NativeSqlTables` through
 `@yielded/auth-persistence/Adapter`. `yield* makeStorageMappings(storage)` from that
-module supplies shared row codecs for explicit mappings and requires Effect `Crypto`.
+module supplies shared row codecs for explicit mappings and requires Effect `SecureRandom`.
 Include every role table the requested mappings use.
 
 ## SQL session verification

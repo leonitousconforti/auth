@@ -1,6 +1,6 @@
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -152,7 +152,7 @@ export const makePasskeyManagement = <
         ceremonies = yield* PasskeyPersistence,
         actions = yield* PasskeyActionEvidence,
         strategy = yield* sessions.SessionStrategy,
-        crypto = yield* Crypto.Crypto,
+        digests = yield* Digest.Digest,
         hooks = yield* LifecycleHooks;
 
       const invalidation = sessionInvalidationWindow(
@@ -168,7 +168,9 @@ export const makePasskeyManagement = <
         Schema.encodeEffect(Schema.fromJsonString(Schema.toCodecJson(Schema.toType(schema))))(
           value,
         ).pipe(
-          Effect.flatMap((encoded) => crypto.digest("SHA-256", new TextEncoder().encode(encoded))),
+          Effect.flatMap((encoded) =>
+            digests.digest(Digest.sha256, new TextEncoder().encode(encoded)),
+          ),
           Effect.map((bytes) => TokenDigest.make(Base64Url.encode(bytes))),
           Effect.catchCause((cause) =>
             Effect.failCause(Cause.map(cause, () => PasskeyUnavailable.make({}))),

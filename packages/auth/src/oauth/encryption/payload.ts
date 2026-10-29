@@ -1,6 +1,6 @@
 import { Aead } from "@yielded/crypto/Aead";
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Redacted from "effect/Redacted";
@@ -110,7 +110,7 @@ export const payloadEncryption = <C, P, S extends Envelope>(
 
   return Effect.gen(function* () {
     const configuration = yield* Effect.fromResult(captured);
-    const crypto = yield* Crypto.Crypto;
+    const crypto = yield* SecureRandom.SecureRandom;
     const aead = yield* Aead;
     const runOwned = yield* makeScopedOperation(fail);
 

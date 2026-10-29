@@ -9,7 +9,8 @@ import {
 import type { Table } from "drizzle-orm";
 import * as Cause from "effect/Cause";
 import type * as Context from "effect/Context";
-import type * as Crypto from "effect/Crypto";
+import type * as Digest from "effect/crypto/Digest";
+import type * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -89,7 +90,11 @@ export const makeTotpTarget = <DatabaseId, D extends NativeDriverDatabase>(
   ): Effect.Effect<
     A,
     E | DE | TotpUnavailable | TotpConfigurationError | PersistenceMappingError,
-    Exclude<R, TotpPersistence | D1BatchStatements> | DR | RS | LifecycleHooks | Crypto.Crypto
+    | Exclude<R, TotpPersistence | D1BatchStatements>
+    | DR
+    | RS
+    | LifecycleHooks
+    | (SecureRandom.SecureRandom | Digest.Digest)
   >;
   function coordinateTotpPersistence<
     DB extends D,
@@ -120,7 +125,7 @@ export const makeTotpTarget = <DatabaseId, D extends NativeDriverDatabase>(
     | DR
     | RS
     | LifecycleHooks
-    | Crypto.Crypto
+    | (SecureRandom.SecureRandom | Digest.Digest)
   >;
   function coordinateTotpPersistence<
     DB extends D,

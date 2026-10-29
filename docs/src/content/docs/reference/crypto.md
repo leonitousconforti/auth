@@ -6,8 +6,7 @@ description: Compose independent Effect crypto services with explicit runtime ba
 `@yielded/crypto` provides byte operations independently of Auth, with Effect as its
 only runtime package dependency. Its services own
 cryptographic execution; your application owns keys, nonce uniqueness, password
-policy, trusted algorithms and envelope formats. Use Effect `Crypto` for entropy
-and SHA digests. Auth directly supplies the domain services for
+policy, trusted algorithms and envelope formats. Use Effect `SecureRandom` for entropy and `Digest` for SHA digests. Auth directly supplies the domain services for
 [passwords](../guide/passwords.md), [TOTP](../guide/totp.mdx) and
 [OAuth](../guide/oauth.mdx).
 
@@ -24,7 +23,8 @@ admission Layer across backend instances so they share the same resource budget.
 import { NodeCrypto as PlatformCrypto } from "@effect/platform-node";
 import { Aead, KdfAdmission } from "@yielded/crypto";
 import * as NodeCrypto from "@yielded/crypto/platform-node";
-import { Crypto, Effect, Layer, Redacted } from "effect";
+import { Effect, Layer, Redacted } from "effect";
+import { SecureRandom } from "effect/crypto";
 
 const Admission = KdfAdmission.layer({ concurrency: 1, maxQueued: 16 });
 const Cryptography = Layer.merge(
@@ -36,7 +36,7 @@ const Cryptography = Layer.merge(
 declare const key: Redacted.Redacted<Uint8Array>;
 
 const protect = Effect.gen(function* () {
-  const random = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const aead = yield* Aead.Aead;
   const nonce = yield* random.randomBytes(12);
   const ciphertext = yield* aead.encrypt({
@@ -74,7 +74,7 @@ PBKDF2 uses the supplied WebCrypto and remains subject to the host's iteration
 limit, which can be lower than the library's configured ceiling. Stored PBKDF2
 credentials require a host that accepts their iteration counts.
 
-For sessions and proofs, `WebCrypto.layerWebCrypto` supplies Effect `Crypto` and
+For sessions and proofs, `WebCrypto.layerWebCrypto` supplies Effect `SecureRandom`, `Digest`, and
 `Hmac` from the runtime's global WebCrypto. Its components are `layerCryptoWeb`
 (entropy and SHA digests) and `layerHmacWeb`. To supply HMAC from an explicit host
 capability, use `layerHmac(subtle)`. These focused Layers need no `KdfAdmission`.
@@ -152,13 +152,13 @@ Build provider and protector Layers in the application's owning scope.
 Sessions and numeric proofs use `Hmac` for their imported keys. Auth owns keyring
 validation, key IDs, and credential formats; crypto owns native key handling.
 Auth requires explicitly selected runtime services and does not detect a backend.
-Stateful sessions require Effect `Crypto`; signed sessions and numeric proofs also require `Hmac`.
+Stateful sessions require Effect `SecureRandom` and `Digest`; signed sessions and numeric proofs also require `Hmac`.
 `@yielded/auth/WebCrypto` also exports `layerCryptoWeb` and `layerWebCrypto`.
 Direct callers of
 `Sessions.makeSessionSigningCodec` and numeric `Proofs.makeProofCrypto` must keep
 their construction Scope open while using the returned operations; Auth Layers
 own this scope automatically. Token-only proof construction needs Effect
-`Crypto` without `Hmac` or `Scope`.
+`SecureRandom` and `Digest` without `Hmac` or `Scope`.
 
 Use the same `KdfAdmission` Layer instance for the backend and password operations
 so their nested work shares a permit. Auth preserves its

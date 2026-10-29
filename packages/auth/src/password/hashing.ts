@@ -2,7 +2,7 @@ import type { KdfBusy } from "@yielded/crypto/Errors";
 import { Kdf } from "@yielded/crypto/Kdf";
 import { KdfAdmission } from "@yielded/crypto/KdfAdmission";
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
@@ -50,7 +50,7 @@ export const make = (input: PasswordHashingConfig = defaultPasswordHashingConfig
     const config = yield* validatePasswordHashingConfig(snapshot);
     const admission = yield* KdfAdmission;
     const kdf = yield* Kdf;
-    const crypto = yield* Crypto.Crypto;
+    const crypto = yield* SecureRandom.SecureRandom;
 
     const passwordBytes = Effect.fn("PasswordHashing.passwordBytes")(function* (
       password: Redacted.Redacted<string>,

@@ -7,7 +7,8 @@ import {
 } from "@yielded/auth/PhoneOtp";
 import type { Table } from "drizzle-orm";
 import type * as Context from "effect/Context";
-import type * as Crypto from "effect/Crypto";
+import type * as Digest from "effect/crypto/Digest";
+import type * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 
 import type { NativeDriverDatabase, NativeDriverTransaction } from "./driver-types";
@@ -49,7 +50,10 @@ export const makePhoneTarget = <DatabaseId, D extends NativeDriverDatabase>(
   ): Effect.Effect<
     A,
     E | DE | PhoneOtpUnavailable | PhoneConfigurationError,
-    Exclude<R, PhonePersistence | PhoneSignInTargets> | DR | LifecycleHooks | Crypto.Crypto
+    | Exclude<R, PhonePersistence | PhoneSignInTargets>
+    | DR
+    | LifecycleHooks
+    | (SecureRandom.SecureRandom | Digest.Digest)
   >;
   function coordinatePhonePersistence<
     Database extends D,
@@ -79,7 +83,10 @@ export const makePhoneTarget = <DatabaseId, D extends NativeDriverDatabase>(
   ): Effect.Effect<
     A,
     E | DE | PhoneOtpUnavailable | PhoneConfigurationError,
-    Exclude<R, PhonePersistence | PhoneSignInTargets | TxId> | DR | LifecycleHooks | Crypto.Crypto
+    | Exclude<R, PhonePersistence | PhoneSignInTargets | TxId>
+    | DR
+    | LifecycleHooks
+    | (SecureRandom.SecureRandom | Digest.Digest)
   >;
   function coordinatePhonePersistence<
     Database extends D,

@@ -1,7 +1,8 @@
 import { Hmac, type Key } from "@yielded/crypto/Hmac";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Layer from "effect/Layer";
@@ -81,7 +82,8 @@ const sessionDiagnostics =
     );
 
 export const makeSessionSecrets = Effect.fn("makeSessionSecrets")(function* (moduleId: string) {
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
+  const digests = yield* Digest.Digest;
 
   return {
     generate: Effect.fn("SessionSecrets.generate")(function* () {
@@ -109,7 +111,7 @@ export const makeSessionSecrets = Effect.fn("makeSessionSecrets")(function* (mod
         secret: Redacted.value(token),
       }).pipe(Effect.orDie);
 
-      const digest = yield* crypto.digest("SHA-256", textEncoder.encode(message)).pipe(
+      const digest = yield* digests.digest(Digest.sha256, textEncoder.encode(message)).pipe(
         sessionDiagnostics("session-crypto"),
         Effect.catchCause((cause) =>
           Effect.failCause(Cause.map(cause, () => SessionUnavailable.make({}))),

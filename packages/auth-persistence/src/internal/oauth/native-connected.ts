@@ -1,6 +1,7 @@
 import type { LifecycleHooks, CommitJournal, PreparedCommit } from "@yielded/auth/Hooks";
 import * as M from "@yielded/auth/OAuth";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Option from "effect/Option";
@@ -37,11 +38,12 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
 ): Effect.fn.Return<
   { readonly oauthConnectedPersistence: M.OAuthConnectedPersistence["Service"] },
   M.OAuthUnavailable,
-  SqlClient.SqlClient | LifecycleHooks | Crypto.Crypto
+  SqlClient.SqlClient | LifecycleHooks | (SecureRandom.SecureRandom | Digest.Digest)
 > {
   const conditionalInsert = yield* makeConditionalSqlInsert();
   const executor = yield* makeSqlCommitExecutor(unavailable);
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
+  const digests = yield* Digest.Digest;
   const external = yield* Effect.serviceOption(CurrentSqlCommit);
   const planned = batch !== undefined && Option.isSome(external);
   const state = yield* makeOAuthNativeConnectedState(tables, mapping, batch !== undefined);
@@ -63,7 +65,9 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
     effect: Effect.Effect<A, E, R>,
     mode: "transaction" | "statement" = "transaction",
   ) => {
-    const work = Effect.provideService(effect, Crypto.Crypto, crypto);
+    const work = Effect.provideService(effect, SecureRandom.SecureRandom, crypto).pipe(
+      Effect.provideService(Digest.Digest, digests),
+    );
 
     return batch === undefined
       ? executor.run(work, mode)
@@ -76,7 +80,12 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
   ) =>
     planned
       ? run(effect)
-      : executor.run(Effect.provideService(effect, Crypto.Crypto, crypto), mode);
+      : executor.run(
+          Effect.provideService(effect, SecureRandom.SecureRandom, crypto).pipe(
+            Effect.provideService(Digest.Digest, digests),
+          ),
+          mode,
+        );
 
   const refreshMiss = Effect.fnUntraced(function* <A>(
     key: M.OAuthConnectedGrantKey,
@@ -108,7 +117,11 @@ export const makeNativeOAuthConnectedServices = Effect.fnUntraced(function* (
   });
 
   const read = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-    executor.read(Effect.provideService(effect, Crypto.Crypto, crypto));
+    executor.read(
+      Effect.provideService(effect, SecureRandom.SecureRandom, crypto).pipe(
+        Effect.provideService(Digest.Digest, digests),
+      ),
+    );
 
   const sameConfiguration = (
     left: M.OAuthConnectedConfiguration,

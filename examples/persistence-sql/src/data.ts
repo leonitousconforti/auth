@@ -1,7 +1,8 @@
 import * as PgliteClient from "@effect/sql-pglite/PgliteClient";
 import * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient";
 import { Auth, Proofs, WebCrypto } from "@yielded/auth";
-import { Config, Context, Crypto, Effect, FileSystem, Layer, Path, Redacted, Schema } from "effect";
+import { Config, Context, Effect, FileSystem, Layer, Path, Redacted, Schema } from "effect";
+import { SecureRandom } from "effect/crypto";
 import { Base64Url } from "effect/encoding";
 import { type SqlClient, type SqlError } from "effect/sql";
 
@@ -59,7 +60,7 @@ export const KeysLive = Layer.unwrap(
     const directory = yield* AppData;
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const crypto = yield* Crypto.Crypto;
+    const crypto = yield* SecureRandom.SecureRandom;
     const filename = path.join(directory, "keys.json");
 
     if (!(yield* fs.exists(filename))) {

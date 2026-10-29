@@ -1,6 +1,6 @@
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -81,7 +81,7 @@ export const makeOAuthConnectedMaintenance = <const Id extends string>(
       const revocations = yield* Effect.serviceOption(OAuthConnectedRevocations);
       const { revokeGrant } = yield* OAuthConnectedProtocol;
       const { open } = yield* OAuthConnectedTokenProtector;
-      const { randomBytes } = yield* Crypto.Crypto;
+      const { randomBytes } = yield* SecureRandom.SecureRandom;
 
       const cleanup = Effect.fn("OAuthConnectedMaintenance.cleanup")(function* (
         invocation: AuthInvocation,

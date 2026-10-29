@@ -3,7 +3,7 @@
 Direct Effect SQL persistence and shared storage contracts for `@yielded/auth`.
 
 Import the named `AuthPersistence` facade and provide an explicit Effect SQL client
-and Effect `Crypto` to its Layer. Managed storage requires a stable `prefix`; use
+and Effect `SecureRandom` and `Digest` to its Layer. Managed storage requires a stable `prefix`; use
 the existing table prefix when connecting an existing database.
 Drizzle integrations live in `@yielded/auth-persistence-drizzle`; this package has
 no Drizzle dependency or exports. Core workflows and replaceable service contracts
@@ -11,7 +11,7 @@ remain in `@yielded/auth`.
 
 `OAuthPersistence` supplies upstream provider sign-in, registration, login linking and
 unlinking, and retained grants through explicit table mappings on PostgreSQL and
-SQLite with interactive transactions. Provide `SqlClient`, Effect `Crypto`, and
+SQLite with interactive transactions. Provide `SqlClient`, Effect `SecureRandom` and `Digest`, and
 lifecycle hooks; applications own subjects, policies, keys, and migrations. See the
 [OAuth adapter reference](../../docs/src/content/docs/reference/adapters.md#oauth)
 and [runnable Effect SQL consumer](../../examples/persistence-sql).

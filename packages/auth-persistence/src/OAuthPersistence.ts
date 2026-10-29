@@ -13,7 +13,8 @@ import {
 import { reportAuthDiagnostic, reportPersistenceFailure } from "@yielded/auth/Persistence";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import type * as Crypto from "effect/Crypto";
+import type * as Digest from "effect/crypto/Digest";
+import type * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
@@ -110,18 +111,22 @@ const makeLazyServices = Effect.fnUntraced(function* <M, A>(
   make: (
     tables: ReturnType<typeof makeNativeSqlTables>,
     mapping: M,
-  ) => Effect.Effect<A, OAuthUnavailable, Crypto.Crypto | LifecycleHooks | SqlClient.SqlClient>,
+  ) => Effect.Effect<
+    A,
+    OAuthUnavailable,
+    (SecureRandom.SecureRandom | Digest.Digest) | LifecycleHooks | SqlClient.SqlClient
+  >,
 ): Effect.fn.Return<
   Effect.Effect<A, OAuthUnavailable>,
   PersistenceConfigurationError,
-  Crypto.Crypto | LifecycleHooks | SqlClient.SqlClient
+  (SecureRandom.SecureRandom | Digest.Digest) | LifecycleHooks | SqlClient.SqlClient
 > {
   const { client, tables } = yield* acquire;
   const mapping = captureOAuthMapping(original);
 
   // Preserve explicit ownership, but never retain the construction transaction's connection.
   const captured = yield* Effect.context<
-    Crypto.Crypto | LifecycleHooks | SqlClient.SqlClient
+    (SecureRandom.SecureRandom | Digest.Digest) | LifecycleHooks | SqlClient.SqlClient
   >().pipe(Effect.map(Context.omit(client.transactionService)));
 
   const executor = yield* makeSqlCommitExecutor(() => OAuthUnavailable.make({}));
@@ -174,7 +179,7 @@ export const makeOAuthSignInServices = Effect.fnUntraced(function* <N>(
 ): Effect.fn.Return<
   { readonly oauthSignInPersistence: OAuthSignInPersistence["Service"] },
   OAuthUnavailable | PersistenceConfigurationError,
-  Crypto.Crypto | LifecycleHooks | SqlClient.SqlClient
+  (SecureRandom.SecureRandom | Digest.Digest) | LifecycleHooks | SqlClient.SqlClient
 > {
   const services = yield* makeLazyServices(mapping, (tables, value) =>
     makeNativeOAuthSignInServices(tables, value as unknown as OAuthNativeReadMapping),
@@ -199,7 +204,10 @@ export const coordinateOAuthSignIn = <N, A, E, R>(
 ): Effect.Effect<
   A,
   E | OAuthUnavailable | PersistenceConfigurationError,
-  Exclude<R, OAuthSignInPersistence> | Crypto.Crypto | LifecycleHooks | SqlClient.SqlClient
+  | Exclude<R, OAuthSignInPersistence>
+  | (SecureRandom.SecureRandom | Digest.Digest)
+  | LifecycleHooks
+  | SqlClient.SqlClient
 > =>
   coordinate(makeOAuthSignInServices(options.mapping), (services) =>
     Effect.provideService(body, OAuthSignInPersistence, services.oauthSignInPersistence),
@@ -210,7 +218,7 @@ export const makeOAuthAccountsServices = Effect.fnUntraced(function* <N>(
 ): Effect.fn.Return<
   { readonly oauthAccountsPersistence: OAuthAccountsPersistence["Service"] },
   OAuthUnavailable | PersistenceConfigurationError,
-  Crypto.Crypto | LifecycleHooks | SqlClient.SqlClient
+  (SecureRandom.SecureRandom | Digest.Digest) | LifecycleHooks | SqlClient.SqlClient
 > {
   const services = yield* makeLazyServices(mapping, (tables, value) =>
     makeNativeOAuthAccountsServices(tables, value as unknown as OAuthNativeAccountsMapping),
@@ -243,7 +251,10 @@ export const coordinateOAuthAccounts = <N, A, E, R>(
 ): Effect.Effect<
   A,
   E | OAuthUnavailable | PersistenceConfigurationError,
-  Exclude<R, OAuthAccountsPersistence> | Crypto.Crypto | LifecycleHooks | SqlClient.SqlClient
+  | Exclude<R, OAuthAccountsPersistence>
+  | (SecureRandom.SecureRandom | Digest.Digest)
+  | LifecycleHooks
+  | SqlClient.SqlClient
 > =>
   coordinate(makeOAuthAccountsServices(options.mapping), (services) =>
     Effect.provideService(body, OAuthAccountsPersistence, services.oauthAccountsPersistence),
@@ -254,7 +265,7 @@ export const makeOAuthRegistrationIntentServices = Effect.fnUntraced(function* <
 ): Effect.fn.Return<
   { readonly oauthRegistrationIntents: OAuthRegistrationIntents["Service"] },
   OAuthUnavailable | PersistenceConfigurationError,
-  Crypto.Crypto | LifecycleHooks | SqlClient.SqlClient
+  (SecureRandom.SecureRandom | Digest.Digest) | LifecycleHooks | SqlClient.SqlClient
 > {
   const services = yield* makeLazyServices(mapping, (tables, value) =>
     makeNativeOAuthRegistrationIntentServices(
@@ -277,7 +288,10 @@ export const coordinateOAuthRegistrationIntents = <N, A, E, R>(
 ): Effect.Effect<
   A,
   E | OAuthUnavailable | PersistenceConfigurationError,
-  Exclude<R, OAuthRegistrationIntents> | Crypto.Crypto | LifecycleHooks | SqlClient.SqlClient
+  | Exclude<R, OAuthRegistrationIntents>
+  | (SecureRandom.SecureRandom | Digest.Digest)
+  | LifecycleHooks
+  | SqlClient.SqlClient
 > =>
   coordinate(makeOAuthRegistrationIntentServices(options.mapping), (services) =>
     Effect.provideService(body, OAuthRegistrationIntents, services.oauthRegistrationIntents),
@@ -288,7 +302,7 @@ export const makeOAuthConnectedServices = Effect.fnUntraced(function* <N>(
 ): Effect.fn.Return<
   { readonly oauthConnectedPersistence: OAuthConnectedPersistence["Service"] },
   OAuthUnavailable | PersistenceConfigurationError,
-  Crypto.Crypto | LifecycleHooks | SqlClient.SqlClient
+  (SecureRandom.SecureRandom | Digest.Digest) | LifecycleHooks | SqlClient.SqlClient
 > {
   const services = yield* makeLazyServices(mapping, (tables, value) =>
     makeNativeOAuthConnectedServices(tables, value as unknown as OAuthNativeConnectedMapping),
@@ -322,7 +336,10 @@ export const coordinateOAuthConnected = <N, A, E, R>(
 ): Effect.Effect<
   A,
   E | OAuthUnavailable | PersistenceConfigurationError,
-  Exclude<R, OAuthConnectedPersistence> | Crypto.Crypto | LifecycleHooks | SqlClient.SqlClient
+  | Exclude<R, OAuthConnectedPersistence>
+  | (SecureRandom.SecureRandom | Digest.Digest)
+  | LifecycleHooks
+  | SqlClient.SqlClient
 > =>
   coordinate(makeOAuthConnectedServices(options.mapping), (services) =>
     Effect.provideService(body, OAuthConnectedPersistence, services.oauthConnectedPersistence),
@@ -333,7 +350,7 @@ export const makeOAuthConnectedRevocationServices = Effect.fnUntraced(function* 
 ): Effect.fn.Return<
   { readonly oauthConnectedRevocations: OAuthConnectedRevocations["Service"] },
   OAuthUnavailable | PersistenceConfigurationError,
-  Crypto.Crypto | LifecycleHooks | SqlClient.SqlClient
+  (SecureRandom.SecureRandom | Digest.Digest) | LifecycleHooks | SqlClient.SqlClient
 > {
   const services = yield* makeLazyServices(mapping, (tables, value) =>
     makeNativeOAuthRevocationServices(tables, value as unknown as OAuthNativeRevocationMapping),
@@ -355,7 +372,10 @@ export const coordinateOAuthConnectedRevocations = <N, A, E, R>(
 ): Effect.Effect<
   A,
   E | OAuthUnavailable | PersistenceConfigurationError,
-  Exclude<R, OAuthConnectedRevocations> | Crypto.Crypto | LifecycleHooks | SqlClient.SqlClient
+  | Exclude<R, OAuthConnectedRevocations>
+  | (SecureRandom.SecureRandom | Digest.Digest)
+  | LifecycleHooks
+  | SqlClient.SqlClient
 > =>
   coordinate(makeOAuthConnectedRevocationServices(options.mapping), (services) =>
     Effect.provideService(body, OAuthConnectedRevocations, services.oauthConnectedRevocations),
@@ -366,7 +386,7 @@ export const makeOAuthRegistrationServices = Effect.fnUntraced(function* <Regist
 ): Effect.fn.Return<
   { readonly registrationAuthority: OAuthRegistrationAuthority<Registration> },
   OAuthUnavailable | PersistenceConfigurationError,
-  Crypto.Crypto | LifecycleHooks | SqlClient.SqlClient
+  (SecureRandom.SecureRandom | Digest.Digest) | LifecycleHooks | SqlClient.SqlClient
 > {
   const services = yield* makeLazyServices(mapping, (tables, value) =>
     makeNativeOAuthRegistrationServices(
@@ -405,7 +425,10 @@ export const coordinateOAuthRegistration = <Id, Registration, N, A, E, R>(
 ): Effect.Effect<
   A,
   E | OAuthUnavailable | PersistenceConfigurationError,
-  Exclude<R, Id> | Crypto.Crypto | LifecycleHooks | SqlClient.SqlClient
+  | Exclude<R, Id>
+  | (SecureRandom.SecureRandom | Digest.Digest)
+  | LifecycleHooks
+  | SqlClient.SqlClient
 > =>
   coordinate(makeOAuthRegistrationServices(options.mapping), (services) =>
     Effect.provideService(body, options.target, services.registrationAuthority),

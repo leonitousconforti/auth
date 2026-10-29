@@ -6,7 +6,7 @@ import {
   snapshotOAuth,
 } from "@yielded/auth/OAuth";
 import type { AuthenticationRequirement } from "@yielded/auth/Sessions";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Schema from "effect/Schema";
@@ -54,7 +54,7 @@ export const captureOAuthMapping = <A>(input: A): A => {
 };
 
 /** Stable persisted identity key for an exact provider/issuer/subject tuple.
- * Requires Crypto for SHA-256. The module is deliberately excluded: ownership is
+ * Requires Digest for SHA-256. The module is deliberately excluded: ownership is
  * shared across modules. Reject ill-formed UTF-16 rather than alias identities. */
 export const oauthIdentityKey = Effect.fnUntraced(function* (
   input: typeof OAuthExternalIdentity.Type,
@@ -88,9 +88,9 @@ export const oauthIdentityKey = Effect.fnUntraced(function* (
     offset += 4 + value.length;
   }
 
-  const crypto = yield* Crypto.Crypto;
+  const digests = yield* Digest.Digest;
 
-  return "v1:" + Base64Url.encode(yield* crypto.digest("SHA-256", packed));
+  return "v1:" + Base64Url.encode(yield* digests.digest(Digest.sha256, packed));
 });
 
 export const sameIdentity = (

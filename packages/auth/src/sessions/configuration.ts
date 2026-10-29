@@ -1,6 +1,7 @@
 import type { Hmac } from "@yielded/crypto/Hmac";
 import * as Context from "effect/Context";
-import type * as Crypto from "effect/Crypto";
+import type * as Digest from "effect/crypto/Digest";
+import type * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -108,7 +109,7 @@ export const stateAssisted = (options: SessionOptions = {}): StateAssistedConfig
   Object.freeze({ mode: "state-assisted", policy: policy(options, true) });
 
 export type SessionRequirements<C, Id extends string, Claims extends Schema.Top> =
-  | Crypto.Crypto
+  | (SecureRandom.SecureRandom | Digest.Digest)
   | (C extends StatefulConfiguration<infer CacheFor>
       ? Exclude<CacheFor, undefined> extends never
         ? never

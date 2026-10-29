@@ -1,10 +1,11 @@
 import { pathToFileURL } from "node:url";
 
-import { NodeHttpClient, NodeServices } from "@effect/platform-node";
+import { NodeCrypto, NodeHttpClient, NodeServices } from "@effect/platform-node";
 import { BrowserLogin } from "@yielded/auth";
 import { BrowserLogin as ElectronLogin } from "@yielded/auth-electron";
 import { reportAuthFailure } from "@yielded/auth/Persistence";
-import { Cause, Crypto, Effect, Exit, Fiber, Layer, Path, Schema, Scope } from "effect";
+import { Cause, Effect, Exit, Fiber, Layer, Path, Schema, Scope } from "effect";
+import * as Digest from "effect/crypto/Digest";
 import { Hex } from "effect/encoding";
 import { app, BrowserWindow, dialog, ipcMain, net, protocol } from "electron";
 
@@ -38,11 +39,11 @@ const launch = Effect.fnUntraced(function* (config: Effect.Success<typeof startu
   const { join } = yield* Path.Path;
   const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
 
-  const crypto = yield* Crypto.Crypto;
+  const digests = yield* Digest.Digest;
 
   const vaultNamespace = Hex.encode(
-    yield* crypto.digest(
-      "SHA-256",
+    yield* digests.digest(
+      Digest.sha256,
       new TextEncoder().encode(
         `electron\n${new URL(config.hostedUrl).origin}\ndev.yielded.auth://callback`,
       ),
@@ -175,7 +176,7 @@ else {
 
   void Effect.runPromise(
     program.pipe(
-      Effect.provide(NodeServices.layer),
+      Effect.provide([NodeServices.layer, NodeCrypto.layerSecureRandom, NodeCrypto.layerDigest]),
       Effect.provideService(Scope.Scope, scope),
       Effect.catchCause((cause) =>
         (Cause.hasInterruptsOnly(cause)
