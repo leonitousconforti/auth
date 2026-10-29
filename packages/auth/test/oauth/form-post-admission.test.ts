@@ -1,5 +1,6 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { it } from "@effect/vitest";
-import { Auth, Hooks, OAuth, Operations, Sessions, WebCrypto } from "@yielded/auth";
+import { Auth, Hooks, OAuth, Operations, Sessions } from "@yielded/auth";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
@@ -131,7 +132,7 @@ const sessionLayer = sessions
   )
   .pipe(
     Layer.provide([
-      WebCrypto.layerWebCrypto,
+      NodeCrypto.layer,
       Hooks.LifecycleHooks.empty,
       Layer.succeed(Sessions.SessionSigningKeys, signingKeys),
     ]),
@@ -206,7 +207,7 @@ it.effect("admits a form_post account link that has only the binding cookie", ()
     const handlers = accounts.handlersLayer.pipe(
       Layer.provide(accounts.layer),
       Layer.provide([
-        accounts.binding.layer.pipe(Layer.provide([bindingConfig, WebCrypto.layerWebCrypto])),
+        accounts.binding.layer.pipe(Layer.provide([bindingConfig, NodeCrypto.layer])),
         Layer.succeed(OAuth.OAuthAccountsPersistence, {
           list: unused,
           capture: unused,
@@ -256,7 +257,7 @@ it.effect("admits a form_post account link that has only the binding cookie", ()
         Layer.succeed(OAuth.OAuthReturnTargets, { resolve: unused }),
         Layer.succeed(OAuth.OAuthLinkTransactionProtector, { seal: unused, open: unused }),
         Hooks.LifecycleHooks.empty,
-        WebCrypto.layerWebCrypto,
+        NodeCrypto.layer,
         sessionLayer,
       ]),
     );
@@ -267,9 +268,7 @@ it.effect("admits a form_post account link that has only the binding cookie", ()
 
       return yield* binding.issue(id);
     }).pipe(
-      Effect.provide(
-        accounts.binding.layer.pipe(Layer.provide([bindingConfig, WebCrypto.layerWebCrypto])),
-      ),
+      Effect.provide(accounts.binding.layer.pipe(Layer.provide([bindingConfig, NodeCrypto.layer]))),
     );
 
     const command = issued.credentialCommands[0];
@@ -322,7 +321,7 @@ it.effect("admits a form_post connected flow that has only the binding cookie", 
     const handlers = connected.handlersLayer.pipe(
       Layer.provide(connected.layer),
       Layer.provide([
-        connected.binding.layer.pipe(Layer.provide([bindingConfig, WebCrypto.layerWebCrypto])),
+        connected.binding.layer.pipe(Layer.provide([bindingConfig, NodeCrypto.layer])),
         Layer.succeed(OAuth.OAuthConnectedPersistence, {
           read: unused,
           issue: unused,
@@ -377,7 +376,7 @@ it.effect("admits a form_post connected flow that has only the binding cookie", 
         Layer.succeed(OAuth.OAuthConnectedUseAuthority, { authorize: unused }),
         Layer.succeed(OAuth.OAuthReturnTargets, { resolve: unused }),
         Hooks.LifecycleHooks.empty,
-        WebCrypto.layerWebCrypto,
+        NodeCrypto.layer,
       ]),
     );
 
@@ -388,7 +387,7 @@ it.effect("admits a form_post connected flow that has only the binding cookie", 
       return yield* binding.issue(id);
     }).pipe(
       Effect.provide(
-        connected.binding.layer.pipe(Layer.provide([bindingConfig, WebCrypto.layerWebCrypto])),
+        connected.binding.layer.pipe(Layer.provide([bindingConfig, NodeCrypto.layer])),
       ),
     );
 
@@ -417,7 +416,7 @@ it.effect("rejects an unbound guest before consuming a form_post link", () =>
     const handlers = accounts.handlersLayer.pipe(
       Layer.provide(accounts.layer),
       Layer.provide([
-        accounts.binding.layer.pipe(Layer.provide([bindingConfig, WebCrypto.layerWebCrypto])),
+        accounts.binding.layer.pipe(Layer.provide([bindingConfig, NodeCrypto.layer])),
         Layer.succeed(OAuth.OAuthAccountsPersistence, {
           list: unused,
           capture: unused,
@@ -444,7 +443,7 @@ it.effect("rejects an unbound guest before consuming a form_post link", () =>
         Layer.succeed(OAuth.OAuthReturnTargets, { resolve: unused }),
         Layer.succeed(OAuth.OAuthLinkTransactionProtector, { seal: unused, open: unused }),
         Hooks.LifecycleHooks.empty,
-        WebCrypto.layerWebCrypto,
+        NodeCrypto.layer,
         sessionLayer,
       ]),
     );

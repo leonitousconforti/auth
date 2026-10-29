@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { it } from "@effect/vitest";
 import type { Operations } from "@yielded/auth";
 import { Auth, Password, Sessions } from "@yielded/auth";
@@ -36,7 +37,10 @@ const options = {
   }),
 };
 
-const services = Testing.services({ seed: "in-memory-example" });
+const services = Testing.services({ seed: "in-memory-example" }).pipe(
+  Layer.provide(NodeCrypto.layerKdf),
+);
+
 const memory = Testing.layer(App, options);
 
 const live = App.layer.pipe(

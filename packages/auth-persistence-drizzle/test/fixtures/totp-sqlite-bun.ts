@@ -3,8 +3,6 @@ import * as BunRuntime from "@effect/platform-bun/BunRuntime";
 import * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient";
 import { LifecycleHooks } from "@yielded/auth/Hooks";
 import { TotpPersistence, TotpSecretKeys, TotpCryptography } from "@yielded/auth/Totp";
-import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
-import * as Portable from "@yielded/crypto/Portable";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -29,13 +27,7 @@ Effect.gen(function* () {
   Effect.provide(
     Layer.mergeAll(
       TotpCryptography.layer.pipe(
-        Layer.provide(
-          Layer.mergeAll(
-            Layer.succeed(TotpSecretKeys, exampleKeys),
-            BunCrypto.layer,
-            Portable.layer(globalThis.crypto.subtle).pipe(Layer.provide(KdfAdmission.layer())),
-          ),
-        ),
+        Layer.provide(Layer.mergeAll(Layer.succeed(TotpSecretKeys, exampleKeys), BunCrypto.layer)),
       ),
       BunCrypto.layer,
       LifecycleHooks.empty,

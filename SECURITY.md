@@ -6,7 +6,7 @@ handling, session authority, or authorization decisions as security relevant.
 ## Supported versions
 
 The published packages are a prerelease. `@yielded/auth` and its companions
-(`@yielded/crypto`, `@yielded/jose`, `@yielded/oauth`, `@yielded/auth-persistence`,
+(`@yielded/auth-platform-workerd`, `@yielded/jose`, `@yielded/oauth`, `@yielded/auth-persistence`,
 `@yielded/auth-persistence-drizzle`, `@yielded/auth-simplewebauthn`,
 `@yielded/auth-react-native`, and `@yielded/auth-electron`) are versioned
 and released together as one fixed group.

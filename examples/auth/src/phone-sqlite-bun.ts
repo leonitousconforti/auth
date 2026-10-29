@@ -1,17 +1,9 @@
 import assert from "node:assert/strict";
 
 import { BunRuntime } from "@effect/platform-bun";
+import * as BunCrypto from "@effect/platform-bun/BunCrypto";
 import * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient";
-import {
-  Auth,
-  Hooks,
-  Operations,
-  PhoneOtp,
-  Proofs,
-  Sessions,
-  SmsDelivery,
-  WebCrypto,
-} from "@yielded/auth";
+import { Auth, Hooks, Operations, PhoneOtp, Proofs, Sessions, SmsDelivery } from "@yielded/auth";
 import { phonePersistenceLayer } from "@yielded/auth-persistence-drizzle";
 import {
   Database,
@@ -126,7 +118,7 @@ export const phoneConsumer = Effect.gen(function* () {
   });
 
   const base = Layer.mergeAll(
-    WebCrypto.layerWebCrypto,
+    BunCrypto.layer,
     Proofs.ProofDispatchScheduler.layerInline,
     Hooks.LifecycleHooks.empty,
     Auth.RequestBindingConfig.layer({ keyring, lifetimeMillis: 120_000, generation: 1 }),
@@ -454,7 +446,7 @@ phoneConsumer.pipe(
     Layer.mergeAll(
       databaseLayer.pipe(Layer.provideMerge(SqliteClient.layer({ filename: ":memory:" }))),
       Hooks.LifecycleHooks.empty,
-      WebCrypto.layerWebCrypto,
+      BunCrypto.layer,
     ),
   ),
   Effect.scoped,

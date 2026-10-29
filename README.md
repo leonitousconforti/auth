@@ -28,7 +28,7 @@ HttpClient service and Effect Atom queries and mutations.
 Your application owns its accounts, identifiers, and authorization policy.
 Use managed auth tables, map an existing SQL schema, or implement storage services
 against another backend. The auth API stays the same when you change storage.
-Auth uses Effect crypto and first-party password, JOSE, and OAuth packages. Applications select
+Auth uses Effect crypto and first-party JOSE and OAuth packages. Applications select
 crypto Layers; optional companions supply database, WebAuthn, and platform integrations.
 
 Start with [Auth in an Effect application](docs/src/content/docs/guide/effect.mdx)
@@ -171,4 +171,4 @@ package exports, dependency purity, tests, and builds use Vite+.
 [MIT](LICENSE)
 
 See [third-party notices](THIRD_PARTY_NOTICES.md) for open-source credits and
-licenses accompanying the reusable crypto and JOSE packages.
+licenses accompanying the Workers and JOSE packages.

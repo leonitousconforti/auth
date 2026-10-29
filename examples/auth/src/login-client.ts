@@ -1,5 +1,4 @@
 import { Atom as AuthAtom, Client, type Proofs } from "@yielded/auth";
-import { layerCryptoWeb } from "@yielded/auth/WebCrypto";
 import { Effect, Redacted, Schema } from "effect";
 import { SecureRandom } from "effect/crypto";
 
@@ -62,7 +61,7 @@ export const sendEmailCode = auth.runtime.fn<string>()(
         requestId: crypto.uuidV4(),
       });
     }).pipe(
-      Effect.provide(layerCryptoWeb),
+      Effect.provide(SecureRandom.layerWebCrypto),
       Effect.mapError(() => BrowserFlowUnavailable.make({})),
     );
 

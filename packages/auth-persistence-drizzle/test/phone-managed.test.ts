@@ -1,15 +1,8 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as D1Client from "@effect/sql-d1/D1Client";
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
 import { it } from "@effect/vitest";
-import {
-  Auth,
-  Operations,
-  PhoneOtp,
-  Proofs,
-  Sessions,
-  SmsDelivery,
-  WebCrypto,
-} from "@yielded/auth";
+import { Auth, Operations, PhoneOtp, Proofs, Sessions, SmsDelivery } from "@yielded/auth";
 import type { LoginIdentifier } from "@yielded/auth/Identity";
 import { SubjectId } from "@yielded/auth/Schema";
 import { getTableName } from "drizzle-orm";
@@ -164,7 +157,7 @@ const setup = Effect.fnUntraced(function* (
   const context = yield* Layer.build(
     persistence.layer.pipe(
       Layer.provideMerge(dependencies),
-      Layer.provideMerge(WebCrypto.layerWebCrypto),
+      Layer.provideMerge(NodeCrypto.layer),
       Layer.provideMerge(Layer.succeedContext(databaseContext)),
       Layer.provide(persistence.Config.layer(storage)),
     ),

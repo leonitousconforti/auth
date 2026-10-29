@@ -1,4 +1,5 @@
-import { Auth, Proofs, WebCrypto } from "@yielded/auth";
+import * as BunCrypto from "@effect/platform-bun/BunCrypto";
+import { Auth, Proofs } from "@yielded/auth";
 import { Effect, FileSystem, Layer, Path, Redacted, Schema } from "effect";
 import { SecureRandom } from "effect/crypto";
 import { Base64Url } from "effect/encoding";
@@ -53,4 +54,4 @@ export const KeysLive = Layer.unwrap(
       }),
     );
   }),
-).pipe(Layer.provide(DataDirectory.layer), Layer.provide(WebCrypto.layerWebCrypto));
+).pipe(Layer.provide(DataDirectory.layer), Layer.provide(BunCrypto.layer));

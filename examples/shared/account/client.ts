@@ -3,7 +3,6 @@ import {
   PasskeyBrowser,
   layer as layerSimpleWebAuthnPasskeyBrowser,
 } from "@yielded/auth-simplewebauthn/Browser";
-import { layerCryptoWeb } from "@yielded/auth/WebCrypto";
 import { DateTime, Effect, Layer, Redacted, Schema } from "effect";
 import { SecureRandom } from "effect/crypto";
 import type { KeyValueStore } from "effect/persistence";
@@ -72,7 +71,7 @@ export const makeAccountClient = <Auth extends AccountAuth>(
   browser: Layer.Layer<PasskeyBrowser> = layerSimpleWebAuthnPasskeyBrowser,
 ) => {
   const factory = Atom.context();
-  const runtime = factory(Layer.mergeAll(storage, browser, layerCryptoWeb));
+  const runtime = factory(Layer.mergeAll(storage, browser, SecureRandom.layerWebCrypto));
   const { auth, register, signIn: passwordSignIn } = bind(factory);
 
   const page = Atom.kvs({

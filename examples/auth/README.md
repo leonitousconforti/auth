@@ -17,7 +17,7 @@ application routes. `auth-client.ts` declares the client and its atoms;
 rendering and browser hydration. Keep each Scope alive for its render or mounted
 application lifetime.
 
-[CryptoLive](../shared/crypto.ts) selects the portable crypto backend and shares
+[CryptoLive](../shared/crypto.ts) selects Effect's Bun crypto backend and shares
 KDF admission with password hashing. Provider clients and key caches belong to
 the server Layer's application scope.
 For a Cloudflare Worker, provide `WorkerdServices.layer` as in the [Workers composition](src/workerd-services.ts)

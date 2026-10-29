@@ -16,6 +16,7 @@ import {
   snapshotPasswordCredential,
   snapshotPasswordRequirement,
   snapshotPasswordRevision,
+  KdfAdmission,
 } from "@yielded/auth/Password";
 import { hooksLayer, reportPersistenceFailure } from "@yielded/auth/Persistence";
 import { Email, SubjectId, TokenDigest } from "@yielded/auth/Schema";
@@ -38,9 +39,6 @@ import {
   StaleAuthentication,
   type StatefulSessionPersistence,
 } from "@yielded/auth/Sessions";
-import { layerWebCrypto as layerCryptoWeb } from "@yielded/auth/WebCrypto";
-import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
-import * as Portable from "@yielded/crypto/Portable";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -88,8 +86,9 @@ export interface ServicesOptions {
   readonly seed?: string | number;
 }
 
-/** Portable password hashing and Effect secure randomness and digests for tests. Requires global WebCrypto
- * at acquisition; uses the default password cost and one shared KDF admission owner.
+/** Password hashing and Effect secure randomness and digests for tests. Supply an
+ * Effect Kdf Layer with Argon2id support; requires global WebCrypto at acquisition.
+ * Uses the default password cost and one shared KDF admission owner.
  * A seed restarts its private random sequence on each acquisition; it never changes
  * the caller's Random or Clock services. Seeded credentials are only suitable for tests.
  * Provide this after composing Auth with Testing.layer and application claims.
@@ -106,7 +105,7 @@ export const services = (options: ServicesOptions = {}) => {
 
       const entropy =
         seed === undefined
-          ? layerCryptoWeb
+          ? Layer.merge(SecureRandom.layerWebCrypto, Digest.layerWebCrypto)
           : Layer.effect(
               SecureRandom.SecureRandom,
               Effect.gen(function* () {
@@ -118,9 +117,10 @@ export const services = (options: ServicesOptions = {}) => {
               }),
             ).pipe(Layer.provideMerge(Digest.layerWebCrypto));
 
-      const backend = Portable.layer(subtle).pipe(Layer.provideMerge(KdfAdmission.layer()));
-
-      return PasswordHashing.layer().pipe(Layer.provide(backend), Layer.provideMerge(entropy));
+      return PasswordHashing.layer().pipe(
+        Layer.provide(KdfAdmission.layer()),
+        Layer.provideMerge(entropy),
+      );
     }),
   );
 };

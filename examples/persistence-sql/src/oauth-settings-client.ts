@@ -1,5 +1,4 @@
 import { Atom as AuthAtom, Client, OAuth } from "@yielded/auth";
-import { layerCryptoWeb } from "@yielded/auth/WebCrypto";
 import { DateTime, Effect, Layer, Redacted, Schema } from "effect";
 import { SecureRandom } from "effect/crypto";
 import { KeyValueStore } from "effect/persistence";
@@ -12,7 +11,7 @@ const factory = Atom.context();
 const runtime = factory(
   Layer.merge(
     KeyValueStore.layerStorage(() => sessionStorage),
-    layerCryptoWeb,
+    SecureRandom.layerWebCrypto,
   ),
 );
 

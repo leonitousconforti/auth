@@ -1,14 +1,6 @@
 import { BunRuntime } from "@effect/platform-bun";
-import {
-  Auth,
-  EmailDelivery,
-  Hooks,
-  Operations,
-  Password,
-  Proofs,
-  Sessions,
-  WebCrypto,
-} from "@yielded/auth";
+import * as BunCrypto from "@effect/platform-bun/BunCrypto";
+import { Auth, EmailDelivery, Hooks, Operations, Password, Proofs, Sessions } from "@yielded/auth";
 import { DateTime, Effect, Layer, Redacted } from "effect";
 import { Base64Url } from "effect/encoding";
 
@@ -23,7 +15,7 @@ import {
 const hashing = Password.PasswordHashing.layer().pipe(Layer.provide(CryptoLive));
 
 const base = Layer.mergeAll(
-  WebCrypto.layerWebCrypto,
+  BunCrypto.layer,
   Hooks.LifecycleHooks.empty,
   hashing,
   Proofs.ProofDispatchScheduler.layerInline,

@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { it } from "@effect/vitest";
 import * as GitHub from "@yielded/auth/GitHub";
 import {
@@ -12,9 +13,6 @@ import {
 } from "@yielded/auth/OAuth";
 import * as OpenIdConnect from "@yielded/auth/OpenIdConnect";
 import { RequestBindingFlowId } from "@yielded/auth/Operations";
-import { layerWebCrypto } from "@yielded/auth/WebCrypto";
-import * as Admission from "@yielded/crypto/KdfAdmission";
-import * as Portable from "@yielded/crypto/Portable";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -33,11 +31,7 @@ import { expectTag } from "./helpers/oauth";
 
 const json = (body: unknown, status = 200) => Response.json(body, { status });
 
-const platform = Layer.mergeAll(
-  FetchHttpClient.layer,
-  layerWebCrypto,
-  Portable.layer(globalThis.crypto.subtle).pipe(Layer.provide(Admission.layer())),
-);
+const platform = Layer.mergeAll(FetchHttpClient.layer, NodeCrypto.layer);
 
 const loadProtocol = (options: OpenIdConnect.Options) =>
   Layer.build(OpenIdConnect.layer(options)).pipe(

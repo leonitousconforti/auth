@@ -48,4 +48,5 @@ See [persistence examples](../../docs/src/content/docs/reference/adapters.md#run
 four ownership models and their current limits.
 
 The opt-in [`Testing` module](../../docs/src/content/docs/guide/storage.mdx#in-memory-tests)
-provides non-durable password and session storage with portable crypto services for tests.
+provides non-durable password and session storage. Supply an Effect Kdf Layer with
+Argon2id support when using its test services.

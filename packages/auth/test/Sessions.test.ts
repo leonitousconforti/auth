@@ -1,8 +1,8 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { it } from "@effect/vitest";
 import { coordinateCommit, LifecycleHooks } from "@yielded/auth/Hooks";
 import { SubjectId, TokenDigest } from "@yielded/auth/Schema";
 import * as Sessions from "@yielded/auth/Sessions";
-import { layerWebCrypto } from "@yielded/auth/WebCrypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -26,7 +26,7 @@ const sessionLayer = (audience: string) =>
     )
     .pipe(
       Layer.provide([
-        layerWebCrypto,
+        NodeCrypto.layer,
         LifecycleHooks.empty,
         Layer.succeed(Sessions.SessionSigningKeys, keys),
       ]),

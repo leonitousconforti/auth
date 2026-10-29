@@ -1,6 +1,7 @@
+import * as BunCrypto from "@effect/platform-bun/BunCrypto";
 import * as PgliteClient from "@effect/sql-pglite/PgliteClient";
 import * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient";
-import { Auth, Proofs, WebCrypto } from "@yielded/auth";
+import { Auth, Proofs } from "@yielded/auth";
 import { Config, Context, Effect, FileSystem, Layer, Path, Redacted, Schema } from "effect";
 import { SecureRandom } from "effect/crypto";
 import { Base64Url } from "effect/encoding";
@@ -94,4 +95,4 @@ export const KeysLive = Layer.unwrap(
       }),
     );
   }),
-).pipe(Layer.provide(DataLive), Layer.provide(WebCrypto.layerWebCrypto));
+).pipe(Layer.provide(DataLive), Layer.provide(BunCrypto.layer));

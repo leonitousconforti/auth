@@ -1,7 +1,6 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { it } from "@effect/vitest";
-import { OAuth, OAuthProxy, WebCrypto } from "@yielded/auth";
-import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
-import * as Portable from "@yielded/crypto/Portable";
+import { OAuth, OAuthProxy } from "@yielded/auth";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
@@ -22,10 +21,7 @@ it.effect("completes a form_post callback through the proxy without repeating ex
     let record: OAuthProxy.Record | undefined;
     let exchanges = 0;
 
-    const crypto = Layer.merge(
-      WebCrypto.layerWebCrypto,
-      Portable.layer(globalThis.crypto.subtle).pipe(Layer.provide(KdfAdmission.layer())),
-    );
+    const crypto = NodeCrypto.layer;
 
     const persistence = Layer.succeed(OAuthProxy.Persistence, {
       get: () => Effect.succeed(record),

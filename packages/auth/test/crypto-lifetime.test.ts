@@ -1,13 +1,12 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { it } from "@effect/vitest";
 import * as OAuth from "@yielded/auth/OAuth";
 import * as Password from "@yielded/auth/Password";
+import { KdfAdmission } from "@yielded/auth/Password";
 import * as Totp from "@yielded/auth/Totp";
-import { layerWebCrypto as layerCryptoWeb } from "@yielded/auth/WebCrypto";
-import { Kdf } from "@yielded/crypto/Kdf";
-import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
-import * as Portable from "@yielded/crypto/Portable";
 import * as Context from "effect/Context";
 import * as Aead from "effect/crypto/Aead";
+import * as Kdf from "effect/crypto/Kdf";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -22,10 +21,7 @@ import { expect } from "vite-plus/test";
 
 import fixtures from "./crypto-fixtures";
 
-const runtime = Layer.merge(
-  layerCryptoWeb,
-  Portable.layer(globalThis.crypto.subtle).pipe(Layer.provideMerge(KdfAdmission.layer())),
-);
+const runtime = Layer.merge(NodeCrypto.layer, KdfAdmission.layer());
 
 // At 5199d99, payload.ts seal borrowed keyring bytes before waiting for entropy;
 // the Layer finalizer wiped them without joining seal. Gate this window because
@@ -195,7 +191,7 @@ it.effect("password operations defer secret access and return typed erased-secre
 // At 5199d99, hashing.ts hash acquired derived output in acquireUseRelease's
 // masked acquisition. A cancellable Kdf isolates Auth's ownership of this wait;
 // verify/dummy exercise the same scoped buffer contract. Native backend completion
-// guarantees are covered by packages/crypto/test/lifetime.test.ts.
+// guarantees are covered by test/password/crypto/lifetime.test.ts.
 for (const method of ["hash", "verify", "dummy"] as const) {
   it.effect(`password ${method} allows KDF cancellation and wipes its password buffer`, () =>
     Effect.gen(function* () {
@@ -205,13 +201,13 @@ for (const method of ["hash", "verify", "dummy"] as const) {
       let cancelled = false;
       const output = new Uint8Array(32).fill(17);
 
-      const derive: Kdf["Service"]["argon2id"] = (input) =>
+      const derive: Kdf.Kdf["Service"]["derive"] = (_algorithm, password) =>
         Effect.suspend(() => {
-          bytes = Redacted.value(input.password);
+          bytes = password;
 
           return Deferred.succeed(entered, undefined).pipe(
             Effect.andThen(Deferred.await(finish)),
-            Effect.as(Redacted.make(output)),
+            Effect.as(output),
             Effect.onInterrupt(() =>
               Effect.sync(() => {
                 cancelled = true;
@@ -222,12 +218,10 @@ for (const method of ["hash", "verify", "dummy"] as const) {
 
       const services = yield* Layer.build(
         Password.PasswordHashing.layer().pipe(
-          Layer.provide(Layer.succeed(KdfAdmission.KdfAdmission, { run: (work) => work })),
+          Layer.provide(Layer.succeed(KdfAdmission, { run: (work) => work })),
           Layer.provide(
-            Layer.succeed(Kdf, {
-              argon2id: derive,
-              scrypt: () => Effect.die("unused"),
-              pbkdf2: () => Effect.die("unused"),
+            Layer.succeed(Kdf.Kdf, {
+              derive,
             }),
           ),
         ),
@@ -259,6 +253,6 @@ for (const method of ["hash", "verify", "dummy"] as const) {
       expect(bytes?.every((byte) => byte === 0)).toBe(true);
       yield* operation;
       expect(output.every((byte) => byte === 0)).toBe(true);
-    }).pipe(Effect.provide(layerCryptoWeb)),
+    }).pipe(Effect.provide(NodeCrypto.layer)),
   );
 }

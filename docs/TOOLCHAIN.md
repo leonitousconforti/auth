@@ -31,7 +31,7 @@ runner so Effect's test integration uses the same version.
 Drizzle examples use `scripts/db-generate.ts` to generate SQL and compact JSON snapshots.
 
 When changing the workerd Argon2 compression routine, regenerate the checked-in
-Wasm with `vp run @yielded/crypto#build:wasm`. This requires LLVM Clang with the
+Wasm with `vp run @yielded/auth-platform-workerd#build:wasm`. This requires LLVM Clang with the
 wasm32 target and `wasm-ld`; ordinary builds do not require a C toolchain.
 
 Shared contributor skills are authored in [danieljvdm/skills](https://github.com/danieljvdm/skills) and distributed by Dev Kit into `.agents/skills`. Each committed copy records its pinned source in `.dev-kit-origin.json`. Keep shared copies identical to that source, put repository policy in `AGENTS.md`, and upstream reusable improvements before refreshing local edits. Use the transient Dev Kit CLI for explicit updates; it is not a repository dependency.

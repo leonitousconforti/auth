@@ -3,8 +3,6 @@ import { Auth, OAuth, Operations, Sessions } from "@yielded/auth";
 import { OAuthPersistence } from "@yielded/auth-persistence";
 import type { CommitJournal, PreparedCommit } from "@yielded/auth/Hooks";
 import { SubjectId } from "@yielded/auth/Schema";
-import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
-import * as Portable from "@yielded/crypto/Portable";
 import { getTableName } from "drizzle-orm";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -166,12 +164,7 @@ it.live.each([
         OAuth.OAuthReturnTargets.exactRoutes(["/activities"]),
         OAuth.OAuthTransactionProtector.layer(keyring),
         Auth.RequestBindingConfig.layer({ generation: 1, lifetimeMillis: 300_000, keyring }),
-      ).pipe(
-        Layer.provideMerge(
-          Portable.layer(globalThis.crypto.subtle).pipe(Layer.provide(KdfAdmission.layer())),
-        ),
-        Layer.provideMerge(Layer.succeedContext(fixture.context)),
-      );
+      ).pipe(Layer.provideMerge(Layer.succeedContext(fixture.context)));
 
       const services = yield* Layer.build(dependencies);
       const auth = yield* app.make.pipe(Effect.provide(services));
@@ -365,12 +358,7 @@ it.live.each(backends)(
         OAuth.OAuthConnectedTokenProtector.layer({
           activeKeyId: "test",
           keys: [{ id: "test", material: Redacted.make("B".repeat(42) + "A") }],
-        }).pipe(
-          Layer.provideMerge(
-            Portable.layer(globalThis.crypto.subtle).pipe(Layer.provide(KdfAdmission.layer())),
-          ),
-          Layer.provide(Layer.succeedContext(fixture.context)),
-        ),
+        }).pipe(Layer.provide(Layer.succeedContext(fixture.context))),
       );
 
       const protector = Context.get(tokenServices, OAuth.OAuthConnectedTokenProtector);

@@ -19,8 +19,8 @@
         "@yielded/auth": "workspace:*",
         "@yielded/auth-persistence": "workspace:*",
         "@yielded/auth-persistence-drizzle": "workspace:*",
+        "@yielded/auth-platform-workerd": "workspace:*",
         "@yielded/auth-simplewebauthn": "workspace:*",
-        "@yielded/crypto": "workspace:*",
         "@yielded/effect-tsrs": "catalog:",
         "@yielded/jose": "workspace:*",
         "@yielded/oauth": "workspace:*",
@@ -62,8 +62,8 @@
         "@yielded/auth": "workspace:*",
         "@yielded/auth-persistence": "workspace:*",
         "@yielded/auth-persistence-drizzle": "workspace:*",
+        "@yielded/auth-platform-workerd": "workspace:*",
         "@yielded/auth-simplewebauthn": "workspace:*",
-        "@yielded/crypto": "workspace:*",
         "drizzle-orm": "catalog:",
         "effect": "catalog:",
         "react": "catalog:",
@@ -116,7 +116,6 @@
         "@simplewebauthn/server": "catalog:",
         "@yielded/auth": "workspace:*",
         "@yielded/auth-simplewebauthn": "workspace:*",
-        "@yielded/crypto": "workspace:*",
         "effect": "catalog:",
         "react": "catalog:",
         "react-dom": "catalog:",
@@ -144,7 +143,6 @@
         "@yielded/auth": "workspace:*",
         "@yielded/auth-persistence-drizzle": "workspace:*",
         "@yielded/auth-simplewebauthn": "workspace:*",
-        "@yielded/crypto": "workspace:*",
         "drizzle-orm": "catalog:",
         "effect": "catalog:",
         "react": "catalog:",
@@ -174,7 +172,6 @@
         "@yielded/auth": "workspace:*",
         "@yielded/auth-persistence-drizzle": "workspace:*",
         "@yielded/auth-simplewebauthn": "workspace:*",
-        "@yielded/crypto": "workspace:*",
         "drizzle-orm": "catalog:",
         "effect": "catalog:",
         "react": "catalog:",
@@ -205,7 +202,6 @@
         "@yielded/auth": "workspace:*",
         "@yielded/auth-persistence": "workspace:*",
         "@yielded/auth-simplewebauthn": "workspace:*",
-        "@yielded/crypto": "workspace:*",
         "effect": "catalog:",
         "react": "catalog:",
         "react-dom": "catalog:",
@@ -223,7 +219,6 @@
       "name": "@yielded/auth",
       "version": "0.1.0-beta.46",
       "dependencies": {
-        "@yielded/crypto": "workspace:*",
         "@yielded/jose": "workspace:*",
         "@yielded/oauth": "workspace:*",
       },
@@ -265,7 +260,6 @@
       "version": "0.1.0-beta.46",
       "dependencies": {
         "@yielded/auth": "workspace:*",
-        "@yielded/crypto": "workspace:*",
       },
       "devDependencies": {
         "@effect/platform-node": "catalog:",
@@ -303,7 +297,6 @@
         "@effect/sql-sqlite-node": "catalog:",
         "@effect/sql-sqlite-wasm": "catalog:",
         "@effect/vitest": "catalog:",
-        "@yielded/crypto": "workspace:*",
         "drizzle-orm": "catalog:",
         "effect": "catalog:",
         "typescript": "catalog:",
@@ -335,6 +328,26 @@
         "@effect/sql-sqlite-node",
         "@effect/sql-sqlite-wasm",
       ],
+    },
+    "packages/auth-platform-workerd": {
+      "name": "@yielded/auth-platform-workerd",
+      "version": "0.1.0-beta.46",
+      "dependencies": {
+        "@yielded/auth": "workspace:*",
+      },
+      "devDependencies": {
+        "@effect/vitest": "catalog:",
+        "@types/node": "catalog:",
+        "@yielded/jose": "workspace:*",
+        "effect": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vite-plus": "catalog:",
+        "vitest": "catalog:",
+      },
+      "peerDependencies": {
+        "effect": "^4.1.0",
+      },
     },
     "packages/auth-react-native": {
       "name": "@yielded/auth-react-native",
@@ -392,22 +405,6 @@
         "@simplewebauthn/browser",
         "@simplewebauthn/server",
       ],
-    },
-    "packages/crypto": {
-      "name": "@yielded/crypto",
-      "version": "0.1.0-beta.46",
-      "devDependencies": {
-        "@effect/vitest": "catalog:",
-        "@types/node": "catalog:",
-        "effect": "catalog:",
-        "typescript": "catalog:",
-        "vite": "catalog:",
-        "vite-plus": "catalog:",
-        "vitest": "catalog:",
-      },
-      "peerDependencies": {
-        "effect": "^4.1.0",
-      },
     },
     "packages/jose": {
       "name": "@yielded/jose",
@@ -1797,11 +1794,11 @@
 
     "@yielded/auth-persistence-drizzle": ["@yielded/auth-persistence-drizzle@workspace:packages/auth-persistence-drizzle"],
 
+    "@yielded/auth-platform-workerd": ["@yielded/auth-platform-workerd@workspace:packages/auth-platform-workerd"],
+
     "@yielded/auth-react-native": ["@yielded/auth-react-native@workspace:packages/auth-react-native"],
 
     "@yielded/auth-simplewebauthn": ["@yielded/auth-simplewebauthn@workspace:packages/auth-simplewebauthn"],
-
-    "@yielded/crypto": ["@yielded/crypto@workspace:packages/crypto"],
 
     "@yielded/effect-tsrs": ["@yielded/effect-tsrs@0.2.2", "", { "optionalDependencies": { "@yielded/effect-tsrs-darwin-arm64": "0.2.2", "@yielded/effect-tsrs-darwin-x64": "0.2.2", "@yielded/effect-tsrs-linux-arm64": "0.2.2", "@yielded/effect-tsrs-linux-x64": "0.2.2", "@yielded/effect-tsrs-win32-x64": "0.2.2" }, "bin": { "effect-tsrs": "bin/effect-tsrs.js" } }, "sha512-F0woy23jX5bMMVOo4Wh+PXhUPvnsH3pNZn7IUamUB2K0sKijui4YNz7dib8Tb6y90+0/pbnIU3iKrZTAsI1phw=="],
 

@@ -12,6 +12,7 @@ import type {
 } from "./errors";
 import { make } from "./hashing";
 import type { EncodedPasswordHash, PasswordVerification } from "./models";
+import { defaultScrypt } from "./Scrypt";
 
 type HashFailure = PasswordHashingUnavailable | PasswordInputInvalid | PasswordKdfBusy;
 
@@ -39,6 +40,7 @@ export class PasswordHashing extends Context.Service<
     readonly dummy: (password: Redacted.Redacted<string>) => Effect.Effect<void, HashFailure>;
   }
 >()("effect-auth/PasswordHashing") {
-  /** Supply Kdf and Effect SecureRandom; share KdfAdmission.layer from @yielded/crypto with the KDF backend. */
-  static readonly layer = (config?: PasswordHashingConfig) => Layer.effect(this, make(config));
+  /** Supply Effect Kdf, SecureRandom and a shared KdfAdmission.layer. Scrypt requires PasswordScrypt.layer. */
+  static readonly layer = (config?: PasswordHashingConfig) =>
+    Layer.effect(this, make(config)).pipe(Layer.provide(defaultScrypt));
 }

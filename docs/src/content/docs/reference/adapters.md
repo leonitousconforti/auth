@@ -41,8 +41,9 @@ production adapter to verify database concurrency or recovery.
 ### Test services
 
 `Testing.services(options?)` supplies `PasswordHashing` plus Effect `SecureRandom` and `Digest`, using
-portable Argon2id at the default password cost. Provide it to both Auth and
-`Testing.layer`.
+the default password cost. Supply an Effect Kdf Layer with Argon2id support,
+such as `NodeCrypto.layerKdf`, then provide the resulting services to both Auth
+and `Testing.layer`.
 
 | Option or requirement | Behavior                                                                                                                                                                 |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -72,8 +73,8 @@ Provide the configuration and database before using persistence:
 ```ts title="apps/server/auth-live.ts"
 import * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient";
 import { AuthPersistence } from "@yielded/auth-persistence-drizzle/SqliteBun";
-import { WebCrypto } from "@yielded/auth";
 import { Layer } from "effect";
+import { Digest, SecureRandom } from "effect/crypto";
 import { AppAuth } from "./auth";
 import { ApplicationLive } from "./application"; // claims, keys, delivery, hashing
 import { Persistence, storage } from "./schema";
@@ -87,7 +88,7 @@ export const AuthLive = AppAuth.layer.pipe(
   Layer.provide(Persistence.layer),
   Layer.provide(ApplicationLive),
   Layer.provide(DatabaseReady),
-  Layer.provide(WebCrypto.layerCryptoWeb),
+  Layer.provide([Digest.layerWebCrypto, SecureRandom.layerWebCrypto]),
 );
 ```
 

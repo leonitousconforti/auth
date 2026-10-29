@@ -18,7 +18,6 @@
     "@yielded/auth": "workspace:*",
     "@yielded/auth-persistence-drizzle": "workspace:*",
     "@yielded/auth-simplewebauthn": "workspace:*",
-    "@yielded/crypto": "workspace:*",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "react": "catalog:",

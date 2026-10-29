@@ -1,4 +1,5 @@
-import { Password, WebCrypto } from "@yielded/auth";
+import * as BunCrypto from "@effect/platform-bun/BunCrypto";
+import { Password } from "@yielded/auth";
 import { Effect, Layer, Redacted, Schema } from "effect";
 import * as Digest from "effect/crypto/Digest";
 import { Hex } from "effect/encoding";
@@ -58,4 +59,4 @@ export const ScreeningLive = Layer.effect(
       ),
     });
   }),
-).pipe(Layer.provide(WebCrypto.layerWebCrypto));
+).pipe(Layer.provide(BunCrypto.layer));

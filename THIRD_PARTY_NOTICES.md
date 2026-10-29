@@ -1,10 +1,10 @@
 # Third-party notices
 
 Yielded credits the open-source projects and independent standards behind its
-cryptography. The [crypto package notices](packages/crypto/THIRD_PARTY_NOTICES.md)
+cryptography. The [Workers package notices](packages/auth-platform-workerd/THIRD_PARTY_NOTICES.md)
 record the exact source revisions, authors, licenses, affected files, and the
 adapted Noble Argon2 implementation and password-derivation test material. That file is
-included in the published `@yielded/crypto` package.
+included in the published `@yielded/auth-platform-workerd` package.
 
 The [JOSE package notices](packages/jose/THIRD_PARTY_NOTICES.md) credit Filip
 Skokan’s MIT-licensed [panva/jose](https://github.com/panva/jose) and record the

@@ -56,7 +56,6 @@
     "@effect/sql-sqlite-node": "catalog:",
     "@effect/sql-sqlite-wasm": "catalog:",
     "@effect/vitest": "catalog:",
-    "@yielded/crypto": "workspace:*",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "typescript": "catalog:",

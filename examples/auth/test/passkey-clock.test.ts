@@ -1,6 +1,7 @@
+import * as BunCrypto from "@effect/platform-bun/BunCrypto";
 import { SqliteClient } from "@effect/sql-sqlite-node";
 import { it } from "@effect/vitest";
-import { Auth, Hooks, Passkey, Sessions, WebCrypto } from "@yielded/auth";
+import { Auth, Hooks, Passkey, Sessions } from "@yielded/auth";
 import * as Native from "@yielded/auth-persistence-drizzle/SqliteNode";
 import { AuthenticationAssurance } from "@yielded/auth/Operations";
 import { SubjectId } from "@yielded/auth/Schema";
@@ -158,7 +159,7 @@ const harness = (
       Passkey.PasskeyConfig.layer({ profiles: [Tables.profile] }),
     ]),
     Layer.provideMerge(storage),
-    Layer.provide([WebCrypto.layerWebCrypto, Hooks.LifecycleHooks.empty]),
+    Layer.provide([BunCrypto.layer, Hooks.LifecycleHooks.empty]),
   );
 };
 

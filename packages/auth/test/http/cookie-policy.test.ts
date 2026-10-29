@@ -1,5 +1,6 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { it } from "@effect/vitest";
-import { Auth, Http, Sessions, Strava, WebCrypto } from "@yielded/auth";
+import { Auth, Http, Sessions, Strava } from "@yielded/auth";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Cookies from "effect/http/Cookies";
@@ -28,7 +29,7 @@ const startup = (options: Http.AuthHttpOptions<unknown, unknown, unknown>) =>
           ],
         }),
       ),
-      Layer.provide(WebCrypto.layerWebCrypto),
+      Layer.provide(NodeCrypto.layer),
     ),
   ).pipe(Effect.scoped);
 

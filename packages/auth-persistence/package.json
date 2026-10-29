@@ -33,8 +33,7 @@
     "test": "vp test --passWithNoTests"
   },
   "dependencies": {
-    "@yielded/auth": "workspace:*",
-    "@yielded/crypto": "workspace:*"
+    "@yielded/auth": "workspace:*"
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",

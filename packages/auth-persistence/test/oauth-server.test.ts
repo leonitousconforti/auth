@@ -1,10 +1,8 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
 import { it } from "@effect/vitest";
 import { OAuthScope, OAuthServer } from "@yielded/auth";
 import { SubjectId } from "@yielded/auth/Schema";
-import * as WebCrypto from "@yielded/auth/WebCrypto";
-import * as CryptoBackend from "@yielded/auth/WebCrypto";
-import * as KdfAdmission from "@yielded/crypto/KdfAdmission";
 import { Jwk, Jwt } from "@yielded/jose";
 import * as McpProtocol from "effect/ai/McpProtocol";
 import * as McpServer from "effect/ai/McpServer";
@@ -38,10 +36,7 @@ const redirectUri = "https://client.example.com/callback";
 const verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
 const challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
 
-const cryptoLayer = Layer.merge(
-  WebCrypto.layerWebCrypto,
-  CryptoBackend.layerWebCrypto.pipe(Layer.provide(KdfAdmission.layer())),
-);
+const cryptoLayer = NodeCrypto.layer;
 
 const config: OAuthServer.Options = {
   origin,
