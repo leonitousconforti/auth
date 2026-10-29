@@ -1,5 +1,24 @@
 # @yielded/auth
 
+## 0.1.0-beta.47
+
+### Minor Changes
+
+- [#278](https://github.com/yielded-dev/auth/pull/278) [`1dd5bbe`](https://github.com/yielded-dev/auth/commit/1dd5bbe219733a0f09614c2e3b2520f62bdb421f) Thanks [@leonitousconforti](https://github.com/leonitousconforti)! - Add Login with Discord through `Discord.provider`, an OpenID preset that merges UserInfo. Treat `null` standard UserInfo profile claims as absent and prefer `nickname` over `preferred_username` for OpenID display names.
+
+- [#277](https://github.com/yielded-dev/auth/pull/277) [`b0b5df2`](https://github.com/yielded-dev/auth/commit/b0b5df2d405bcbc70a04b4391763f16aed10f9e1) Thanks [@leonitousconforti](https://github.com/leonitousconforti)! - Let OAuth and OpenID servers declare up to 1024 scopes instead of 32, as long as their names fit 8192 characters joined by spaces, or 4096 with JWT access tokens. Access token verifiers accept the same limit; upgrade separately deployed verifiers before issuing tokens with more than 32 scopes.
+
+### Patch Changes
+
+- [#279](https://github.com/yielded-dev/auth/pull/279) [`197ddba`](https://github.com/yielded-dev/auth/commit/197ddba9395e4622c0d4dd0b8cb769b8d6364a78) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Compose email code and magic-link sign-in with managed or mapped persistence, including proof storage and verified-email lookup. Support stateless sessions for email sign-in alongside OAuth.
+
+  BEHAVIOR CHANGE: Definitions with email sign-in now require `emailCredentials` and `proofs` in managed migrations or mapped tables.
+
+- [#288](https://github.com/yielded-dev/auth/pull/288) [`109c420`](https://github.com/yielded-dev/auth/commit/109c4201e63637c8e9c23039c5a248b872fddca0) Thanks [@danieljvdm](https://github.com/danieljvdm)! - Use Effect crypto and one `WebCrypto.layer` preset, and move Workers password hashing to `@yielded/auth-platform-workerd`. BEHAVIOR CHANGE: require Effect 4.1 and matching SQL drivers; replace `@yielded/crypto` and Auth's Workers subpaths with Effect crypto Layers or the Workers package, supply HTTP and the Kdf for `Testing.services()` separately, and use `Password.KdfAdmission.layer()`, optional `PasswordScrypt.layer`, and opaque Effect keys for JOSE.
+- Updated dependencies [[`109c420`](https://github.com/yielded-dev/auth/commit/109c4201e63637c8e9c23039c5a248b872fddca0)]:
+  - @yielded/jose@0.1.0-beta.47
+  - @yielded/oauth@0.1.0-beta.47
+
 ## 0.1.0-beta.46
 
 ### Patch Changes
