@@ -39,15 +39,14 @@ export const JsonObject = Schema.Record(Schema.String, Schema.Json).check(
   }),
 );
 
-const validUrl = (value: string, loopback: boolean) => {
+/** HTTPS, or HTTP on an exact loopback host for local development. */
+const validUrl = (value: string) => {
   try {
     const url = new URL(value);
 
     return (
       (url.protocol === "https:" ||
-        (loopback &&
-          url.protocol === "http:" &&
-          ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))) &&
+        (url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))) &&
       url.username === "" &&
       url.password === "" &&
       !value.includes("#") &&
@@ -59,7 +58,7 @@ const validUrl = (value: string, loopback: boolean) => {
   }
 };
 
-export const Endpoint = text(2048).check(Schema.makeFilter((value) => validUrl(value, false)));
+export const Endpoint = text(2048).check(Schema.makeFilter((value) => validUrl(value)));
 
 export const Issuer = Endpoint.check(
   Schema.makeFilter(
@@ -69,7 +68,7 @@ export const Issuer = Endpoint.check(
 
 export const Callback = text(2048).check(
   Schema.makeFilter(
-    (value) => validUrl(value, true) && new URL(value).href === value && !value.includes("?"),
+    (value) => validUrl(value) && new URL(value).href === value && !value.includes("?"),
   ),
 );
 
