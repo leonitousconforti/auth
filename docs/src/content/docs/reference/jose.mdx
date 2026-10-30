@@ -178,7 +178,8 @@ const TrustedKeys = Jwks.layerRemote({
 
 Build this Layer once in the application's runtime and share it across requests.
 Every Layer instance owns its cache, coalesced refresh and shutdown. The URL must
-be application-configured HTTPS without credentials or a fragment. The supplied
+be application-configured HTTPS without credentials or a fragment; HTTP is
+accepted only on `localhost`, `127.0.0.1`, or `[::1]`. The supplied
 client owns egress policy and must not follow redirects; the fetch client is
 configured to reject them, and responses from a different URL are rejected.
 

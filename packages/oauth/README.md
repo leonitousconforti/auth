@@ -32,9 +32,10 @@ an omitted ID token is application policy.
 
 Each exchange, refresh, or revocation makes one request. An uncertain outcome
 requires application recovery, not an automatic retry. Provider endpoints require
-HTTPS. Custom HttpClients must preserve cancellation and disable retries,
-redirects, and ambient cookies. Bound the complete workflow as well as individual
-requests; keep token receipts out of logs and telemetry.
+HTTPS, or HTTP on a loopback host (`localhost`, `127.0.0.1`, or `[::1]`). Custom
+HttpClients must preserve cancellation and disable retries, redirects, and ambient
+cookies. Bound the complete workflow as well as individual requests; keep token
+receipts out of logs and telemetry.
 
 Each verifier owns a scoped JWKS cache. It never takes a key endpoint from a token
 or serves expired keys after refresh failure. Configure the issuer's advertised

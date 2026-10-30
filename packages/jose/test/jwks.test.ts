@@ -165,6 +165,15 @@ it.effect("bounds remote bodies and keys and refuses untrusted or redirected URL
         ).pipe(Effect.flip))._tag,
       ).toBe("JoseJwksUnavailable");
     }
+    for (const url of [
+      "http://localhost:8080/keys",
+      "http://127.0.0.1/keys",
+      "http://[::1]/keys",
+    ]) {
+      yield* Layer.build(
+        Jwks.layerRemote({ url }).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client))),
+      );
+    }
 
     const redirected = HttpClient.make((request) =>
       Effect.succeed(

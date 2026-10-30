@@ -78,6 +78,21 @@ it.effect(
         ))._tag,
       ).toBe("OAuthConfigurationError");
       expect(requests).toHaveLength(2);
+
+      const loopback = {
+        ...metadata,
+        issuer: "http://127.0.0.1:8080",
+        token_endpoint: "http://localhost:8080/token",
+        jwks_uri: "http://[::1]:8080/jwks",
+      };
+
+      document = loopback;
+      expect(
+        yield* Oidc.discover(loopback.issuer, { timeoutMs: 1000 }).pipe(
+          Effect.provideService(HttpClient.HttpClient, client),
+        ),
+      ).toEqual(loopback);
+      expect(requests[2]).toBe("http://127.0.0.1:8080/.well-known/openid-configuration");
     }),
 );
 

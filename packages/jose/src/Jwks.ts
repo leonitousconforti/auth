@@ -63,7 +63,7 @@ export const layerLocal = (input: unknown): Layer.Layer<Jwks, InvalidKey> =>
   Layer.effect(Jwks, makeLocal(input));
 
 export interface RemoteOptions {
-  /** Trusted application configuration, never a URL from a token. HTTPS only. */
+  /** Trusted application configuration, never a URL from a token. HTTPS or loopback HTTP. */
   readonly url: string;
   readonly cacheTimeMs?: number;
   readonly cooldownMs?: number;
@@ -165,7 +165,12 @@ const RemoteConfiguration = Schema.Struct({
   url: Schema.URLFromString.check(
     Schema.makeFilter(
       (url) =>
-        url.protocol === "https:" && url.username === "" && url.password === "" && url.hash === "",
+        (url.protocol === "https:" ||
+          (url.protocol === "http:" &&
+            ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))) &&
+        url.username === "" &&
+        url.password === "" &&
+        url.hash === "",
     ),
   ),
   cacheTimeMs: bounded(1, 86400000),
@@ -209,8 +214,8 @@ type Admission =
     };
 
 /**
- * One trusted HTTPS endpoint per Layer. The supplied client owns egress policy
- * and must not follow redirects; FetchHttpClient is configured to reject them.
+ * One trusted HTTPS or loopback HTTP endpoint per Layer. The supplied client owns
+ * egress policy and must not follow redirects; FetchHttpClient is configured to reject them.
  * Responses from another URL are rejected with every client. No stale-on-error
  * fallback, global cache, background polling, or token-supplied key URLs.
  * The last departing waiter cancels and joins its refresh. New refresh lookups

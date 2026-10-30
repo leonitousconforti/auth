@@ -11,8 +11,8 @@ bun add @yielded/jose@beta effect
 
 Import `Jwk`, `Jwks`, `Jws`, `Jwt`, and `Jwe` from the root. Supply cryptographic
 services from `effect/crypto` through an explicit runtime Layer. Local verification needs no
-HTTP; remote JWKS use an application-configured HTTPS URL and an Effect HttpClient,
-with a bounded cache and refresh lifetime owned by the Layer's Scope.
+HTTP; remote JWKS use an application-configured HTTPS or loopback HTTP URL and an
+Effect HttpClient, with a bounded cache and refresh lifetime owned by the Layer's Scope.
 
 Tokens, private keys, symmetric keys and decrypted bytes use `Redacted`. JWT
 verification checks the signature and registered claims before decoding your
